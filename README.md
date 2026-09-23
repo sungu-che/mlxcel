@@ -12,4 +12,4 @@ This project is an unofficial promotional web page created from a third-party (f
 - Original Project Repository: [lablup / mlxcel](https://github.com/lablup/mlxcel)
 
 ## 🙋‍♂️ 기여자 (Contributor)
-- **홍보 페이지 제작 및 디자인 (Promo Page Creation & Design)**: Superlandinghero
+- **홍보 페이지 제작 및 디자인 (Promo Page Creation & Design)**: Superherolanding
