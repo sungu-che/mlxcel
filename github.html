@@ -1,0 +1,1001 @@
+<!DOCTYPE html>
+<html lang="ko" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>octocat / github-ui-template - GitHub</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        gh: {
+                            bg: '#0d1117',
+                            card: '#161b22',
+                            border: '#30363d',
+                            text: '#c9d1d9',
+                            muted: '#8b949e',
+                            blue: '#58a6ff',
+                            green: '#238636',
+                            greenHover: '#2ea043',
+                            accent: '#1f6feb',
+                            lightBg: '#ffffff',
+                            lightCard: '#f6f8fa',
+                            lightBorder: '#d0d7de',
+                            lightText: '#24292f',
+                            lightMuted: '#57606a'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Noto Sans', 'Helvetica', 'Arial', 'sans-serif'],
+                        mono: ['ui-monospace', 'SFMono-Regular', 'SF Mono', 'Menlo', 'Consolas', 'Liberation Mono', 'monospace']
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* Custom scrollbars and Code styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(110, 118, 129, 0.4);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(110, 118, 129, 0.7);
+        }
+        .markdown-body pre {
+            background-color: rgba(110, 118, 129, 0.1);
+            border-radius: 6px;
+            padding: 16px;
+            overflow-x: auto;
+        }
+        .markdown-body code {
+            font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+            font-size: 85%;
+        }
+    </style>
+</head>
+<body class="bg-gh-lightBg dark:bg-gh-bg text-gh-lightText dark:text-gh-text min-h-screen font-sans antialiased transition-colors duration-150">
+
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed bottom-5 right-5 z-50 transform translate-y-20 opacity-0 transition-all duration-300 bg-gh-accent text-white px-4 py-3 rounded-lg shadow-xl flex items-center gap-2 pointer-events-none">
+        <i data-lucide="check-circle" class="w-5 h-5"></i>
+        <span id="toast-message">액션이 완료되었습니다.</span>
+    </div>
+
+    <!-- Top Navigation Bar -->
+    <header class="bg-gh-lightCard dark:bg-gh-card border-b border-gh-lightBorder dark:border-gh-border px-4 py-2.5 flex items-center justify-between text-sm">
+        <div class="flex items-center gap-3">
+            <button class="p-1 hover:bg-gh-lightBorder/50 dark:hover:bg-gh-border rounded-md text-gh-lightText dark:text-gh-text">
+                <i data-lucide="menu" class="w-5 h-5"></i>
+            </button>
+            <a href="#" class="flex items-center gap-2 font-bold text-gh-lightText dark:text-gh-text hover:text-gh-blue">
+                <i data-lucide="github" class="w-8 h-8"></i>
+            </a>
+            <div class="relative hidden sm:block w-64 md:w-80">
+                <i data-lucide="search" class="w-4 h-4 absolute left-3 top-2.5 text-gh-lightMuted dark:text-gh-muted"></i>
+                <input type="text" placeholder="Type '/' to search" class="w-full pl-9 pr-3 py-1.5 bg-gh-lightBg dark:bg-gh-bg border border-gh-lightBorder dark:border-gh-border rounded-md text-xs focus:outline-none focus:border-gh-blue transition-colors">
+            </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+            <!-- Dark / Light Theme Switcher -->
+            <button id="theme-toggle" title="테마 변경" class="p-2 border border-gh-lightBorder dark:border-gh-border rounded-md hover:bg-gh-lightBorder/40 dark:hover:bg-gh-border text-gh-lightText dark:text-gh-text transition-colors">
+                <i data-lucide="sun" class="w-4 h-4 hidden dark:block"></i>
+                <i data-lucide="moon" class="w-4 h-4 block dark:hidden"></i>
+            </button>
+            
+            <a href="#" class="p-2 border border-gh-lightBorder dark:border-gh-border rounded-md hover:bg-gh-lightBorder/40 dark:hover:bg-gh-border text-gh-lightText dark:text-gh-text">
+                <i data-lucide="bell" class="w-4 h-4"></i>
+            </a>
+            
+            <button class="flex items-center gap-1 p-1.5 border border-gh-lightBorder dark:border-gh-border rounded-md hover:bg-gh-lightBorder/40 dark:hover:bg-gh-border text-xs font-semibold">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+                <i data-lucide="chevron-down" class="w-3 h-3"></i>
+            </button>
+
+            <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80" alt="User Avatar" class="w-7 h-7 rounded-full border border-gh-lightBorder dark:border-gh-border object-cover cursor-pointer">
+        </div>
+    </header>
+
+    <!-- Repository Main Header -->
+    <div class="bg-gh-lightCard dark:bg-gh-card border-b border-gh-lightBorder dark:border-gh-border pt-4 px-4 sm:px-8">
+        <div class="max-w-7xl mx-auto">
+            <!-- Breadcrumbs & Actions -->
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+                <div class="flex items-center gap-2 text-lg flex-wrap">
+                    <i data-lucide="book-template" class="w-5 h-5 text-gh-lightMuted dark:text-gh-muted"></i>
+                    <a href="#" class="text-gh-blue hover:underline font-semibold">octocat</a>
+                    <span class="text-gh-lightMuted dark:text-gh-muted">/</span>
+                    <a href="#" class="text-gh-blue hover:underline font-bold">github-ui-template</a>
+                    <span class="px-2 py-0.5 text-xs font-medium border border-gh-lightBorder dark:border-gh-border rounded-full text-gh-lightMuted dark:text-gh-muted">Public</span>
+                </div>
+
+                <!-- Repo Action Buttons -->
+                <div class="flex items-center gap-2 flex-wrap text-xs font-medium">
+                    <button id="btn-watch" class="flex items-center gap-1.5 px-3 py-1.5 bg-gh-lightBg dark:bg-gh-bg border border-gh-lightBorder dark:border-gh-border rounded-md hover:bg-gh-lightBorder/30 dark:hover:bg-gh-border transition-colors">
+                        <i data-lucide="eye" class="w-4 h-4 text-gh-lightMuted dark:text-gh-muted"></i>
+                        <span>Notifications</span>
+                        <span id="watch-count" class="ml-1 bg-gh-lightBorder/50 dark:bg-gh-border px-1.5 py-0.5 rounded-full text-xs">42</span>
+                    </button>
+
+                    <button id="btn-fork" class="flex items-center gap-1.5 px-3 py-1.5 bg-gh-lightBg dark:bg-gh-bg border border-gh-lightBorder dark:border-gh-border rounded-md hover:bg-gh-lightBorder/30 dark:hover:bg-gh-border transition-colors">
+                        <i data-lucide="git-fork" class="w-4 h-4 text-gh-lightMuted dark:text-gh-muted"></i>
+                        <span>Fork</span>
+                        <span id="fork-count" class="ml-1 bg-gh-lightBorder/50 dark:bg-gh-border px-1.5 py-0.5 rounded-full text-xs">128</span>
+                    </button>
+
+                    <button id="btn-star" class="flex items-center gap-1.5 px-3 py-1.5 bg-gh-lightBg dark:bg-gh-bg border border-gh-lightBorder dark:border-gh-border rounded-md hover:bg-gh-lightBorder/30 dark:hover:bg-gh-border transition-colors text-amber-500">
+                        <i data-lucide="star" class="w-4 h-4 fill-amber-500"></i>
+                        <span class="text-gh-lightText dark:text-gh-text">Starred</span>
+                        <span id="star-count" class="ml-1 bg-gh-lightBorder/50 dark:bg-gh-border px-1.5 py-0.5 rounded-full text-xs text-gh-lightText dark:text-gh-text">1,402</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Repository Navigation Tabs -->
+            <nav class="flex items-center gap-1 sm:gap-6 border-b border-transparent overflow-x-auto text-sm font-medium">
+                <button data-tab="code" class="nav-tab active-tab flex items-center gap-2 py-2.5 px-2 border-b-2 border-orange-500 text-gh-lightText dark:text-gh-text font-semibold">
+                    <i data-lucide="code-2" class="w-4 h-4 text-gh-lightMuted dark:text-gh-muted"></i>
+                    <span>Code</span>
+                </button>
+                <button data-tab="issues" class="nav-tab flex items-center gap-2 py-2.5 px-2 border-b-2 border-transparent text-gh-lightMuted dark:text-gh-muted hover:text-gh-lightText dark:hover:text-gh-text">
+                    <i data-lucide="circle-dot" class="w-4 h-4"></i>
+                    <span>Issues</span>
+                    <span class="bg-gh-lightBorder/50 dark:bg-gh-border px-2 py-0.5 rounded-full text-xs">6</span>
+                </button>
+                <button data-tab="pulls" class="nav-tab flex items-center gap-2 py-2.5 px-2 border-b-2 border-transparent text-gh-lightMuted dark:text-gh-muted hover:text-gh-lightText dark:hover:text-gh-text">
+                    <i data-lucide="git-pull-request" class="w-4 h-4"></i>
+                    <span>Pull requests</span>
+                    <span class="bg-gh-lightBorder/50 dark:bg-gh-border px-2 py-0.5 rounded-full text-xs">2</span>
+                </button>
+                <button data-tab="actions" class="nav-tab flex items-center gap-2 py-2.5 px-2 border-b-2 border-transparent text-gh-lightMuted dark:text-gh-muted hover:text-gh-lightText dark:hover:text-gh-text">
+                    <i data-lucide="play-circle" class="w-4 h-4"></i>
+                    <span>Actions</span>
+                </button>
+                <button data-tab="projects" class="nav-tab flex items-center gap-2 py-2.5 px-2 border-b-2 border-transparent text-gh-lightMuted dark:text-gh-muted hover:text-gh-lightText dark:hover:text-gh-text">
+                    <i data-lucide="layout-grid" class="w-4 h-4"></i>
+                    <span>Projects</span>
+                </button>
+                <button data-tab="copilot" class="nav-tab flex items-center gap-2 py-2.5 px-2 border-b-2 border-transparent text-purple-600 dark:text-purple-400 font-semibold hover:text-purple-700">
+                    <i data-lucide="sparkles" class="w-4 h-4"></i>
+                    <span>AI Copilot</span>
+                    <span class="bg-purple-500/20 text-purple-600 dark:text-purple-300 px-1.5 py-0.5 rounded-full text-[10px]">Gemini</span>
+                </button>
+                <button data-tab="settings" class="nav-tab flex items-center gap-2 py-2.5 px-2 border-b-2 border-transparent text-gh-lightMuted dark:text-gh-muted hover:text-gh-lightText dark:hover:text-gh-text">
+                    <i data-lucide="settings" class="w-4 h-4"></i>
+                    <span>Settings</span>
+                </button>
+            </nav>
+        </div>
+    </div>
+
+    <!-- Main Content Container -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-8 py-6">
+
+        <!-- CODE TAB VIEW -->
+        <div id="tab-content-code" class="tab-view block">
+            <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                
+                <!-- Code Area (3 Cols) -->
+                <div class="lg:col-span-3 space-y-4">
+
+                    <!-- Branch Selector & Download Code -->
+                    <div class="flex flex-wrap items-center justify-between gap-3">
+                        <div class="flex items-center gap-2">
+                            <!-- Branch Switcher Dropdown -->
+                            <div class="relative inline-block text-left">
+                                <button id="btn-branch" class="flex items-center gap-2 px-3 py-1.5 bg-gh-lightCard dark:bg-gh-card border border-gh-lightBorder dark:border-gh-border rounded-md text-xs font-medium hover:bg-gh-lightBorder/40 dark:hover:bg-gh-border">
+                                    <i data-lucide="git-branch" class="w-4 h-4 text-gh-lightMuted dark:text-gh-muted"></i>
+                                    <span id="selected-branch">main</span>
+                                    <i data-lucide="chevron-down" class="w-3 h-3"></i>
+                                </button>
+                            </div>
+
+                            <div class="text-xs text-gh-lightMuted dark:text-gh-muted flex items-center gap-2">
+                                <span class="font-semibold text-gh-lightText dark:text-gh-text">3</span> Branches
+                                <span class="font-semibold text-gh-lightText dark:text-gh-text">1</span> Tags
+                            </div>
+                        </div>
+
+                        <div class="flex items-center gap-2">
+                            <!-- Clone Dropdown -->
+                            <div class="relative">
+                                <button id="btn-code-menu" class="flex items-center gap-1.5 px-3 py-1.5 bg-gh-green text-white rounded-md text-xs font-semibold hover:bg-gh-greenHover transition-colors shadow-sm">
+                                    <i data-lucide="code" class="w-4 h-4"></i>
+                                    <span>Code</span>
+                                    <i data-lucide="chevron-down" class="w-3 h-3"></i>
+                                </button>
+                                <!-- Code Clone Popup Menu -->
+                                <div id="code-popup" class="hidden absolute right-0 mt-2 w-72 bg-gh-lightBg dark:bg-gh-card border border-gh-lightBorder dark:border-gh-border rounded-lg shadow-2xl p-4 z-30">
+                                    <div class="text-xs font-semibold mb-2">Clone Repository</div>
+                                    <div class="flex items-center bg-gh-lightCard dark:bg-gh-bg border border-gh-lightBorder dark:border-gh-border rounded p-1 mb-3">
+                                        <input type="text" readonly value="https://github.com/octocat/github-ui-template.git" class="bg-transparent text-xs text-gh-lightMuted dark:text-gh-muted w-full px-1 outline-none">
+                                        <button onclick="copyToClipboard('https://github.com/octocat/github-ui-template.git')" title="주소 복사" class="p-1 hover:bg-gh-lightBorder dark:hover:bg-gh-border rounded">
+                                            <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                                        </button>
+                                    </div>
+                                    <button onclick="triggerToast('ZIP 파일 다운로드가 시작되었습니다.')" class="w-full flex items-center justify-center gap-2 text-xs py-1.5 bg-gh-lightCard dark:bg-gh-border hover:opacity-90 rounded border border-gh-lightBorder dark:border-gh-border font-medium">
+                                        <i data-lucide="download" class="w-4 h-4"></i>
+                                        Download ZIP
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- File Explorer Container -->
+                    <div class="border border-gh-lightBorder dark:border-gh-border rounded-lg overflow-hidden bg-gh-lightBg dark:bg-gh-bg">
+                        
+                        <!-- Commit Bar Header -->
+                        <div class="bg-gh-lightCard dark:bg-gh-card border-b border-gh-lightBorder dark:border-gh-border p-3 flex items-center justify-between text-xs">
+                            <div class="flex items-center gap-2">
+                                <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80" alt="Avatar" class="w-5 h-5 rounded-full object-cover">
+                                <a href="#" class="font-bold hover:underline">octocat</a>
+                                <span class="text-gh-lightMuted dark:text-gh-muted hover:text-gh-blue cursor-pointer truncate max-w-xs sm:max-w-md">feat: add modern dark mode toggle and responsive interactive tabs</span>
+                            </div>
+                            <div class="flex items-center gap-3 text-gh-lightMuted dark:text-gh-muted">
+                                <span class="font-mono text-xs hover:text-gh-blue cursor-pointer">a9c4f12</span>
+                                <span>2 hours ago</span>
+                                <div class="hidden sm:flex items-center gap-1 font-semibold text-gh-lightText dark:text-gh-text">
+                                    <i data-lucide="history" class="w-3.5 h-3.5"></i>
+                                    <span>248 commits</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Directory Breadcrumb Path -->
+                        <div id="breadcrumb-bar" class="px-4 py-2 bg-gh-lightCard/50 dark:bg-gh-card/50 border-b border-gh-lightBorder dark:border-gh-border text-xs flex items-center gap-1.5 text-gh-blue">
+                            <button onclick="navigateToPath('/')" class="hover:underline font-semibold">github-ui-template</button>
+                            <span id="breadcrumb-sub"></span>
+                        </div>
+
+                        <!-- File Tree List Table -->
+                        <div class="divide-y divide-gh-lightBorder dark:divide-gh-border text-xs" id="file-tree-body">
+                            <!-- Dynamic Content Rendered via JS -->
+                        </div>
+                    </div>
+
+                    <!-- File Viewer Modal / Section (Appears when file clicked) -->
+                    <div id="file-viewer" class="hidden border border-gh-lightBorder dark:border-gh-border rounded-lg overflow-hidden bg-gh-lightBg dark:bg-gh-bg mt-4">
+                        <div class="bg-gh-lightCard dark:bg-gh-card border-b border-gh-lightBorder dark:border-gh-border px-4 py-2.5 flex items-center justify-between text-xs">
+                            <div class="flex items-center gap-2 font-mono">
+                                <i data-lucide="file-text" class="w-4 h-4 text-gh-lightMuted dark:text-gh-muted"></i>
+                                <span id="file-viewer-title" class="font-bold">README.md</span>
+                                <span id="file-viewer-size" class="text-gh-lightMuted dark:text-gh-muted">2.4 KB</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button id="ai-explain-btn" onclick="explainFileWithAI()" class="flex items-center gap-1.5 px-2.5 py-1 bg-purple-600/10 hover:bg-purple-600/20 text-purple-600 dark:text-purple-400 rounded border border-purple-500/30 text-xs font-semibold transition-colors">
+                                    <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+                                    <span>AI 코드 설명</span>
+                                </button>
+                                <button onclick="closeFileViewer()" class="text-gh-lightMuted dark:text-gh-muted hover:text-gh-lightText dark:hover:text-gh-text">
+                                    <i data-lucide="x" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- AI Explanation Panel -->
+                        <div id="ai-explanation-box" class="hidden bg-purple-50 dark:bg-purple-950/30 border-b border-purple-500/20 p-4 text-xs space-y-2">
+                            <div class="flex items-center justify-between font-bold text-purple-700 dark:text-purple-300">
+                                <div class="flex items-center gap-1.5">
+                                    <i data-lucide="bot" class="w-4 h-4"></i>
+                                    <span>Gemini AI 코드 분석</span>
+                                </div>
+                                <button onclick="document.getElementById('ai-explanation-box').classList.add('hidden')" class="text-purple-400 hover:text-purple-600">
+                                    <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                                </button>
+                            </div>
+                            <div id="ai-explanation-text" class="text-gh-lightText dark:text-gh-text leading-relaxed whitespace-pre-wrap font-sans">
+                                <!-- AI output -->
+                            </div>
+                        </div>
+
+                        <pre class="p-4 text-xs font-mono overflow-x-auto bg-gh-lightBg dark:bg-gh-bg text-gh-lightText dark:text-gh-text"><code id="file-viewer-content"></code></pre>
+                    </div>
+
+                    <!-- README Rendered Container -->
+                    <div class="border border-gh-lightBorder dark:border-gh-border rounded-lg overflow-hidden bg-gh-lightBg dark:bg-gh-bg mt-6">
+                        <div class="bg-gh-lightCard dark:bg-gh-card border-b border-gh-lightBorder dark:border-gh-border px-4 py-2.5 flex items-center gap-2 text-xs font-semibold">
+                            <i data-lucide="book-open" class="w-4 h-4 text-gh-lightMuted dark:text-gh-muted"></i>
+                            <span>README.md</span>
+                        </div>
+                        <div class="p-6 md:p-8 markdown-body text-sm leading-relaxed space-y-4">
+                            <h1 class="text-2xl md:text-3xl font-bold border-b border-gh-lightBorder dark:border-gh-border pb-2 flex items-center gap-2">
+                                🚀 GitHub Repository HTML/CSS Template
+                            </h1>
+                            <p class="text-gh-lightMuted dark:text-gh-muted">
+                                GitHub의 Primer 디자인 시스템을 영감으로 제작된 모던한 저장소 대화형 HTML/CSS/JS 템플릿입니다. 실제 GitHub 저장소 인터페이스를 완벽하게 구현하여 포트폴리오, 문서 사이트, 클론 스터디용으로 자유롭게 활용하실 수 있습니다.
+                            </p>
+                            
+                            <h2 class="text-xl font-bold border-b border-gh-lightBorder dark:border-gh-border pb-1 mt-6">✨ 주요 기능 (Features)</h2>
+                            <ul class="list-disc pl-5 space-y-1">
+                                <li><strong>Primer UI Aesthetics:</strong> GitHub 특유의 카드 구조, 테두리, 색상 팔레트 완벽 복제</li>
+                                <li><strong>Dark & Light Theme:</strong> 상단 해/달 아이콘을 클릭하여 실시간 테마 전환</li>
+                                <li><strong>Interactive File Explorer:</strong> 폴더 클릭 시 하위 경로 이동 및 파일 내용 즉시 확인</li>
+                                <li><strong>Tabs Navigation:</strong> Code, Issues, Pull Requests, Actions, Settings 탭 간 전환</li>
+                                <li><strong>Star/Fork Toggle:</strong> 별표 누르기 및 카운트 가상 연동</li>
+                            </ul>
+
+                            <h2 class="text-xl font-bold border-b border-gh-lightBorder dark:border-gh-border pb-1 mt-6">📦 빠른 시작 (Quick Start)</h2>
+                            <div class="bg-gh-lightCard dark:bg-gh-card p-4 rounded-md border border-gh-lightBorder dark:border-gh-border font-mono text-xs">
+                                <p class="text-gh-blue"># Repository 클론하기</p>
+                                <p class="mt-1">git clone https://github.com/octocat/github-ui-template.git</p>
+                                <p class="text-gh-blue mt-3"># 브라우저에서 index.html 파일 실행</p>
+                                <p class="mt-1">open index.html</p>
+                            </div>
+
+                            <h2 class="text-xl font-bold border-b border-gh-lightBorder dark:border-gh-border pb-1 mt-6">📄 라이선스 (License)</h2>
+                            <p class="text-xs text-gh-lightMuted dark:text-gh-muted">MIT License. 자유롭게 변경하고 상업적 및 비상업용으로 사용할 수 있습니다.</p>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- Sidebar Area (1 Col) -->
+                <div class="space-y-6">
+                    
+                    <!-- About Section -->
+                    <div class="space-y-3">
+                        <h3 class="font-bold text-sm">About</h3>
+                        <p class="text-xs leading-relaxed">
+                            Official HTML, CSS & Tailwind interactive template styled like GitHub repositories. Fast, light, and customizable.
+                        </p>
+                        <div class="flex items-center gap-2 text-xs text-gh-blue">
+                            <i data-lucide="link" class="w-3.5 h-3.5 text-gh-lightMuted dark:text-gh-muted"></i>
+                            <a href="https://primer.style" target="_blank" class="hover:underline font-semibold">primer.style</a>
+                        </div>
+                        
+                        <!-- Topics Badges -->
+                        <div class="flex flex-wrap gap-1.5 pt-2">
+                            <span class="px-2.5 py-1 rounded-full text-xs bg-blue-500/10 text-gh-blue font-medium hover:bg-blue-500/20 cursor-pointer">github-clone</span>
+                            <span class="px-2.5 py-1 rounded-full text-xs bg-blue-500/10 text-gh-blue font-medium hover:bg-blue-500/20 cursor-pointer">tailwind-css</span>
+                            <span class="px-2.5 py-1 rounded-full text-xs bg-blue-500/10 text-gh-blue font-medium hover:bg-blue-500/20 cursor-pointer">primer-css</span>
+                            <span class="px-2.5 py-1 rounded-full text-xs bg-blue-500/10 text-gh-blue font-medium hover:bg-blue-500/20 cursor-pointer">html-template</span>
+                        </div>
+
+                        <div class="pt-2 text-xs space-y-2 text-gh-lightMuted dark:text-gh-muted">
+                            <div class="flex items-center gap-2">
+                                <i data-lucide="readme" class="w-4 h-4"></i>
+                                <span>Readme</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <i data-lucide="scale" class="w-4 h-4"></i>
+                                <span>MIT license</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <i data-lucide="activity" class="w-4 h-4"></i>
+                                <span>Activity</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr class="border-gh-lightBorder dark:border-gh-border">
+
+                    <!-- Releases Section -->
+                    <div class="space-y-2">
+                        <div class="flex items-center justify-between text-xs">
+                            <h3 class="font-bold text-sm">Releases</h3>
+                            <span class="bg-gh-green/20 text-gh-green px-2 py-0.5 rounded-full font-bold text-xs">v1.2.0 Latest</span>
+                        </div>
+                        <p class="text-xs text-gh-lightMuted dark:text-gh-muted">Published 3 days ago</p>
+                    </div>
+
+                    <hr class="border-gh-lightBorder dark:border-gh-border">
+
+                    <!-- Contributors Section -->
+                    <div class="space-y-3">
+                        <div class="flex items-center justify-between">
+                            <h3 class="font-bold text-sm">Contributors</h3>
+                            <span class="text-xs text-gh-lightMuted dark:text-gh-muted">6</span>
+                        </div>
+                        <div class="flex -space-x-1 overflow-hidden">
+                            <img class="inline-block h-7 w-7 rounded-full ring-2 ring-gh-lightBg dark:ring-gh-bg object-cover" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80" alt="Avatar 1">
+                            <img class="inline-block h-7 w-7 rounded-full ring-2 ring-gh-lightBg dark:ring-gh-bg object-cover" src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&auto=format&fit=crop&q=80" alt="Avatar 2">
+                            <img class="inline-block h-7 w-7 rounded-full ring-2 ring-gh-lightBg dark:ring-gh-bg object-cover" src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&auto=format&fit=crop&q=80" alt="Avatar 3">
+                            <img class="inline-block h-7 w-7 rounded-full ring-2 ring-gh-lightBg dark:ring-gh-bg object-cover" src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&auto=format&fit=crop&q=80" alt="Avatar 4">
+                        </div>
+                    </div>
+
+                    <hr class="border-gh-lightBorder dark:border-gh-border">
+
+                    <!-- Languages Section -->
+                    <div class="space-y-3">
+                        <h3 class="font-bold text-sm">Languages</h3>
+                        <div class="w-full h-2 bg-gh-lightBorder/50 dark:bg-gh-border rounded-full overflow-hidden flex">
+                            <div class="bg-amber-400 h-full" style="width: 62.4%"></div>
+                            <div class="bg-blue-500 h-full" style="width: 24.1%"></div>
+                            <div class="bg-purple-500 h-full" style="width: 13.5%"></div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 text-xs">
+                            <div class="flex items-center gap-1.5">
+                                <span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+                                <span class="font-semibold">JavaScript</span>
+                                <span class="text-gh-lightMuted dark:text-gh-muted">62.4%</span>
+                            </div>
+                            <div class="flex items-center gap-1.5">
+                                <span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
+                                <span class="font-semibold">HTML</span>
+                                <span class="text-gh-lightMuted dark:text-gh-muted">24.1%</span>
+                            </div>
+                            <div class="flex items-center gap-1.5">
+                                <span class="w-2.5 h-2.5 rounded-full bg-purple-500"></span>
+                                <span class="font-semibold">CSS</span>
+                                <span class="text-gh-lightMuted dark:text-gh-muted">13.5%</span>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ISSUES TAB VIEW -->
+        <div id="tab-content-issues" class="tab-view hidden">
+            <div class="border border-gh-lightBorder dark:border-gh-border rounded-lg overflow-hidden bg-gh-lightBg dark:bg-gh-bg">
+                <div class="bg-gh-lightCard dark:bg-gh-card border-b border-gh-lightBorder dark:border-gh-border p-3 flex items-center justify-between text-xs">
+                    <div class="flex items-center gap-4">
+                        <div class="flex items-center gap-1.5 font-bold">
+                            <i data-lucide="circle-dot" class="w-4 h-4 text-green-500"></i>
+                            <span>6 Open</span>
+                        </div>
+                        <div class="flex items-center gap-1.5 text-gh-lightMuted dark:text-gh-muted">
+                            <i data-lucide="check" class="w-4 h-4"></i>
+                            <span>48 Closed</span>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="toggleAiIssueModal()" class="flex items-center gap-1 px-3 py-1 bg-purple-600/10 text-purple-600 dark:text-purple-400 border border-purple-500/30 rounded-md font-semibold hover:bg-purple-600/20 transition-colors">
+                            <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+                            <span>AI Issue Draft</span>
+                        </button>
+                        <button onclick="triggerToast('새 이슈 작성 페이지는 준비 중입니다.')" class="px-3 py-1 bg-gh-green text-white rounded-md font-semibold hover:bg-gh-greenHover transition-colors">
+                            New issue
+                        </button>
+                    </div>
+                </div>
+
+                <div class="divide-y divide-gh-lightBorder dark:divide-gh-border text-xs" id="issues-list">
+                    <!-- Dynamic Issues List -->
+                </div>
+            </div>
+        </div>
+
+        <!-- PULL REQUESTS TAB VIEW -->
+        <div id="tab-content-pulls" class="tab-view hidden">
+            <div class="border border-gh-lightBorder dark:border-gh-border rounded-lg overflow-hidden bg-gh-lightBg dark:bg-gh-bg p-8 text-center space-y-3">
+                <i data-lucide="git-pull-request" class="w-12 h-12 mx-auto text-gh-lightMuted dark:text-gh-muted opacity-50"></i>
+                <h3 class="font-bold text-base">Open Pull Requests</h3>
+                <p class="text-xs text-gh-lightMuted dark:text-gh-muted max-w-md mx-auto">
+                    There are currently 2 active pull requests awaiting code review.
+                </p>
+            </div>
+        </div>
+
+        <!-- AI COPILOT TAB VIEW -->
+        <div id="tab-content-copilot" class="tab-view hidden space-y-4">
+            <div class="border border-purple-500/30 rounded-lg overflow-hidden bg-gh-lightBg dark:bg-gh-bg">
+                <div class="bg-purple-600/10 border-b border-purple-500/20 p-4 flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <div class="p-2 bg-purple-600 text-white rounded-lg">
+                            <i data-lucide="sparkles" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-sm text-gh-lightText dark:text-gh-text">Gemini Repository AI Copilot</h3>
+                            <p class="text-xs text-gh-lightMuted dark:text-gh-muted">저장소 구조 분석, 코드 설명, 리팩토링 및 개발 Q&A Assistant</p>
+                        </div>
+                    </div>
+                    <span class="text-xs font-semibold px-2.5 py-1 bg-purple-500/20 text-purple-600 dark:text-purple-300 rounded-full">gemini-3-flash-preview</span>
+                </div>
+
+                <!-- Quick Action Prompt Chips -->
+                <div class="p-3 bg-gh-lightCard dark:bg-gh-card border-b border-gh-lightBorder dark:border-gh-border flex flex-wrap gap-2 text-xs">
+                    <button onclick="sendQuickCopilotPrompt('이 저장소의 아키텍처와 주요 구성요소를 요약해줘')" class="px-3 py-1.5 rounded-full bg-gh-lightBg dark:bg-gh-bg border border-gh-lightBorder dark:border-gh-border hover:border-purple-500/50 hover:text-purple-500 transition-colors flex items-center gap-1.5">
+                        <i data-lucide="compass" class="w-3.5 h-3.5 text-purple-500"></i>
+                        <span>저장소 아키텍처 분석</span>
+                    </button>
+                    <button onclick="sendQuickCopilotPrompt('package.json 분석 및 의존성/최적화 제안해줘')" class="px-3 py-1.5 rounded-full bg-gh-lightBg dark:bg-gh-bg border border-gh-lightBorder dark:border-gh-border hover:border-purple-500/50 hover:text-purple-500 transition-colors flex items-center gap-1.5">
+                        <i data-lucide="shield-check" class="w-3.5 h-3.5 text-purple-500"></i>
+                        <span>의존성 검사</span>
+                    </button>
+                    <button onclick="sendQuickCopilotPrompt('새로운 기능(예: 검색 필터링)을 추가하기 위한 코드 작성 가이드를 작성해줘')" class="px-3 py-1.5 rounded-full bg-gh-lightBg dark:bg-gh-bg border border-gh-lightBorder dark:border-gh-border hover:border-purple-500/50 hover:text-purple-500 transition-colors flex items-center gap-1.5">
+                        <i data-lucide="code-2" class="w-3.5 h-3.5 text-purple-500"></i>
+                        <span>신규 기능 구현 제안</span>
+                    </button>
+                </div>
+
+                <!-- Chat History Window -->
+                <div id="copilot-chat-history" class="p-4 space-y-4 max-h-[480px] overflow-y-auto text-xs min-h-[250px]">
+                    <div class="flex items-start gap-3 bg-purple-500/5 p-3 rounded-lg border border-purple-500/10">
+                        <div class="p-1.5 bg-purple-600 text-white rounded">
+                            <i data-lucide="bot" class="w-4 h-4"></i>
+                        </div>
+                        <div class="space-y-1">
+                            <div class="font-bold text-purple-600 dark:text-purple-400">Gemini Copilot</div>
+                            <p class="text-gh-lightText dark:text-gh-text leading-relaxed">
+                                안녕하세요! <code>octocat/github-ui-template</code> 저장소의 AI 어시스턴트입니다. 저장소 내 파일에 대한 질문, 코드 리뷰, 버그 수정 및 개선 방안을 자유롭게 문의해 주세요.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chat Input Bar -->
+                <div class="p-3 border-t border-gh-lightBorder dark:border-gh-border bg-gh-lightCard dark:bg-gh-card flex gap-2">
+                    <input id="copilot-input" type="text" placeholder="저장소 코드 또는 기능 개발에 대해 질문하세요..." class="flex-1 px-3 py-2 bg-gh-lightBg dark:bg-gh-bg border border-gh-lightBorder dark:border-gh-border rounded-md text-xs focus:outline-none focus:border-purple-500 transition-colors" onkeydown="if(event.key==='Enter') sendCopilotMessage()">
+                    <button onclick="sendCopilotMessage()" id="copilot-send-btn" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-md text-xs flex items-center gap-1.5 transition-colors">
+                        <i data-lucide="send" class="w-3.5 h-3.5"></i>
+                        <span>전송</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- OTHER TABS PLACEHOLDER VIEW -->
+        <div id="tab-content-generic" class="tab-view hidden">
+            <div class="border border-gh-lightBorder dark:border-gh-border rounded-lg overflow-hidden bg-gh-lightBg dark:bg-gh-bg p-12 text-center space-y-2">
+                <i data-lucide="folder-git-2" class="w-10 h-10 mx-auto text-gh-lightMuted dark:text-gh-muted"></i>
+                <h3 id="generic-tab-title" class="font-bold text-base">Section Overview</h3>
+                <p class="text-xs text-gh-lightMuted dark:text-gh-muted">이 탭의 콘텐츠가 성공적으로 로드되었습니다.</p>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- AI Issue Draft Modal -->
+    <div id="ai-issue-modal" class="fixed inset-0 bg-black/60 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-gh-lightBg dark:bg-gh-card border border-gh-lightBorder dark:border-gh-border rounded-lg max-w-lg w-full p-5 shadow-2xl space-y-4">
+            <div class="flex items-center justify-between border-b border-gh-lightBorder dark:border-gh-border pb-3">
+                <div class="flex items-center gap-2 font-bold text-sm">
+                    <i data-lucide="sparkles" class="w-4 h-4 text-purple-500"></i>
+                    <span>Gemini AI Issue Generator</span>
+                </div>
+                <button onclick="toggleAiIssueModal()" class="text-gh-lightMuted dark:text-gh-muted hover:text-gh-lightText dark:hover:text-gh-text">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+            
+            <p class="text-xs text-gh-lightMuted dark:text-gh-muted">발생한 버그나 필요한 새로운 기능을 입력하면 Gemini가 표준 GitHub Issue 양식으로 작성합니다.</p>
+            
+            <textarea id="ai-issue-prompt" rows="3" placeholder="예: 모바일 화면에서 파일 탐색기를 누르면 긴 파일 이름이 잘려 보이는 현상 개선 필요" class="w-full p-2.5 bg-gh-lightCard dark:bg-gh-bg border border-gh-lightBorder dark:border-gh-border rounded-md text-xs focus:outline-none focus:border-purple-500"></textarea>
+
+            <div class="flex justify-end gap-2 text-xs">
+                <button onclick="toggleAiIssueModal()" class="px-3 py-1.5 border border-gh-lightBorder dark:border-gh-border rounded-md font-medium hover:bg-gh-lightBorder/30">취소</button>
+                <button onclick="generateIssueWithAI()" id="btn-gen-issue" class="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-md font-semibold flex items-center gap-1.5">
+                    <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+                    <span>이슈 생성하기</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript Data & Logic -->
+    <script>
+        // Gemini API Helper Function
+        async function callGeminiAPI(userQuery, systemPrompt = "") {
+            const apiKey = "";
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+            
+            const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+            };
+            if (systemPrompt) {
+                payload.systemInstruction = { parts: [{ text: systemPrompt }] };
+            }
+
+            let delay = 1000;
+            for (let i = 0; i < 3; i++) {
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    if (!response.ok) throw new Error(`HTTP Error status: ${response.status}`);
+                    const result = await response.json();
+                    const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (text) return text;
+                    throw new Error('Response text missing');
+                } catch (err) {
+                    if (i === 2) throw err;
+                    await new Promise(r => setTimeout(r, delay));
+                    delay *= 2;
+                }
+            }
+        }
+
+        // AI Code Explainer in File Viewer
+        async function explainFileWithAI() {
+            const fileName = document.getElementById('file-viewer-title').innerText;
+            const fileContent = document.getElementById('file-viewer-content').innerText;
+            const box = document.getElementById('ai-explanation-box');
+            const textEl = document.getElementById('ai-explanation-text');
+            const btn = document.getElementById('ai-explain-btn');
+
+            box.classList.remove('hidden');
+            textEl.innerHTML = '<div class="flex items-center gap-2 text-purple-500 font-semibold"><i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i><span>Gemini가 파일을 분석 중입니다...</span></div>';
+            lucide.createIcons();
+            btn.disabled = true;
+
+            try {
+                const systemPrompt = "당신은 세계적인 수석 소프트웨어 엔지니어입니다. 제공된 파일의 역할, 핵심 코드 로직, 주요 사용처를 가독성 높게 한국어로 친절하게 설명해주세요.";
+                const prompt = `파일명: ${fileName}\n\n코드 내용:\n\`\`\`\n${fileContent}\n\`\`\``;
+                const result = await callGeminiAPI(prompt, systemPrompt);
+                textEl.innerText = result;
+            } catch (err) {
+                textEl.innerText = "❌ 코드 분석 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.";
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // AI Copilot Chat Handler
+        async function sendCopilotMessage() {
+            const input = document.getElementById('copilot-input');
+            const history = document.getElementById('copilot-chat-history');
+            const query = input.value.trim();
+            if (!query) return;
+
+            input.value = '';
+
+            // User Message UI
+            const userMsgDiv = document.createElement('div');
+            userMsgDiv.className = 'flex items-start justify-end gap-3';
+            userMsgDiv.innerHTML = `
+                <div class="bg-purple-600 text-white p-3 rounded-lg max-w-xl space-y-1">
+                    <div class="font-bold text-xs text-purple-200">User</div>
+                    <p class="leading-relaxed">${escapeHtml(query)}</p>
+                </div>
+            `;
+            history.appendChild(userMsgDiv);
+
+            // Bot Loading UI
+            const botMsgDiv = document.createElement('div');
+            botMsgDiv.className = 'flex items-start gap-3 bg-purple-500/5 p-3 rounded-lg border border-purple-500/10';
+            botMsgDiv.innerHTML = `
+                <div class="p-1.5 bg-purple-600 text-white rounded flex-shrink-0">
+                    <i data-lucide="bot" class="w-4 h-4"></i>
+                </div>
+                <div class="space-y-1 flex-1 min-w-0">
+                    <div class="font-bold text-purple-600 dark:text-purple-400">Gemini Copilot</div>
+                    <div class="ai-reply flex items-center gap-2 text-purple-500">
+                        <i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i>
+                        <span>답변을 생성하는 중입니다...</span>
+                    </div>
+                </div>
+            `;
+            history.appendChild(botMsgDiv);
+            history.scrollTop = history.scrollHeight;
+            lucide.createIcons();
+
+            try {
+                const systemPrompt = "당신은 octocat/github-ui-template 저장소 전담 Gemini AI Copilot입니다. HTML, CSS, Tailwind, JS 기반 저장소에 대해 개발자를 도와 가이드와 답변을 한국어로 제공합니다.";
+                const reply = await callGeminiAPI(query, systemPrompt);
+                botMsgDiv.querySelector('.ai-reply').className = 'text-gh-lightText dark:text-gh-text leading-relaxed whitespace-pre-wrap';
+                botMsgDiv.querySelector('.ai-reply').innerText = reply;
+            } catch (err) {
+                botMsgDiv.querySelector('.ai-reply').innerText = "❌ 답변을 생성하지 못했습니다. 다시 시도해 주세요.";
+            }
+            history.scrollTop = history.scrollHeight;
+        }
+
+        function sendQuickCopilotPrompt(promptText) {
+            document.getElementById('copilot-input').value = promptText;
+            sendCopilotMessage();
+        }
+
+        function escapeHtml(text) {
+            return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        }
+
+        // AI Issue Generator Modal Logic
+        function toggleAiIssueModal() {
+            const modal = document.getElementById('ai-issue-modal');
+            modal.classList.toggle('hidden');
+        }
+
+        async function generateIssueWithAI() {
+            const promptInput = document.getElementById('ai-issue-prompt');
+            const prompt = promptInput.value.trim();
+            if (!prompt) {
+                triggerToast('내용을 입력해 주세요.');
+                return;
+            }
+
+            const btn = document.getElementById('btn-gen-issue');
+            btn.disabled = true;
+            btn.innerHTML = '<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i><span>작성 중...</span>';
+            lucide.createIcons();
+
+            try {
+                const systemPrompt = "사용자의 간단한 입력을 기반으로 GitHub Issue 양식(Title, Summary, Steps to Reproduce, Expected Behavior)에 맞춰 한국어 타이틀과 내용을 작성해주세요.";
+                const response = await callGeminiAPI(prompt, systemPrompt);
+
+                // Add generated issue to issues list
+                const newId = 100 + issuesData.length + 1;
+                const lines = response.split('\n').filter(l => l.trim().length > 0);
+                const title = lines[0].replace(/^(Title:|제목:|\#)/i, '').trim() || prompt;
+
+                issuesData.unshift({
+                    id: newId,
+                    title: `[AI Draft] ${title}`,
+                    author: 'gemini_copilot',
+                    comments: 0,
+                    time: 'Just now'
+                });
+
+                renderIssues();
+                toggleAiIssueModal();
+                promptInput.value = '';
+                triggerToast('새로운 AI Issue Draft가 등록되었습니다!');
+            } catch (err) {
+                triggerToast('이슈 생성 실패: 다시 시도해주세요.');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i data-lucide="sparkles" class="w-3.5 h-3.5"></i><span>이슈 생성하기</span>';
+                lucide.createIcons();
+            }
+        }
+
+        // File Tree Data Structure
+        const fileSystem = {
+            '/': [
+                { name: '.github', type: 'dir', commit: 'ci: update GitHub Actions workflow', time: 'last week' },
+                { name: 'src', type: 'dir', commit: 'feat: organize component structure', time: '3 days ago' },
+                { name: 'public', type: 'dir', commit: 'assets: add logo and icons', time: '2 weeks ago' },
+                { name: '.gitignore', type: 'file', size: '280 B', commit: 'initial commit', time: '1 month ago', content: 'node_modules/\n.DS_Store\ndist/\n.env' },
+                { name: 'package.json', type: 'file', size: '1.2 KB', commit: 'chore: update dependencies', time: 'yesterday', content: '{\n  "name": "github-ui-template",\n  "version": "1.2.0",\n  "description": "GitHub UI Clone Template",\n  "main": "index.html",\n  "dependencies": {\n    "tailwindcss": "^3.0.0"\n  }\n}' },
+                { name: 'README.md', type: 'file', size: '2.4 KB', commit: 'docs: update usage guide and badges', time: '2 hours ago', content: '# GitHub Repository HTML/CSS Template\n\nA beautiful, light-weight GitHub clone template built with HTML, CSS, and Tailwind.' },
+                { name: 'App.js', type: 'file', size: '850 B', commit: 'feat: add dark theme switcher logic', time: '5 hours ago', content: 'document.getElementById("theme-toggle").addEventListener("click", () => {\n  document.documentElement.classList.toggle("dark");\n});' }
+            ],
+            '/src': [
+                { name: 'components', type: 'dir', commit: 'feat: add navbar components', time: '3 days ago' },
+                { name: 'styles.css', type: 'file', size: '3.1 KB', commit: 'style: enhance repository borders', time: '3 days ago', content: '/* Custom GitHub Styles */\nbody { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI"; }' },
+                { name: 'index.js', type: 'file', size: '420 B', commit: 'feat: initialize root component', time: '4 days ago', content: 'console.log("GitHub Template Initialized");' }
+            ],
+            '/src/components': [
+                { name: 'Header.jsx', type: 'file', size: '1.8 KB', commit: 'feat: responsive header layout', time: '3 days ago', content: 'export default function Header() { return <header>GitHub</header>; }' },
+                { name: 'FileBrowser.jsx', type: 'file', size: '2.5 KB', commit: 'feat: file tree navigation', time: '3 days ago', content: 'export default function FileBrowser() { return <div>File Explorer</div>; }' }
+            ],
+            '/.github': [
+                { name: 'workflows', type: 'dir', commit: 'ci: add test pipeline', time: 'last week' }
+            ],
+            '/.github/workflows': [
+                { name: 'deploy.yml', type: 'file', size: '640 B', commit: 'ci: configure auto deployment', time: 'last week', content: 'name: Deploy\non: push\njobs:\n  build:\n    runs-on: ubuntu-latest' }
+            ],
+            '/public': [
+                { name: 'favicon.ico', type: 'file', size: '4.2 KB', commit: 'assets: initial icon', time: '2 weeks ago', content: '[Binary Icon File Data]' }
+            ]
+        };
+
+        // Issues Mock Data
+        const issuesData = [
+            { id: 104, title: '다크 모드 적용 시 일부분 테두리 색상 미적용 문제', author: 'developer100', comments: 3, time: '3 hours ago' },
+            { id: 103, title: '모바일 뷰 레이아웃 반응형 개선 요청', author: 'ui_designer', comments: 8, time: '1 day ago' },
+            { id: 102, title: 'ZIP 다운로드 버튼 클릭 이벤트 콜백 추가', author: 'coder_kim', comments: 1, time: '2 days ago' },
+            { id: 101, title: 'Primer 디자인 규칙에 맞춘 폰트 두께 조정', author: 'octocat', comments: 0, time: '4 days ago' }
+        ];
+
+        let currentPath = '/';
+        let starred = true;
+        let starCountNum = 1402;
+
+        // Render File Tree Function
+        function renderFileTree(path) {
+            currentPath = path;
+            const body = document.getElementById('file-tree-body');
+            const files = fileSystem[path] || [];
+
+            // Update Breadcrumb
+            const sub = document.getElementById('breadcrumb-sub');
+            if (path === '/') {
+                sub.innerHTML = '';
+            } else {
+                const parts = path.split('/').filter(Boolean);
+                let currentBuildPath = '';
+                sub.innerHTML = parts.map(p => {
+                    currentBuildPath += '/' + p;
+                    const pathCopy = currentBuildPath;
+                    return ` / <button onclick="navigateToPath('${pathCopy}')" class="hover:underline font-medium">${p}</button>`;
+                }).join('');
+            }
+
+            body.innerHTML = files.map(item => {
+                const isDir = item.type === 'dir';
+                const icon = isDir ? 'folder' : 'file-text';
+                const iconColor = isDir ? 'text-blue-400 fill-blue-400/20' : 'text-gh-lightMuted dark:text-gh-muted';
+
+                return `
+                    <div class="flex items-center justify-between p-3 hover:bg-gh-lightCard dark:hover:bg-gh-card/70 transition-colors">
+                        <div class="flex items-center gap-2.5 min-w-0 pr-4">
+                            <i data-lucide="${icon}" class="w-4 h-4 ${iconColor} flex-shrink-0"></i>
+                            <button onclick="${isDir ? `navigateToPath('${path === '/' ? '' : path}/${item.name}')` : `openFileViewer('${item.name}')`}" 
+                                    class="hover:text-gh-blue hover:underline truncate font-medium text-left">
+                                ${item.name}
+                            </button>
+                        </div>
+                        <div class="hidden sm:block text-gh-lightMuted dark:text-gh-muted truncate max-w-xs text-left">
+                            ${item.commit}
+                        </div>
+                        <div class="text-gh-lightMuted dark:text-gh-muted text-right flex-shrink-0">
+                            ${item.time}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            lucide.createIcons();
+        }
+
+        // Navigate Folder
+        function navigateToPath(path) {
+            closeFileViewer();
+            renderFileTree(path);
+        }
+
+        // Open File Content Modal/Viewer
+        function openFileViewer(fileName) {
+            const files = fileSystem[currentPath] || [];
+            const file = files.find(f => f.name === fileName);
+            if (!file) return;
+
+            const viewer = document.getElementById('file-viewer');
+            const title = document.getElementById('file-viewer-title');
+            const size = document.getElementById('file-viewer-size');
+            const content = document.getElementById('file-viewer-content');
+
+            title.innerText = fileName;
+            size.innerText = file.size || '1 KB';
+            content.innerText = file.content || '// Empty file content';
+
+            document.getElementById('ai-explanation-box').classList.add('hidden');
+            viewer.classList.remove('hidden');
+            viewer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        function closeFileViewer() {
+            document.getElementById('file-viewer').classList.add('hidden');
+        }
+
+        // Toast Popup Trigger
+        function triggerToast(message) {
+            const toast = document.getElementById('toast');
+            const toastMsg = document.getElementById('toast-message');
+            toastMsg.innerText = message;
+
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            toast.classList.add('translate-y-0', 'opacity-100');
+
+            setTimeout(() => {
+                toast.classList.remove('translate-y-0', 'opacity-100');
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 3000);
+        }
+
+        // Clipboard Copy Helper
+        function copyToClipboard(text) {
+            const el = document.createElement('textarea');
+            el.value = text;
+            document.body.appendChild(el);
+            el.select();
+            document.execCommand('copy');
+            document.body.removeChild(el);
+            triggerToast('클립보드에 복사되었습니다!');
+        }
+
+        // Render Issues View
+        function renderIssues() {
+            const list = document.getElementById('issues-list');
+            list.innerHTML = issuesData.map(issue => `
+                <div class="p-3.5 hover:bg-gh-lightCard dark:hover:bg-gh-card/70 flex items-start justify-between">
+                    <div class="flex items-start gap-2.5">
+                        <i data-lucide="circle-dot" class="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0"></i>
+                        <div>
+                            <a href="#" class="font-bold text-sm hover:text-gh-blue">${issue.title}</a>
+                            <div class="text-xs text-gh-lightMuted dark:text-gh-muted mt-1">
+                                #${issue.id} opened ${issue.time} by <span class="hover:text-gh-blue cursor-pointer">${issue.author}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-1 text-gh-lightMuted dark:text-gh-muted text-xs">
+                        <i data-lucide="message-square" class="w-3.5 h-3.5"></i>
+                        <span>${issue.comments}</span>
+                    </div>
+                </div>
+            `).join('');
+            lucide.createIcons();
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+            renderFileTree('/');
+            renderIssues();
+
+            // Dark/Light Theme Switcher
+            const themeBtn = document.getElementById('theme-toggle');
+            themeBtn.addEventListener('click', () => {
+                const isDark = document.documentElement.classList.toggle('dark');
+                triggerToast(isDark ? '다크 모드로 전환되었습니다.' : '라이트 모드로 전환되었습니다.');
+            });
+
+            // Star Button Toggle
+            const starBtn = document.getElementById('btn-star');
+            starBtn.addEventListener('click', () => {
+                starred = !starred;
+                starCountNum += starred ? 1 : -1;
+                document.getElementById('star-count').innerText = starCountNum.toLocaleString();
+                
+                if (starred) {
+                    starBtn.classList.add('text-amber-500');
+                    starBtn.querySelector('i').classList.add('fill-amber-500');
+                    triggerToast('저장소를 Star 목록에 추가했습니다.');
+                } else {
+                    starBtn.classList.remove('text-amber-500');
+                    starBtn.querySelector('i').classList.remove('fill-amber-500');
+                    triggerToast('저장소 Star를 취소했습니다.');
+                }
+            });
+
+            // Code Download Popup Toggle
+            const codeBtn = document.getElementById('btn-code-menu');
+            const codePopup = document.getElementById('code-popup');
+            codeBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                codePopup.classList.toggle('hidden');
+            });
+
+            document.addEventListener('click', (e) => {
+                if (!codePopup.contains(e.target) && e.target !== codeBtn) {
+                    codePopup.classList.add('hidden');
+                }
+            });
+
+            // Tab Navigation Switching
+            const tabs = document.querySelectorAll('.nav-tab');
+            const tabViews = document.querySelectorAll('.tab-view');
+
+            tabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    const tabName = tab.getAttribute('data-tab');
+
+                    // Activate tab UI
+                    tabs.forEach(t => {
+                        t.classList.remove('border-orange-500', 'text-gh-lightText', 'dark:text-gh-text', 'font-semibold');
+                        t.classList.add('border-transparent', 'text-gh-lightMuted', 'dark:text-gh-muted');
+                    });
+                    tab.classList.add('border-orange-500', 'text-gh-lightText', 'dark:text-gh-text', 'font-semibold');
+                    tab.classList.remove('border-transparent', 'text-gh-lightMuted', 'dark:text-gh-muted');
+
+                    // Show content
+                    tabViews.forEach(v => v.classList.add('hidden'));
+
+                    if (tabName === 'code') {
+                        document.getElementById('tab-content-code').classList.remove('hidden');
+                    } else if (tabName === 'issues') {
+                        document.getElementById('tab-content-issues').classList.remove('hidden');
+                    } else if (tabName === 'pulls') {
+                        document.getElementById('tab-content-pulls').classList.remove('hidden');
+                    } else if (tabName === 'copilot') {
+                        document.getElementById('tab-content-copilot').classList.remove('hidden');
+                    } else {
+                        const generic = document.getElementById('tab-content-generic');
+                        document.getElementById('generic-tab-title').innerText = `${tabName.toUpperCase()} View`;
+                        generic.classList.remove('hidden');
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>
