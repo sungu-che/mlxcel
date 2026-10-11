@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """run.py — Google Colab(CPU)에서 Rust mlxcel 바이너리를 Python 래퍼로 구동해
-Granite 4.0 H 350M 8bit (mlx-community/Qwen3.5-0.8B-MLX-8bit 형식) 추론을 수행합니다.
+Granite 4.0 H 350M 8bit (mlx-community/granite-4.0-h-350m-8bit 형식) 추론을 수행합니다.
 
 Linux 검증본(colab/linux_cpu/run_granite.py)과 같은 흐름이며, Colab 에 맞게 바뀐 점:
   - CUDA 빌드 제거: `--features cuda` 없이 CPU 빌드 (Colab 에 GPU가 없어도 동작)
@@ -28,6 +28,20 @@ WORKDIR = os.environ.get("MLX_WORKDIR", "/content")                 # 작업 공
 DRIVE_ROOT = os.environ.get("DRIVE_ROOT", "/content/drive/MyDrive/colab")
 MODEL_DIR = os.environ.get("MODEL_DIR")                              # 지정 시 최우선
 MODEL_NAME = os.environ.get("MODEL_NAME", "Qwen3.5-0.8B-MLX-8bit")  # 드라이브 MyDrive/colab/ 아래 폴더 이름
+MODEL_REPO = os.environ.get("MODEL_REPO", "mlx-community/Qwen3.5-0.8B-MLX-8bit")  # Hugging Face 저장소 (다르면 수정)
+MODEL_FILES = [
+    "chat_template.jinja",
+    "config.json",
+    "model.safetensors",
+    "model.safetensors.index.json",
+    "preprocessor_config.json",
+    "processor_config.json",
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "video_preprocessor_config.json",
+    "vocab.json",
+]
+REQUIRED_FILES = ["config.json", "model.safetensors", "tokenizer.json"]  # 이 파일들이 있으면 완성된 모델로 봅니다
 SYSTEM_PROMPT = os.environ.get("SYSTEM_PROMPT", "세차장이 50m 떨어져있다")   # system 메시지
 PROMPT = os.environ.get("PROMPT", "걸어가? 운전해?")                       # user 메시지
 MAX_TOKENS = int(os.environ.get("MAX_TOKENS", "200"))
@@ -92,18 +106,55 @@ def mount_drive_if_needed() -> None:
 # ---------------------------------------------------------------------------
 # 2) 모델 위치 찾기
 # ---------------------------------------------------------------------------
+def is_complete_model(path: str) -> bool:
+    return all(os.path.isfile(os.path.join(path, f)) for f in REQUIRED_FILES)
+
+
+def download_from_hub(target: str) -> None:
+    """Hugging Face 에서 MODEL_FILES 를 target 폴더로 받습니다."""
+    try:
+        from huggingface_hub import hf_hub_download
+    except ImportError:
+        run(f"{sys.executable} -m pip install -q huggingface_hub")
+        from huggingface_hub import hf_hub_download
+    log(f"[download] {MODEL_REPO} ({len(MODEL_FILES)}개 파일)")
+    os.makedirs(target, exist_ok=True)
+    for i, name in enumerate(MODEL_FILES, 1):
+        log(f"[download] ({i}/{len(MODEL_FILES)}) {name}")
+        hf_hub_download(repo_id=MODEL_REPO, filename=name, local_dir=target)
+
+
 def resolve_model() -> str:
-    candidates = [MODEL_DIR] if MODEL_DIR else [
-        os.path.join(DRIVE_ROOT, MODEL_NAME),                 # 드라이브 MyDrive/colab/<MODEL_NAME>
-        os.path.join(DRIVE_ROOT, "Qwen3.5-0.8B-MLX-8bit"),  # 예비
-        os.path.join(DRIVE_ROOT, "model"),                    # 예비
-        os.path.join(WORKDIR, "model"),                       # 예비: 노트북에 직접 업로드한 경우
-    ]
-    for path in candidates:
-        if path and os.path.isfile(os.path.join(path, "config.json")):
-            log(f"[model] {path}")
-            return path
-    raise FileNotFoundError(f"모델을 찾지 못했습니다(config.json 없음). 확인 경로: {candidates}")
+    """순서: MODEL_DIR 지정 > 드라이브(또는 /content/model)에 있는 모델 > Hugging Face 받기 후 드라이브 저장."""
+    if MODEL_DIR:
+        if is_complete_model(MODEL_DIR):
+            log(f"[model] {MODEL_DIR}")
+            return MODEL_DIR
+        raise FileNotFoundError(f"MODEL_DIR 에 모델 파일이 없습니다: {MODEL_DIR}")
+
+    # 1) 드라이브 모델명 폴더 확인
+    drive_dest = os.path.join(DRIVE_ROOT, MODEL_NAME)
+    if is_complete_model(drive_dest):
+        log(f"[model] 드라이브에 있는 모델을 사용합니다: {drive_dest}")
+        return drive_dest
+    local_copy = os.path.join(WORKDIR, "model")
+    if is_complete_model(local_copy):
+        log(f"[model] 업로드된 모델을 사용합니다: {local_copy}")
+        return local_copy
+
+    # 2) 허깅페이스에서 임시 폴더로 받기
+    tmp = os.path.join(WORKDIR, "hf_download", MODEL_NAME)
+    if not is_complete_model(tmp):
+        download_from_hub(tmp)
+
+    # 3) 받은 파일을 드라이브 모델명 폴더에 저장 (드라이브 미마운트면 WORKDIR/models 에 저장)
+    dest = drive_dest if DRIVE_ROOT.startswith("/content/drive") else os.path.join(WORKDIR, "models", MODEL_NAME)
+    log(f"[save] {tmp} -> {dest}")
+    shutil.copytree(tmp, dest, dirs_exist_ok=True)
+    if not is_complete_model(dest):
+        raise RuntimeError(f"저장 후 모델 파일이 완성되지 않았습니다: {dest}")
+    log(f"[model] {dest}")
+    return dest
 
 
 # ---------------------------------------------------------------------------
