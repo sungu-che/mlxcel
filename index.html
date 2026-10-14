@@ -449,10 +449,24 @@
 
 
             #header #toggle-nav{display: block; right: 1.5rem;}
+            #header{ box-sizing: border-box; left: 1rem; right: 1rem; top: 1rem; padding: 1.2rem 1.2rem; }
+            #header .area{ width: 100%; max-width: 100%; box-sizing: border-box; }
+            #nav{ left: 0; right: 0; max-width: 100%; box-sizing: border-box; overflow: hidden; }
+            #nav .dp1 ul{ display: flex; flex-wrap: wrap; justify-content: center; gap: 0.6rem 1.4rem; margin: 0; padding: 0; }
+            #nav .dp1 ul li{ margin: 0; }
+            html, body{ overflow-x: hidden; max-width: 100%; }
+            #header.sticky{ box-sizing: border-box; }
             #header.sticky #toggle-nav{right: 2rem;}
 
             #nav,
             #header.on #nav{opacity: 0; top: 1rem; z-index: -1; transition-delay: 0s;}
+
+            /* 모바일 메뉴 열림 상태 (햄버거 버튼으로 토글) */
+            #header.nav-open #nav,
+            #header.on.nav-open #nav{opacity: 1; z-index: 3; transition-delay: 0s; pointer-events: auto;}
+            #header.nav-open #nav{position: absolute; top: 3.6rem; left: 0; right: 0; margin: 0; background: rgba(0, 41, 38, 0.96); border-radius: 1rem; padding: 1.2rem 0; z-index: 9; box-shadow: 0 8px 24px rgba(0,0,0,0.25);}
+            #header.nav-open #nav a span,
+            #header.nav-open.sticky #nav a span{color: #fff !important;}
 
 
 
@@ -2909,5 +2923,24 @@ const renderReadme = (htmlContent, lang) => {
     </script>
 
 
+
+    <script>
+    (function () {
+        var btn = document.getElementById('toggle-nav');
+        var header = document.getElementById('header');
+        if (!btn || !header) return;
+        function setOpen(open) { header.classList.toggle('nav-open', open); }
+        btn.addEventListener('click', function (e) {
+            e.preventDefault();
+            setOpen(!header.classList.contains('nav-open'));
+        });
+        document.querySelectorAll('#nav a').forEach(function (a) {
+            a.addEventListener('click', function () { setOpen(false); });
+        });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') setOpen(false);
+        });
+    })();
+    </script>
 </body>
 </html>
