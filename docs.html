@@ -12,13 +12,14 @@
 
     <style>
         :root{
+            color-scheme: dark;
             --bg: #090c0f;
             --bg-raised: #0f1417;
             --bg-active: #171b1d;
             --text: #ffffff;
-            --text-2: #ced3d5;
-            --muted: #9ea3a5;
-            --faint: #707577;
+            --text-2: #ffffff;
+            --muted: #c3c9cb;
+            --faint: #9ca3a6;
             --line: rgba(255,255,255,0.09);
             --accent: #0ea5e9;
             --accent-soft: #38bdf8;
@@ -33,6 +34,8 @@
             font-family: var(--font); font-size: 15px; line-height: 1.65;
             -webkit-font-smoothing: antialiased;
         }
+        ::selection{background: var(--accent); color: #ffffff;}
+        .md, .md p, .md li, .md td, .md blockquote{color: var(--text-2);}
         a{color: var(--accent-soft); text-decoration: none;}
         a:hover{text-decoration: underline;}
         button{font: inherit; color: inherit; background: none; border: 0; cursor: pointer;}
