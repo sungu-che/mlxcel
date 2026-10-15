@@ -1,0 +1,154 @@
+{
+  "files": [
+    {
+      "name": "CONTINUOUS_BATCHING.md",
+      "slug": "CONTINUOUS_BATCHING",
+      "titleKo": "Continuous batching과 disaggregated serving"
+    },
+    {
+      "name": "README.md",
+      "slug": "README",
+      "titleKo": "mlxcel 문서 구성"
+    },
+    {
+      "name": "adding-models.md",
+      "slug": "adding-models",
+      "titleKo": "모델 추가 가이드"
+    },
+    {
+      "name": "architecture.md",
+      "slug": "architecture",
+      "titleKo": "아키텍처 개요"
+    },
+    {
+      "name": "audio-api.md",
+      "slug": "audio-api",
+      "titleKo": "OpenAI 오디오 API (`/v1/audio`)"
+    },
+    {
+      "name": "audio-preprocessing.md",
+      "slug": "audio-preprocessing",
+      "titleKo": "오디오 입력 전처리"
+    },
+    {
+      "name": "benchmarks.md",
+      "slug": "benchmarks",
+      "titleKo": "벤치마크"
+    },
+    {
+      "name": "block-diffusion.md",
+      "slug": "block-diffusion",
+      "titleKo": "Block-diffusion 생성 (DiffusionGemma)"
+    },
+    {
+      "name": "cascade-attention.md",
+      "slug": "cascade-attention",
+      "titleKo": "Cascade attention (공유 프롬프트 접두사)"
+    },
+    {
+      "name": "code-guidelines.md",
+      "slug": "code-guidelines",
+      "titleKo": "코드 수정 가이드라인"
+    },
+    {
+      "name": "distributed.md",
+      "slug": "distributed",
+      "titleKo": "분산 추론"
+    },
+    {
+      "name": "embeddings.md",
+      "slug": "embeddings",
+      "titleKo": "임베딩 및 리랭킹 API와 CLI"
+    },
+    {
+      "name": "environment-variables.md",
+      "slug": "environment-variables",
+      "titleKo": "환경 변수"
+    },
+    {
+      "name": "f32-attention-widen-audit.md",
+      "slug": "f32-attention-widen-audit",
+      "titleKo": "f32 attention widen 감사"
+    },
+    {
+      "name": "f32-promotion-audit.md",
+      "slug": "f32-promotion-audit",
+      "titleKo": "f32 승격 감사"
+    },
+    {
+      "name": "installation.md",
+      "slug": "installation",
+      "titleKo": "설치"
+    },
+    {
+      "name": "llama-server-compat.md",
+      "slug": "llama-server-compat",
+      "titleKo": "llama-server 호환성 경계 (b10621)"
+    },
+    {
+      "name": "mla-absorbed-decode.md",
+      "slug": "mla-absorbed-decode",
+      "titleKo": "MLA 행렬 흡수(matrix-absorbed) decode"
+    },
+    {
+      "name": "model-catalog.md",
+      "slug": "model-catalog",
+      "titleKo": "모델 카탈로그"
+    },
+    {
+      "name": "mtp-policy-api.md",
+      "slug": "mtp-policy-api",
+      "titleKo": "적응형 MTP 정책 API (`/v1/internal/mtp-policy`)"
+    },
+    {
+      "name": "nemotron-voicechat.md",
+      "slug": "nemotron-voicechat",
+      "titleKo": "Nemotron VoiceChat"
+    },
+    {
+      "name": "python-client.md",
+      "slug": "python-client",
+      "titleKo": "Python 클라이언트"
+    },
+    {
+      "name": "request-memory-admission.md",
+      "slug": "request-memory-admission",
+      "titleKo": "Nemotron-H 요청 메모리 admission"
+    },
+    {
+      "name": "responses-api.md",
+      "slug": "responses-api",
+      "titleKo": "OpenAI Responses API 부분 지원 (`/v1/responses`)"
+    },
+    {
+      "name": "server-features.md",
+      "slug": "server-features",
+      "titleKo": "서버 기능 및 배포 가이드"
+    },
+    {
+      "name": "sparse-paged-decode.md",
+      "slug": "sparse-paged-decode",
+      "titleKo": "페이지 간접 참조를 통한 fused sparse decode"
+    },
+    {
+      "name": "speculative-acceptance.md",
+      "slug": "speculative-acceptance",
+      "titleKo": "Speculative decoding 수용 규칙"
+    },
+    {
+      "name": "supported-models.md",
+      "slug": "supported-models",
+      "titleKo": "지원 모델"
+    },
+    {
+      "name": "turbo-kv-cache.md",
+      "slug": "turbo-kv-cache",
+      "titleKo": "TurboQuant KV cache"
+    },
+    {
+      "name": "webui-integration-matrix.md",
+      "slug": "webui-integration-matrix",
+      "titleKo": "WebUI 통합 요구사항 매트릭스 (#1848)"
+    }
+  ]
+}

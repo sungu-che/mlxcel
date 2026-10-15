@@ -71,6 +71,18 @@
             color: var(--faint); font-size: 0.85rem;
         }
         .search-btn:hover{border-color: rgba(255,255,255,0.18);}
+        .lang-btn{
+            height: 34px; min-width: 40px; padding: 0 0.6rem;
+            border: 1px solid var(--line); border-radius: 8px; background: var(--bg-raised);
+            color: var(--text); font-size: 0.8rem; font-weight: 500; font-family: var(--mono);
+        }
+        .lang-btn:hover{border-color: rgba(255,255,255,0.18);}
+        .lang-btn:focus-visible, #search-open:focus-visible, #menu-btn:focus-visible{outline: 2px solid var(--accent-soft); outline-offset: 2px;}
+        #lang-note{
+            font-size: 0.85rem; color: var(--text-2); background: var(--bg-raised);
+            border: 1px solid var(--line); border-radius: 8px; padding: 0.6rem 0.8rem; margin-bottom: 1.5rem;
+        }
+        #lang-note[hidden]{display: none;}
         .search-btn kbd{
             margin-left: auto; font-family: var(--mono); font-size: 0.72rem;
             border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; color: var(--faint);
@@ -200,21 +212,22 @@
                 <span class="brand-sub">/ Docs</span>
             </a>
             <nav id="topnav" aria-label="Main">
-                <a href="https://github.com/lablup/mlxcel" target="_blank" rel="noopener">GitHub</a>
-                <a href="docs.html" aria-current="page">Docs</a>
+                <a id="t-nav-github" href="https://github.com/lablup/mlxcel" target="_blank" rel="noopener">GitHub</a>
+                <a id="t-nav-docs" href="docs.html" aria-current="page">Docs</a>
             </nav>
             <span class="spacer"></span>
             <button class="search-btn" id="search-open" aria-label="Search docs">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-                <span>Search docs</span>
+                <span id="t-search-label">Search docs</span>
                 <kbd>Ctrl K</kbd>
             </button>
+            <button class="lang-btn" id="lang-toggle" type="button">EN</button>
         </div>
     </header>
 
     <div class="layout">
         <aside id="sidebar">
-            <h2>Documentation</h2>
+            <h2 id="t-doc-heading">Documentation</h2>
             <input id="filter" type="search" placeholder="Filter pages…" aria-label="Filter pages">
             <ul id="doc-list"></ul>
         </aside>
@@ -222,12 +235,13 @@
         <main id="content">
             <div id="crumb"></div>
             <div id="meta"></div>
+            <div id="lang-note" hidden></div>
             <div id="status">Loading…</div>
             <article id="doc" class="md" hidden></article>
         </main>
 
         <aside id="toc" aria-label="On this page">
-            <h2>On this page</h2>
+            <h2 id="t-toc-heading">On this page</h2>
             <ul id="toc-list"></ul>
         </aside>
     </div>
@@ -260,9 +274,92 @@
         var dialog = $('search-dialog');
         var searchInput = $('search-input');
         var searchResults = $('search-results');
+        var langBtn = $('lang-toggle');
+        var langNote = $('lang-note');
 
         menuBtn.addEventListener('click', function () { sidebar.classList.toggle('open'); });
 
+        // ---------- i18n ----------
+        var STRINGS = {
+            ko: {
+                docHeading: '문서', tocHeading: '이 페이지', navGithub: 'GitHub', navDocs: '문서',
+                searchLabel: '문서 검색', searchPlaceholder: '문서 검색…', filterPlaceholder: '페이지 필터…',
+                loading: '불러오는 중…', noMatch: '일치하는 페이지가 없습니다', notFound: '문서를 찾을 수 없습니다: ',
+                loadFail: '문서를 불러오지 못했습니다: ', indexFail: '문서 목록을 불러오지 못했습니다: ',
+                empty: '아직 동기화된 문서가 없습니다.', syncedFrom: '원본', commit: '커밋', updated: '업데이트',
+                fallback: '이 문서는 아직 한국어로 번역되지 않아 영문 원문을 표시합니다.',
+                toggleLabel: 'Switch to English', langBtn: 'EN'
+            },
+            en: {
+                docHeading: 'Documentation', tocHeading: 'On this page', navGithub: 'GitHub', navDocs: 'Docs',
+                searchLabel: 'Search docs', searchPlaceholder: 'Search documentation…', filterPlaceholder: 'Filter pages…',
+                loading: 'Loading…', noMatch: 'No matching pages', notFound: 'Document not found: ',
+                loadFail: 'Failed to load document: ', indexFail: 'Could not load the docs index: ',
+                empty: 'No documents have been synced yet.', syncedFrom: 'Synced from', commit: 'commit', updated: 'updated',
+                fallback: '',
+                toggleLabel: '한국어로 보기', langBtn: 'KO'
+            }
+        };
+        var LANG_KEY = 'docs-lang';
+        var lang = 'ko';
+        try {
+            var saved = localStorage.getItem(LANG_KEY);
+            if (saved === 'en' || saved === 'ko') lang = saved;
+        } catch (e) { /* storage unavailable: keep default */ }
+
+        function t(key) { return STRINGS[lang][key]; }
+
+        var koTitles = {};   // slug -> Korean title (from docs-content/ko/index.json)
+        var koNames = {};    // slug -> true when a Korean translation exists
+
+        // Title in the current language, falling back to the English title.
+        function titleOf(f) {
+            return (lang === 'ko' && koTitles[f.slug]) || f.title;
+        }
+
+        function docPath(f) {
+            return CONTENT_DIR + (lang === 'ko' && koNames[f.slug] ? 'ko/' : '') + f.name;
+        }
+
+        function applyStaticStrings() {
+            document.documentElement.lang = lang;
+            $('t-doc-heading').textContent = t('docHeading');
+            $('t-toc-heading').textContent = t('tocHeading');
+            $('t-nav-github').textContent = t('navGithub');
+            $('t-nav-docs').textContent = t('navDocs');
+            $('t-search-label').textContent = t('searchLabel');
+            filter.placeholder = t('filterPlaceholder');
+            searchInput.placeholder = t('searchPlaceholder');
+            langBtn.textContent = t('langBtn');
+            langBtn.setAttribute('aria-label', t('toggleLabel'));
+            if (!article.innerHTML) status.textContent = t('loading');
+        }
+
+        function setLang(next) {
+            lang = next;
+            try { localStorage.setItem(LANG_KEY, next); } catch (e) { /* ignore */ }
+            applyStaticStrings();
+            renderMeta(indexData);
+            renderSidebar(loadedSlug);
+            renderSearch();
+            if (loadedSlug) {
+                // Re-render the current page in the new language.
+                var slug = loadedSlug;
+                loadedSlug = null;
+                var anchor = location.hash.split('/').slice(1).join('/');
+                setStatus(t('loading'));
+                article.hidden = true;
+                loadDoc(slug).then(function () {
+                    if (anchor) scrollToAnchor(anchor);
+                }).catch(function (err) {
+                    setStatus(t('loadFail') + err.message, true);
+                });
+            }
+        }
+
+        langBtn.addEventListener('click', function () { setLang(lang === 'ko' ? 'en' : 'ko'); });
+
+        var indexData = {};
         var files = [];
         var bySlug = {};
         var byName = {};
@@ -361,8 +458,8 @@
                 var li = document.createElement('li');
                 var a = document.createElement('a');
                 a.href = '#' + f.slug;
-                a.textContent = f.title;
-                a.dataset.title = f.title.toLowerCase();
+                a.textContent = titleOf(f);
+                a.dataset.title = (titleOf(f) + ' ' + f.title + ' ' + f.slug).toLowerCase();
                 if (f.slug === currentSlug) a.setAttribute('aria-current', 'page');
                 li.appendChild(a);
                 list.appendChild(li);
@@ -387,7 +484,8 @@
 
         function loadDoc(slug) {
             var f = bySlug[slug];
-            return fetch(CONTENT_DIR + f.name, { cache: 'no-cache' })
+            var translated = lang === 'ko' && !!koNames[slug];
+            return fetch(docPath(f), { cache: 'no-cache' })
                 .then(function (res) {
                     if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
                     return res.text();
@@ -398,8 +496,14 @@
                     article.hidden = false;
                     setStatus('');
                     loadedSlug = slug;
-                    crumb.textContent = 'Docs / ' + f.title;
-                    document.title = f.title + ' · mlxcel docs';
+                    crumb.textContent = (lang === 'ko' ? '문서 / ' : 'Docs / ') + titleOf(f);
+                    document.title = titleOf(f) + ' · mlxcel docs';
+                    if (!translated && lang === 'ko' && t('fallback')) {
+                        langNote.textContent = t('fallback');
+                        langNote.hidden = false;
+                    } else {
+                        langNote.hidden = true;
+                    }
                     renderSidebar(slug);
                     buildToc();
                 });
@@ -412,7 +516,7 @@
             var anchor = parts.slice(1).join('/');
 
             if (!slug || !bySlug[slug]) {
-                setStatus('Document not found: ' + slug, true);
+                setStatus(t('notFound') + slug, true);
                 article.hidden = true;
                 return;
             }
@@ -422,12 +526,12 @@
                 scrollToAnchor(anchor);
                 return;
             }
-            setStatus('Loading…');
+            setStatus(t('loading'));
             article.hidden = true;
             loadDoc(slug).then(function () {
                 scrollToAnchor(anchor);
             }).catch(function (err) {
-                setStatus('Failed to load document: ' + err.message, true);
+                setStatus(t('loadFail') + err.message, true);
             });
         }
 
@@ -435,9 +539,9 @@
             var src = index.source || {};
             var parts = [];
             var dir = src.dir || 'docs';
-            if (src.repo) parts.push('Synced from <a href="https://github.com/' + src.repo + '/tree/' + (src.ref || 'main') + '/' + dir + '" target="_blank" rel="noopener">' + src.repo + '/' + dir + '</a>');
-            if (src.commit) parts.push('commit ' + src.commit.slice(0, 7));
-            if (src.commitDate) parts.push('updated ' + new Date(src.commitDate).toISOString().slice(0, 10));
+            if (src.repo) parts.push(t('syncedFrom') + ' <a href="https://github.com/' + src.repo + '/tree/' + (src.ref || 'main') + '/' + dir + '" target="_blank" rel="noopener">' + src.repo + '/' + dir + '</a>');
+            if (src.commit) parts.push(t('commit') + ' ' + src.commit.slice(0, 7));
+            if (src.commitDate) parts.push(t('updated') + ' ' + new Date(src.commitDate).toISOString().slice(0, 10));
             meta.innerHTML = parts.join(' · ');
         }
 
@@ -454,14 +558,14 @@
         function renderSearch() {
             var q = searchInput.value.trim().toLowerCase();
             var hits = files.filter(function (f) {
-                return !q || f.title.toLowerCase().indexOf(q) !== -1 || f.slug.toLowerCase().indexOf(q) !== -1;
+                return !q || (titleOf(f) + ' ' + f.title + ' ' + f.slug).toLowerCase().indexOf(q) !== -1;
             });
             selIndex = 0;
             searchResults.innerHTML = '';
             if (!hits.length) {
                 var none = document.createElement('li');
                 none.className = 'none';
-                none.textContent = 'No matching pages';
+                none.textContent = t('noMatch');
                 searchResults.appendChild(none);
                 return;
             }
@@ -469,7 +573,7 @@
                 var li = document.createElement('li');
                 var a = document.createElement('a');
                 a.href = '#' + f.slug;
-                a.textContent = f.title;
+                a.textContent = titleOf(f);
                 if (i === 0) a.className = 'sel';
                 a.addEventListener('click', closeSearch);
                 li.appendChild(a);
@@ -503,20 +607,37 @@
             }
         });
 
+        applyStaticStrings();
+
+        // Korean titles and availability; a missing file just means "no translations yet".
+        var koIndexReady = fetch(CONTENT_DIR + 'ko/index.json', { cache: 'no-cache' })
+            .then(function (res) { return res.ok ? res.json() : { files: [] }; })
+            .catch(function () { return { files: [] }; })
+            .then(function (ko) {
+                (ko.files || []).forEach(function (k) {
+                    koNames[k.slug] = true;
+                    koTitles[k.slug] = k.titleKo;
+                });
+            });
+
         fetch(CONTENT_DIR + 'index.json', { cache: 'no-cache' })
             .then(function (res) {
                 if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
                 return res.json();
             })
             .then(function (index) {
+                indexData = index;
                 files = index.files || [];
                 files.forEach(function (f) {
                     bySlug[f.slug] = f;
                     byName[f.name] = f;
                 });
+                return koIndexReady.then(function () { return index; });
+            })
+            .then(function (index) {
                 renderMeta(index);
                 if (!files.length) {
-                    setStatus('No documents have been synced yet.');
+                    setStatus(t('empty'));
                     return;
                 }
                 renderSidebar(null);
@@ -524,7 +645,7 @@
                 route();
             })
             .catch(function (err) {
-                setStatus('Could not load the docs index: ' + err.message, true);
+                setStatus(t('indexFail') + err.message, true);
             });
     })();
     </script>
