@@ -1,0 +1,107 @@
+{
+  "source": {
+    "lang": "en",
+    "title": "Backend.AI Blog",
+    "feed_url": "https://www.backend.ai/en/rss/blog-feed.json",
+    "home_page_url": "https://www.backend.ai/blog"
+  },
+  "syncedAt": "2026-10-15T13:32:55.899Z",
+  "items": [
+    {
+      "id": "2026-10-demo-day-care-junction-x-ai-go",
+      "title": "How Demo Day Care Visualized Benchmark Results with AI:GO",
+      "summary": "At [JunctionX Korea 2026](http...",
+      "url": "https://www.backend.ai/blog/customer-story/2026-10-demo-day-care-junction-x-ai-go",
+      "image": "https://cdn.lablup.com/user_story_junction_en_c5680005ab.jpg",
+      "date_modified": "2026-10-02T00:00:00.000Z"
+    },
+    {
+      "id": "2026-09-from-datacenters-to-tokenfactories",
+      "title": "The Age of Metered Intelligence: From Data Centers to Token Factories",
+      "summary": "For a long time, we have relie...",
+      "url": "https://www.backend.ai/blog/engineering/2026-09-from-datacenters-to-tokenfactories",
+      "image": "https://cdn.lablup.com/token_factory_en_v3_2x_b7395772bc.png",
+      "date_modified": "2026-09-28T00:00:00.000Z"
+    },
+    {
+      "id": "2026-08-building-a-unified-ai-accelerator-testbed",
+      "title": "Building a Unified AI Accelerator Testbed on OpenStack and Public Cloud",
+      "summary": "> This article is adapted from...",
+      "url": "https://www.backend.ai/blog/engineering/2026-08-building-a-unified-ai-accelerator-testbed",
+      "image": "https://cdn.lablup.com/openstack_en_9331737291.jpg",
+      "date_modified": "2026-09-23T00:00:00.000Z"
+    },
+    {
+      "id": "2026-08-introducing-ai-go",
+      "title": "Introducing AI:GO: Personal Agentic AI Platform",
+      "summary": "Lablup has released AI\\:GO, a ...",
+      "url": "https://www.backend.ai/blog/engineering/2026-08-introducing-ai-go",
+      "image": "https://cdn.lablup.com/aigo_en_d9fbafcfea.jpg",
+      "date_modified": "2026-09-11T00:00:00.000Z"
+    },
+    {
+      "id": "nota-ai-backend-ai-fasttrack-solar-open-2",
+      "title": "How Nota AI Efficiently Optimized and Compressed Solar Open 2 with Backend.AI FastTrack 3",
+      "summary": "The Sovereign AI Foundation Mo...",
+      "url": "https://www.backend.ai/blog/customer-story/nota-ai-backend-ai-fasttrack-solar-open-2",
+      "image": "https://cdn.lablup.com/Nota_AIFM_Interview_en_269a3bda6b.jpg",
+      "date_modified": "2026-07-31T00:00:00.000Z"
+    },
+    {
+      "id": "2026-07-backend-ai-rngd-performance-whitepaper-release",
+      "title": "Lablup - FuriosaAI RNGD Whitepaper Released",
+      "summary": "Lablup and FuriosaAI have publ...",
+      "url": "https://www.backend.ai/blog/news/2026-07-backend-ai-rngd-performance-whitepaper-release",
+      "image": "https://cdn.lablup.com/RNGD_Whitepaper_release_en_cecb67abbe.jpg",
+      "date_modified": "2026-07-29T00:00:00.000Z"
+    },
+    {
+      "id": "2026-07-serving-solar-open-2-on-dgx-spark",
+      "title": "Serving Solar Open 2 with Two DGX Spark Systems",
+      "summary": "Two days after Upstage release...",
+      "url": "https://www.backend.ai/blog/engineering/2026-07-serving-solar-open-2-on-dgx-spark",
+      "image": "https://cdn.lablup.com/Serving_Solar_Open_2_with_Two_DGX_Spark_Systems_en_f8de3b614e.jpg",
+      "date_modified": "2026-07-24T00:00:00.000Z"
+    },
+    {
+      "id": "2026-06-open-korean-corpora",
+      "title": "Is Korean really a low-resource language?",
+      "summary": "Imagine a researcher who just ...",
+      "url": "https://www.backend.ai/blog/engineering/2026-06-open-korean-corpora",
+      "image": "https://cdn.lablup.com/korean_language_data_en_51b7adfffd.jpg",
+      "date_modified": "2026-07-01T00:00:00.000Z"
+    },
+    {
+      "id": "ml-researcher-leveraged-skku-supercomputing-center",
+      "title": "Let researchers focus on research with Backend.AI",
+      "summary": "Eunseong Choi, a researcher in...",
+      "url": "https://www.backend.ai/blog/customer-story/ml-researcher-leveraged-skku-supercomputing-center",
+      "image": "https://cdn.lablup.com/user_story_skku_researcher_en_v2_45147da726.jpg",
+      "date_modified": "2026-06-25T00:00:00.000Z"
+    },
+    {
+      "id": "2026-06-installing-backend-ai-on-nvidia-dgx-spark",
+      "title": "Backend.AI on DGX Spark: Open source installation guide",
+      "summary": "> This guide walks you through...",
+      "url": "https://www.backend.ai/blog/engineering/2026-06-installing-backend-ai-on-nvidia-dgx-spark",
+      "image": "https://cdn.lablup.com/backend_ai_spark_en_86377f6eaf.jpg",
+      "date_modified": "2026-06-22T00:00:00.000Z"
+    },
+    {
+      "id": "2026-06-heterogeneous-gpu-operation",
+      "title": "The era of diverse AI accelerators: Backend.AI's heterogeneous GPU operation strategy",
+      "summary": "When purchasing GPUs, selectin...",
+      "url": "https://www.backend.ai/blog/engineering/2026-06-heterogeneous-gpu-operation",
+      "image": "https://cdn.lablup.com/heterogeneous_gpus_en_ff30b8eba4.jpg",
+      "date_modified": "2026-06-19T00:00:00.000Z"
+    },
+    {
+      "id": "2026-06-vlm-overreaction-visual-emergency",
+      "title": "VLM Safety Failures: Why safe scenes get flagged as dangerous",
+      "summary": "An urgent fire report comes in...",
+      "url": "https://www.backend.ai/blog/engineering/2026-06-vlm-overreaction-visual-emergency",
+      "image": "https://cdn.lablup.com/vision_language_model_en_555ad575ce.jpg",
+      "date_modified": "2026-06-18T00:00:00.000Z"
+    }
+  ]
+}
