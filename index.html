@@ -1834,10 +1834,27 @@ const renderReadme = (htmlContent, lang) => {
                     var lang = document.body.classList.contains('en') ? 'en' : 'ko';
                     try {
                         // GitHub Actions가 매일 동기화하는 data/blog-feed.json을 같은 도메인에서 불러옴
-                        fetch('data/blog-feed-' + lang + '.json', { cache: 'no-cache' })
-                            .then(function (res) {
+                        // Vercel 프록시 주소 (예: https://<프로젝트>.vercel.app/api/blog-feed).
+                        // 비워 두면 레포의 data/blog-feed-<lang>.json을 사용합니다.
+                        var BLOG_FEED_API = '';
+
+                        function loadFeed(url) {
+                            return fetch(url, { cache: 'no-cache' }).then(function (res) {
                                 if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
                                 return res.json();
+                            });
+                        }
+
+                        var primary = BLOG_FEED_API
+                            ? loadFeed(BLOG_FEED_API + '?lang=' + lang)
+                            : loadFeed('data/blog-feed-' + lang + '.json');
+
+                        primary
+                            .catch(function (err) {
+                                if (!BLOG_FEED_API) throw err;
+                                // 프록시가 실패하면 레포의 정적 파일로 대체
+                                console.error('Blog proxy failed, using static feed:', err);
+                                return loadFeed('data/blog-feed-' + lang + '.json');
                             })
                             .then(function (data) { renderBlogCards(data.items || [], lang); })
                             .catch(function (err) { console.error('Failed to load blog feed:', err); });
