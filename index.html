@@ -532,6 +532,25 @@
             #header.sticky #lang-toggle { right: 4.5rem; }
         }
 
+
+        /* Unofficial-site notice (bottom bar, dismissible) */
+        #unofficial-notice{
+            position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+            display: flex; align-items: center; justify-content: center; gap: 1rem; flex-wrap: wrap;
+            padding: 0.7rem 3.5rem 0.7rem 1rem; background: rgba(0, 0, 0, 0.88); color: #fff;
+            font-family: "Noto Sans KR", sans-serif; font-size: 0.85rem; line-height: 1.5;
+            box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.25);
+        }
+        #unofficial-notice[hidden]{display: none;}
+        #unofficial-notice p{margin: 0; text-align: center; color: #fff;}
+        #unofficial-notice-close{
+            position: absolute; right: 0.75rem; top: 50%; transform: translateY(-50%);
+            width: 32px; height: 32px; border: 0; border-radius: 50%; background: transparent;
+            color: #fff; font-size: 1.2rem; line-height: 1; cursor: pointer;
+        }
+        #unofficial-notice-close:hover{background: rgba(255, 255, 255, 0.15);}
+        #unofficial-notice-close:focus-visible{outline: 2px solid #fff; outline-offset: 2px;}
+        @media (max-width: 600px){ #unofficial-notice{font-size: 0.78rem; padding-right: 3rem;} }
     </style>
 
 
@@ -1992,6 +2011,24 @@ const renderReadme = (htmlContent, lang) => {
         });
         document.addEventListener('keydown', function (e) {
             if (e.key === 'Escape') setOpen(false);
+        });
+    })();
+    </script>
+
+    <div id="unofficial-notice" role="region" aria-label="Unofficial site notice">
+        <p class="lang-ko">비공식 웹페이지입니다. 이 페이지는 lablup/mlxcel 프로젝트의 공식 사이트가 아니며, 프로젝트 문서와 블로그 내용을 참고해 만든 개인 페이지입니다.</p>
+        <p class="lang-en">Unofficial web page. This is not the official site of the lablup/mlxcel project. It is an independent page built from the project's public docs and blog.</p>
+        <button id="unofficial-notice-close" type="button" aria-label="닫기 / Close">&times;</button>
+    </div>
+    <script>
+    (function () {
+        var box = document.getElementById('unofficial-notice');
+        var btn = document.getElementById('unofficial-notice-close');
+        var KEY = 'unofficial-notice-dismissed';
+        try { if (localStorage.getItem(KEY) === '1') { box.hidden = true; return; } } catch (e) { /* storage unavailable */ }
+        btn.addEventListener('click', function () {
+            box.hidden = true;
+            try { localStorage.setItem(KEY, '1'); } catch (e) { /* ignore */ }
         });
     })();
     </script>
