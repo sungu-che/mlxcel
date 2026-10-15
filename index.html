@@ -556,7 +556,7 @@
                     <a href="/">lablup / mlxcel</a>
                 </h1>
 
-                <button id="lang-toggle" type="button" aria-label="Switch language to English">EN</button>
+                <button id="lang-toggle" type="button" aria-label="Current language: Korean. Switch to English">KO</button>
                 <button id="toggle-nav" type="button" aria-label="메뉴 열기 / Open menu" aria-expanded="false" aria-controls="nav">
                     <i aria-hidden="true"></i>
                     <i aria-hidden="true"></i>
@@ -2966,8 +2966,8 @@ const renderReadme = (htmlContent, lang) => {
                         if (body.classList.contains('ko')) {
                             body.classList.remove('ko');
                             body.classList.add('en');
-                            langToggleBtn.innerText = 'KO';
-                            langToggleBtn.setAttribute('aria-label', 'Switch language to Korean');
+                            langToggleBtn.innerText = 'EN';
+                            langToggleBtn.setAttribute('aria-label', 'Current language: English. Switch to Korean');
                             document.documentElement.lang = 'en';
                             
                             // README 영역 영어로 전환
@@ -2977,8 +2977,8 @@ const renderReadme = (htmlContent, lang) => {
                         } else {
                             body.classList.remove('en');
                             body.classList.add('ko');
-                            langToggleBtn.innerText = 'EN';
-                            langToggleBtn.setAttribute('aria-label', 'Switch language to English');
+                            langToggleBtn.innerText = 'KO';
+                            langToggleBtn.setAttribute('aria-label', 'Current language: Korean. Switch to English');
                             document.documentElement.lang = 'ko';
                             
                             // README 영역 한글로 전환
