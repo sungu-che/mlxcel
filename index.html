@@ -1836,7 +1836,7 @@ const renderReadme = (htmlContent, lang) => {
                         // GitHub Actions가 매일 동기화하는 data/blog-feed.json을 같은 도메인에서 불러옴
                         // Vercel 프록시 주소 (예: https://<프로젝트>.vercel.app/api/blog-feed).
                         // 비워 두면 레포의 data/blog-feed-<lang>.json을 사용합니다.
-                        var BLOG_FEED_API = '';
+                        var BLOG_FEED_API = 'https://rss-mlxcel.vercel.app/api/blog-feed';
 
                         function loadFeed(url) {
                             return fetch(url, { cache: 'no-cache' }).then(function (res) {
