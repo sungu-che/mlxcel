@@ -1205,19 +1205,16 @@ cargo build --release --features metal,accelerate</pre></div></div>
     <script src="p5.min.js"></script>
     <script src="vanta.topology.min.js"></script>
     <script>
-    // 모션 감소 설정 시 배경 애니메이션을 시작하지 않음
-    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-        VANTA.TOPOLOGY({
-            el: "#vanta",
-            mouseControls: true,
-            touchControls: true,
-            gyroControls: false,
-            minHeight: 200.00,
-            minWidth: 200.00,
-            scale: 1.00,
-            scaleMobile: 1.00
-        })
-    }
+    VANTA.TOPOLOGY({
+        el: "#vanta",
+        mouseControls: true,
+        touchControls: true,
+        gyroControls: false,
+        minHeight: 200.00,
+        minWidth: 200.00,
+        scale: 1.00,
+        scaleMobile: 1.00
+    })
     </script>
 
     <script>
