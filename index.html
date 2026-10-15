@@ -11,9 +11,19 @@
     <link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=Noto+Sans+KR:wght@100..900&display=swap" rel="stylesheet">
 
     <style>
-        *{margin: 0; padding: 0; line-height: 1; font-size: 15px; font-weight: normal; list-style: none; text-decoration: none; outline: none; color: #000;}
+        *{margin: 0; padding: 0; line-height: 1; font-size: 15px; font-weight: normal; list-style: none; text-decoration: none; color: #000;}
 
         html{overflow-x: hidden;}
+
+        /* Keyboard focus indicator (replaces the global outline removal above) */
+        :focus-visible{outline: 3px solid #0077ff; outline-offset: 3px;}
+
+        /* Visually hidden text, still exposed to assistive technology */
+        .sr-only{position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;}
+
+        /* Skip link: hidden until focused by keyboard */
+        .skip-link{position: absolute; left: 1rem; top: -100px; z-index: 100; padding: 0.6rem 1rem; background: #fff; color: #000; border-radius: 0.5rem; font-size: 1rem; font-family: "Noto Sans KR", sans-serif;}
+        .skip-link:focus{top: 1rem;}
 
         .temp{height: 50vh;}
 
@@ -220,8 +230,8 @@
         .section05 .tab_container .tab_area{position: relative; margin: 2rem; padding: 2rem 2rem 0.5rem; border-radius: 1rem; background-color: rgb(0, 41, 38);}
         .section05 .tab_container .scroll{position: absolute; left: 1rem; top: 0; right: 1rem; overflow-x:scroll;}
         .section05 .tab_container .tab_nav{white-space: nowrap; text-align: center; z-index: 1;}
-        .section05 .tab_container .tab_nav a{display: inline-block; padding: 0.5rem; font-size: 1.1rem; cursor: pointer; vertical-align: top;}
-        .section05 .tab_container .tab_nav a+a{margin-left: 1rem;}
+        .section05 .tab_container .tab_nav button{display: inline-block; padding: 0.5rem; font-size: 1.1rem; cursor: pointer; vertical-align: top; background: none; border: 0; font-family: inherit;}
+        .section05 .tab_container .tab_nav button+button{margin-left: 1rem;}
         .section05 .tab_container .base_img{max-width: 100%; width: 100%; height: auto; opacity: 0;}
         .section05 .tab_container .tab_item{position: absolute; left: 0; right: 0; top: 0.5rem; opacity: 0; transition-duration: 0.5s;}
         .section05 .tab_container .tab_item.on{opacity: 1;}
@@ -375,7 +385,7 @@
         #readme img { max-width: 100%; height: auto; }
 
 
-        #toggle-nav{display: none; position: absolute; top: 1.5rem; right: 1.5rem; width: 20px; height: 16px; z-index: 4; cursor: pointer;}
+        #toggle-nav{display: none; position: absolute; top: 1.5rem; right: 1.5rem; width: 20px; height: 16px; z-index: 4; cursor: pointer; background: none; border: 0; padding: 0;}
         #toggle-nav i{display: block; height: 1.5px; background-color: #fff;}
         #toggle-nav i+i{margin-top: 6px;}
 
@@ -521,10 +531,24 @@
             #lang-toggle { right: 4.5rem; }
             #header.sticky #lang-toggle { right: 4.5rem; }
         }
+
+        /* Respect the reduced-motion preference: finish animations and transitions immediately */
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                transition-duration: 0.01ms !important;
+                transition-delay: 0s !important;
+                animation-duration: 0.01ms !important;
+                animation-delay: 0s !important;
+                animation-iteration-count: 1 !important;
+                scroll-behavior: auto !important;
+            }
+            .title_style02.random-flicker .char { opacity: 1; }
+        }
     </style>
 
 
 <body class="ko">
+    <a class="skip-link" href="#main">본문으로 건너뛰기 / Skip to content</a>
     <div class="wrap">
         <header id="header">
             <div class="area">
@@ -532,18 +556,18 @@
                     <a href="/">lablup / mlxcel</a>
                 </h1>
 
-                <button id="lang-toggle">EN</button>
-                <a id="toggle-nav">
-                    <i></i>
-                    <i></i>
-                    <i></i>
-                </a>
-                <nav id="nav">
+                <button id="lang-toggle" type="button" aria-label="Switch language to English">EN</button>
+                <button id="toggle-nav" type="button" aria-label="메뉴 열기 / Open menu" aria-expanded="false" aria-controls="nav">
+                    <i aria-hidden="true"></i>
+                    <i aria-hidden="true"></i>
+                    <i aria-hidden="true"></i>
+                </button>
+                <nav id="nav" aria-label="주요 메뉴 / Main menu">
                     <div class="dp1">
                         <ul>
                             <li><a class="menu menu_" href="#get-started"><span>Get Started</span></a></li>
                             <li><a class="menu menu_" href="#performance"><span>Performance</span></a></li>
-                            <li><a class="menu menu_fulfillment" href="https://github.com/lablup/mlxcel" target="_blank"><span>Github</span></a></li>
+                            <li><a class="menu menu_fulfillment" href="https://github.com/lablup/mlxcel" target="_blank" rel="noopener noreferrer"><span>Github</span><span class="sr-only"> (새 창 / opens in new tab)</span></a></li>
                             <li><a class="menu menu_docs" href="docs.html"><span>Docs</span></a></li>
                         </ul>
                     </div>
@@ -556,7 +580,7 @@
                 <div class="area">
                     <div class="tb outer">
                         <div class="tc">
-                            <div id="vanta"></div>
+                            <div id="vanta" aria-hidden="true"></div>
                             <div class="title_style01">
                                 <div class="title">
                                     <h2><span>Real Agents,</span><span>Ready to Mesh</span></h2>
@@ -568,8 +592,8 @@
                                     <p><span>Start from a single laptop, </span> <span>expand seamlessly to an entire office Mesh.</span></p>
                                 </div>
                             </div>
-                            <a class="media" href="https://github.com/lablup/mlxcel" target="_blank">
-                                <iframe src="iframe.html" frameborder="0"></iframe>
+                            <a class="media" href="https://github.com/lablup/mlxcel" target="_blank" rel="noopener noreferrer" aria-label="mlxcel GitHub 저장소 열기 / Open mlxcel GitHub repository (새 창 / opens in new tab)">
+                                <iframe src="iframe.html" frameborder="0" aria-hidden="true" tabindex="-1" inert></iframe>
                             </a>
                         </div>
                     </div>
@@ -1135,7 +1159,7 @@ cargo build --release --features metal,accelerate</pre></div></div>
                     <div style="width:100%;height:700px;opacity: 0.5;filter:url(#blendAndThresholdFilter)"></div>
                 </div>
 
-                <div id="cloud"></div>
+                <div id="cloud" aria-hidden="true"></div>
 
                 <svg width="0">
                     <filter id="filter">
@@ -1181,16 +1205,19 @@ cargo build --release --features metal,accelerate</pre></div></div>
     <script src="p5.min.js"></script>
     <script src="vanta.topology.min.js"></script>
     <script>
-    VANTA.TOPOLOGY({
-        el: "#vanta",
-        mouseControls: true,
-        touchControls: true,
-        gyroControls: false,
-        minHeight: 200.00,
-        minWidth: 200.00,
-        scale: 1.00,
-        scaleMobile: 1.00
-    })
+    // 모션 감소 설정 시 배경 애니메이션을 시작하지 않음
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        VANTA.TOPOLOGY({
+            el: "#vanta",
+            mouseControls: true,
+            touchControls: true,
+            gyroControls: false,
+            minHeight: 200.00,
+            minWidth: 200.00,
+            scale: 1.00,
+            scaleMobile: 1.00
+        })
+    }
     </script>
 
     <script>
@@ -1222,7 +1249,7 @@ cargo build --release --features metal,accelerate</pre></div></div>
                 for(var i = 0; i < $items.length; i++){
                     var $item = $items[i]
 
-                    nav_body += '<a class="tab_nav_item" data-index="'+i+'">'+$item.alt+'</a>';
+                    nav_body += '<button type="button" class="tab_nav_item" data-index="'+i+'" aria-pressed="'+(i === 0)+'">'+$item.alt+'</button>';
                 }
 
                 $target.innerHTML = nav_body;
@@ -1241,6 +1268,9 @@ cargo build --release --features metal,accelerate</pre></div></div>
 
                             $item.classList.remove('on');
                         }
+                        document.querySelectorAll('.tab_container .tab_nav_item').forEach(function (b) {
+                            b.setAttribute('aria-pressed', String(b === $this));
+                        });
 
                         $tab_item[index].classList.add('on');
                     }
@@ -1286,10 +1316,13 @@ cargo build --release --features metal,accelerate</pre></div></div>
                     const h3 = el.tagName.toLowerCase() === 'h3' ? el : el.querySelector('h3');
                     if (h3) {
                         const text = h3.innerText;
-                        h3.innerHTML = ''; 
+                        // 글자 단위 span은 숨기고, 제목 전체를 aria-label로 읽히게 함
+                        h3.setAttribute('aria-label', text);
+                        h3.innerHTML = '';
                         text.split('').forEach((char, index) => {
                             const span = document.createElement('span');
                             span.className = char === ' ' ? 'char space' : 'char';
+                            span.setAttribute('aria-hidden', 'true');
                             span.innerText = char;
                             span.style.transitionDelay = `${index * 0.05}s`;
                             span.style['font-size'] = `2.5rem`;
@@ -1360,6 +1393,17 @@ cargo build --release --features metal,accelerate</pre></div></div>
                 observeElements.forEach(el => observer.observe(el));
             });
 
+            // 가로 스크롤되는 코드 영역은 키보드로 스크롤할 수 있도록 포커스 가능하게 설정 (README 동적 렌더링 포함)
+            document.addEventListener('DOMContentLoaded', () => {
+                const markCodeRegions = () => {
+                    document.querySelectorAll('.code-schema-body:not([tabindex])').forEach((el) => {
+                        el.tabIndex = 0;
+                    });
+                };
+                markCodeRegions();
+                new MutationObserver(markCodeRegions).observe(document.body, { childList: true, subtree: true });
+            });
+
             // 전역 복사 함수 등록 (Copied! 피드백 포함)
             if (!window.copyReadmeCode) {
                 window.copyReadmeCode = function(btn) {
@@ -1370,6 +1414,18 @@ cargo build --release --features metal,accelerate</pre></div></div>
                     textarea.select();
                     document.execCommand('copy');
                     document.body.removeChild(textarea);
+
+                    // 스크린 리더에도 복사 완료를 알림
+                    let liveRegion = document.getElementById('sr-live-status');
+                    if (!liveRegion) {
+                        liveRegion = document.createElement('div');
+                        liveRegion.id = 'sr-live-status';
+                        liveRegion.className = 'sr-only';
+                        liveRegion.setAttribute('role', 'status');
+                        liveRegion.setAttribute('aria-live', 'polite');
+                        document.body.appendChild(liveRegion);
+                    }
+                    liveRegion.textContent = 'Copied to clipboard';
 
                     const originalText = btn.innerText;
                     btn.innerText = 'Copied!';
@@ -2879,6 +2935,13 @@ const renderReadme = (htmlContent, lang) => {
                                 // 3. 클릭 시 해당 블로그 글로 새창 열기
                                 info.style.cursor = 'pointer';
                                 info.addEventListener('click', () => window.open(item.url, '_blank'));
+                                // 키보드 사용자도 카드를 포커스하고 Enter로 열 수 있도록 링크 역할 부여
+                                info.setAttribute('role', 'link');
+                                info.setAttribute('tabindex', '0');
+                                info.setAttribute('aria-label', item.title + ' (새 창 / opens in new tab)');
+                                info.addEventListener('keydown', (e) => {
+                                    if (e.key === 'Enter') window.open(item.url, '_blank');
+                                });
                                 
                                 media.appendChild(img);
                             }
@@ -2902,6 +2965,8 @@ const renderReadme = (htmlContent, lang) => {
                             body.classList.remove('ko');
                             body.classList.add('en');
                             langToggleBtn.innerText = 'KO';
+                            langToggleBtn.setAttribute('aria-label', 'Switch language to Korean');
+                            document.documentElement.lang = 'en';
                             
                             // README 영역 영어로 전환
                             if (window._readmeRenderFn && window._readmeEnContent) {
@@ -2911,6 +2976,8 @@ const renderReadme = (htmlContent, lang) => {
                             body.classList.remove('en');
                             body.classList.add('ko');
                             langToggleBtn.innerText = 'EN';
+                            langToggleBtn.setAttribute('aria-label', 'Switch language to English');
+                            document.documentElement.lang = 'ko';
                             
                             // README 영역 한글로 전환
                             if (window._readmeRenderFn) {
@@ -2930,7 +2997,10 @@ const renderReadme = (htmlContent, lang) => {
         var btn = document.getElementById('toggle-nav');
         var header = document.getElementById('header');
         if (!btn || !header) return;
-        function setOpen(open) { header.classList.toggle('nav-open', open); }
+        function setOpen(open) {
+            header.classList.toggle('nav-open', open);
+            btn.setAttribute('aria-expanded', String(open));
+        }
         btn.addEventListener('click', function (e) {
             e.preventDefault();
             setOpen(!header.classList.contains('nav-open'));
