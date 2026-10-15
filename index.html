@@ -533,18 +533,6 @@
             #header.sticky #lang-toggle { right: 4.5rem; }
         }
 
-        /* Respect the reduced-motion preference: finish animations and transitions immediately */
-        @media (prefers-reduced-motion: reduce) {
-            *, *::before, *::after {
-                transition-duration: 0.01ms !important;
-                transition-delay: 0s !important;
-                animation-duration: 0.01ms !important;
-                animation-delay: 0s !important;
-                animation-iteration-count: 1 !important;
-                scroll-behavior: auto !important;
-            }
-            .title_style02.random-flicker .char { opacity: 1; }
-        }
     </style>
 
 
