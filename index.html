@@ -1106,7 +1106,7 @@ cargo build --release --features metal,accelerate</pre></div></div>
             </section>
 
             <a href="https://github.com/lablup/mlxcel" target="_blank" class="section section07 sub_section">
-                <svg id="halftonePattern" width="100%" height="100%" viewBox="0 0 100% 100%" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" style="position:absolute; pointer-events:none;">
+                <svg id="halftonePattern" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" style="position:absolute; pointer-events:none;">
                     <defs>
                         <!-- 1. Radial Gradient for Circles -->
                         <radialGradient id="radialBlackToTransparent" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
@@ -2899,7 +2899,9 @@ const renderReadme = (htmlContent, lang) => {
                                 const info = infoBlocks[i];
                                 const box = info.querySelector('.box');
                                 const media = info.querySelector('.media');
-                                
+                                // 카드 구조가 예상과 다르면 건너뜀 (null 접근으로 전체 피드가 중단되지 않도록)
+                                if (!box || !media) return;
+
                                 // 1. 텍스트 업데이트 (제목이 길기 때문에 폰트 사이즈 조정)
                                 const titleEl = box.querySelector('.title strong');
                                 const descEl = box.querySelector('.desc p');
