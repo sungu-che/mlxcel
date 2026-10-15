@@ -5,7 +5,8 @@
 // Optional env: GITHUB_TOKEN (raises the GitHub API rate limit).
 // Requires Node 18+ (global fetch). No dependencies.
 
-import { mkdir, readdir, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -40,6 +41,21 @@ async function getText(url) {
 function extractTitle(markdown, fallback) {
   const match = markdown.match(/^#\s+(.+)$/m);
   return match ? match[1].trim() : fallback;
+}
+
+// Writes docs-content/ko/index.json: one entry per Korean file that exists,
+// with the title taken from its first heading.
+async function writeKoIndex(docs) {
+  const koDir = path.join(outDir, 'ko');
+  await mkdir(koDir, { recursive: true });
+  const files = [];
+  for (const doc of docs) {
+    const koPath = path.join(koDir, doc.name);
+    if (!existsSync(koPath)) continue;
+    const koMarkdown = await readFile(koPath, 'utf8');
+    files.push({ name: doc.name, slug: doc.slug, titleKo: extractTitle(koMarkdown, doc.slug) });
+  }
+  await writeFile(path.join(koDir, 'index.json'), `${JSON.stringify({ files }, null, 2)}\n`, 'utf8');
 }
 
 async function main() {
@@ -98,6 +114,10 @@ async function main() {
       .sort((a, b) => a.title.localeCompare(b.title)),
   };
   await writeFile(path.join(outDir, 'index.json'), `${JSON.stringify(index, null, 2)}\n`, 'utf8');
+
+  // Korean translations live in docs-content/ko/ and are maintained separately.
+  // Only their titles are indexed here, so the page can label the sidebar in Korean.
+  await writeKoIndex(docs);
 
   console.log(`Synced ${docs.length} docs from ${SOURCE_REPO}@${commit.sha.slice(0, 7)}`);
 }
