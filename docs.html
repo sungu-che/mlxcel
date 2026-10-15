@@ -198,6 +198,24 @@
             .search-btn span, .search-btn kbd{display: none;}
             .brand-sub{display: none;}
         }
+
+        /* Unofficial-site notice (bottom bar, dismissible) */
+        #unofficial-notice{
+            position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+            display: flex; align-items: center; justify-content: center; gap: 1rem;
+            padding: 0.7rem 3.5rem 0.7rem 1rem; background: rgba(9,12,15,0.94); color: var(--text);
+            border-top: 1px solid var(--line); font-size: 0.85rem; line-height: 1.5;
+        }
+        #unofficial-notice[hidden]{display: none;}
+        #unofficial-notice p{margin: 0; text-align: center;}
+        #unofficial-notice-close{
+            position: absolute; right: 0.75rem; top: 50%; transform: translateY(-50%);
+            width: 32px; height: 32px; border: 0; border-radius: 50%; background: transparent;
+            color: var(--text); font-size: 1.2rem; line-height: 1; cursor: pointer;
+        }
+        #unofficial-notice-close:hover{background: var(--bg-active);}
+        #unofficial-notice-close:focus-visible{outline: 2px solid var(--accent-soft); outline-offset: 2px;}
+        @media (max-width: 600px){ #unofficial-notice{font-size: 0.78rem; padding-right: 3rem;} }
     </style>
 </head>
 <body>
@@ -224,6 +242,12 @@
             <button class="lang-btn" id="lang-toggle" type="button">EN</button>
         </div>
     </header>
+
+
+    <div id="unofficial-notice" role="region" aria-label="Unofficial site notice">
+        <p id="notice-text"></p>
+        <button id="unofficial-notice-close" type="button">&times;</button>
+    </div>
 
     <div class="layout">
         <aside id="sidebar">
@@ -288,7 +312,8 @@
                 loadFail: '문서를 불러오지 못했습니다: ', indexFail: '문서 목록을 불러오지 못했습니다: ',
                 empty: '아직 동기화된 문서가 없습니다.', syncedFrom: '원본', commit: '커밋', updated: '업데이트',
                 fallback: '이 문서는 아직 한국어로 번역되지 않아 영문 원문을 표시합니다.',
-                toggleLabel: 'Current language: Korean. Switch to English', langBtn: 'KO'
+                toggleLabel: 'Current language: Korean. Switch to English', langBtn: 'KO',
+                notice: '비공식 웹페이지입니다. 이 페이지는 lablup/mlxcel 프로젝트의 공식 사이트가 아니며, 프로젝트 문서와 블로그 내용을 참고해 만든 개인 페이지입니다.', noticeClose: '닫기'
             },
             en: {
                 docHeading: 'Documentation', tocHeading: 'On this page', navGithub: 'GitHub', navDocs: 'Docs',
@@ -297,7 +322,8 @@
                 loadFail: 'Failed to load document: ', indexFail: 'Could not load the docs index: ',
                 empty: 'No documents have been synced yet.', syncedFrom: 'Synced from', commit: 'commit', updated: 'updated',
                 fallback: '',
-                toggleLabel: 'Current language: English. Switch to Korean', langBtn: 'EN'
+                toggleLabel: 'Current language: English. Switch to Korean', langBtn: 'EN',
+                notice: "Unofficial web page. This is not the official site of the lablup/mlxcel project. It is an independent page built from the project's public docs and blog.", noticeClose: 'Close'
             }
         };
         var LANG_KEY = 'docs-lang';
@@ -332,6 +358,8 @@
             searchInput.placeholder = t('searchPlaceholder');
             langBtn.textContent = t('langBtn');
             langBtn.setAttribute('aria-label', t('toggleLabel'));
+            $('notice-text').textContent = t('notice');
+            $('unofficial-notice-close').setAttribute('aria-label', t('noticeClose'));
             if (!article.innerHTML) status.textContent = t('loading');
         }
 
@@ -608,6 +636,15 @@
         });
 
         applyStaticStrings();
+
+        // Unofficial-site notice: dismissed state is remembered per browser.
+        var noticeBox = $('unofficial-notice');
+        var NOTICE_KEY = 'unofficial-notice-dismissed';
+        try { if (localStorage.getItem(NOTICE_KEY) === '1') noticeBox.hidden = true; } catch (e) { /* storage unavailable */ }
+        $('unofficial-notice-close').addEventListener('click', function () {
+            noticeBox.hidden = true;
+            try { localStorage.setItem(NOTICE_KEY, '1'); } catch (e) { /* ignore */ }
+        });
 
         // Korean titles and availability; a missing file just means "no translations yet".
         var koIndexReady = fetch(CONTENT_DIR + 'ko/index.json', { cache: 'no-cache' })
