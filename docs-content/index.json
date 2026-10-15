@@ -1,0 +1,191 @@
+{
+  "source": {
+    "repo": "lablup/mlxcel",
+    "ref": "main",
+    "dir": "docs",
+    "commit": "15c3da3993a29fd5498d46b81a01f0c54bebb9e3",
+    "commitDate": "2026-10-15T12:31:01Z"
+  },
+  "files": [
+    {
+      "name": "mtp-policy-api.md",
+      "slug": "mtp-policy-api",
+      "title": "Adaptive MTP policy API (`/v1/internal/mtp-policy`)",
+      "size": 13724
+    },
+    {
+      "name": "architecture.md",
+      "slug": "architecture",
+      "title": "Architecture overview",
+      "size": 16213
+    },
+    {
+      "name": "audio-preprocessing.md",
+      "slug": "audio-preprocessing",
+      "title": "Audio input preprocessing",
+      "size": 7287
+    },
+    {
+      "name": "benchmarks.md",
+      "slug": "benchmarks",
+      "title": "Benchmarks",
+      "size": 86728
+    },
+    {
+      "name": "block-diffusion.md",
+      "slug": "block-diffusion",
+      "title": "Block-diffusion generation (DiffusionGemma)",
+      "size": 8499
+    },
+    {
+      "name": "cascade-attention.md",
+      "slug": "cascade-attention",
+      "title": "Cascade attention (shared prompt prefixes)",
+      "size": 9332
+    },
+    {
+      "name": "code-guidelines.md",
+      "slug": "code-guidelines",
+      "title": "Code Modification Guidelines",
+      "size": 30820
+    },
+    {
+      "name": "CONTINUOUS_BATCHING.md",
+      "slug": "CONTINUOUS_BATCHING",
+      "title": "Continuous batching and disaggregated serving",
+      "size": 64729
+    },
+    {
+      "name": "distributed.md",
+      "slug": "distributed",
+      "title": "Distributed inference",
+      "size": 11716
+    },
+    {
+      "name": "embeddings.md",
+      "slug": "embeddings",
+      "title": "Embeddings and reranking APIs and CLI",
+      "size": 62063
+    },
+    {
+      "name": "environment-variables.md",
+      "slug": "environment-variables",
+      "title": "Environment variables",
+      "size": 216109
+    },
+    {
+      "name": "sparse-paged-decode.md",
+      "slug": "sparse-paged-decode",
+      "title": "Fused sparse decode via page indirection",
+      "size": 19324
+    },
+    {
+      "name": "installation.md",
+      "slug": "installation",
+      "title": "Installation",
+      "size": 62792
+    },
+    {
+      "name": "llama-server-compat.md",
+      "slug": "llama-server-compat",
+      "title": "llama-server compatibility boundary (b10621)",
+      "size": 142664
+    },
+    {
+      "name": "mla-absorbed-decode.md",
+      "slug": "mla-absorbed-decode",
+      "title": "MLA matrix-absorbed decode",
+      "size": 8771
+    },
+    {
+      "name": "README.md",
+      "slug": "README",
+      "title": "mlxcel documentation layout",
+      "size": 6917
+    },
+    {
+      "name": "adding-models.md",
+      "slug": "adding-models",
+      "title": "Model Addition Guide",
+      "size": 29560
+    },
+    {
+      "name": "model-catalog.md",
+      "slug": "model-catalog",
+      "title": "Model Catalog",
+      "size": 5825
+    },
+    {
+      "name": "nemotron-voicechat.md",
+      "slug": "nemotron-voicechat",
+      "title": "Nemotron VoiceChat",
+      "size": 22204
+    },
+    {
+      "name": "request-memory-admission.md",
+      "slug": "request-memory-admission",
+      "title": "Nemotron-H request memory admission",
+      "size": 4559
+    },
+    {
+      "name": "audio-api.md",
+      "slug": "audio-api",
+      "title": "OpenAI audio API (`/v1/audio`)",
+      "size": 18770
+    },
+    {
+      "name": "responses-api.md",
+      "slug": "responses-api",
+      "title": "OpenAI Responses API subset (`/v1/responses`)",
+      "size": 16081
+    },
+    {
+      "name": "python-client.md",
+      "slug": "python-client",
+      "title": "Python client",
+      "size": 12478
+    },
+    {
+      "name": "server-features.md",
+      "slug": "server-features",
+      "title": "Server features and deployment guide",
+      "size": 16089
+    },
+    {
+      "name": "speculative-acceptance.md",
+      "slug": "speculative-acceptance",
+      "title": "Speculative-decoding acceptance rules",
+      "size": 25918
+    },
+    {
+      "name": "supported-models.md",
+      "slug": "supported-models",
+      "title": "Supported models",
+      "size": 245251
+    },
+    {
+      "name": "f32-attention-widen-audit.md",
+      "slug": "f32-attention-widen-audit",
+      "title": "The f32 attention widen audit",
+      "size": 12256
+    },
+    {
+      "name": "f32-promotion-audit.md",
+      "slug": "f32-promotion-audit",
+      "title": "The f32 promotion audit",
+      "size": 5076
+    },
+    {
+      "name": "turbo-kv-cache.md",
+      "slug": "turbo-kv-cache",
+      "title": "TurboQuant KV cache",
+      "size": 37701
+    },
+    {
+      "name": "webui-integration-matrix.md",
+      "slug": "webui-integration-matrix",
+      "title": "WebUI integration requirement matrix (#1848)",
+      "size": 23105
+    }
+  ]
+}

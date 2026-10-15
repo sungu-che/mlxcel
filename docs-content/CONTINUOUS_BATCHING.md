@@ -1,0 +1,862 @@
+# Continuous batching and disaggregated serving
+
+`mlxcel-server` (and `mlxcel serve`) runs a continuous-batching scheduler: it
+admits concurrent requests into a running batch, interleaves prefill and decode,
+and streams each request's tokens as they are produced. This document covers the
+batching scheduler, how it uses the paged KV cache, and the disaggregated
+serving roles that split prefill and decode across processes.
+
+## Continuous batching
+
+The scheduler keeps up to `--parallel` sequences active at once. Each step it
+either admits and prefills queued prompts (chunked at 2048 tokens while no other
+sequence is decoding and 512 while a decode batch is live, unless overridden)
+or advances the active batch by one decode token, then streams the new tokens
+out. The scheduler decides what runs; the engine runs it.
+`mlxcel_core::engine::Engine` owns the model and the KV pool,
+and every model forward, sampler draw and finish step the scheduler needs goes
+through `Engine::prefill`, `Engine::step` (one entry for every row count: a
+lone request is a batch of one) and the pipelined `submit` / `finish_rows` pair
+([ADR 0007](adr/0007-unified-batch-native-engine.md), [ADR 0009](adr/0009-engine-step-api.md)).
+A batch of one samples through the per-row chain; a larger batch whose rows
+share fused-compatible parameters takes one fused `[B, vocab] -> [B]` draw.
+Either way the sampled tokens are evaluated through the fallible MLX boundary
+before they are read, so an MLX throw finishes the affected request(s) with an
+`inference backend error` instead of aborting the server (#822). Admission, tick policy, preemption, the prompt cache, disaggregated handoff and
+the speculative burst generators stay in the scheduler. Relevant flags:
+
+| Flag | Default | Purpose |
+|------|---------|---------|
+| `--parallel N` | 4 | Maximum active (in-flight) sequences; caps the concurrent decode batch. |
+| `--max-batch-size N` | (= `--parallel`) | Maximum sequences decoded together in one batched step. |
+| `--max-batch-prefill N` | 4 | Requests batched into one prefill forward pass (families that support it). |
+| `--max-batch-prefill-tokens N` | (derived) | Padded-token budget bounding one batched prefill's transient memory. Unset derives `2 * max_batch_prefill * min(prefill_chunk_size, 512)`; `0` disables the cap. |
+| `--max-queue-depth N` | 32 | Maximum queued (not yet admitted) requests. |
+| `--prefill-chunk-size N` | 2048 alone; 512 with live decode | Token chunk size for both scheduler states when explicitly set. `--batch-size` / `LLAMA_ARG_BATCH` and `MLXCEL_PREFILL_CHUNK` are equivalent overrides. Without one, the scheduler chooses per tick to preserve single-stream TTFT while bounding admission's effect on active decode latency (#2228). |
+| `--prefill-grant-interval N` | 16 | Decode ticks a parked chunked prefill yields before it is granted one; bounds an admitted long prompt's time to first token. `0` disables the grant (unbounded wait). |
+| `--kv-admission-watermark F` | 0.01 | Fraction of the paged KV block budget (`0.0` to `0.5`) a prefill admission keeps free while rows are decoding, so they can grow without being preempted. `0` disables it. See below. |
+| `--enable-preemption` | off | Allow evicting a lower-priority sequence to admit a waiting one. |
+| `--no-batch` | off | Disable batching and serve sequentially (the legacy single worker). |
+| `--no-prompt-cache` | off | Disable the prompt-prefix KV cache (it is on by default). |
+
+### Serving-throughput defaults
+
+The shipped defaults are tuned for multi-client serving. Batched decode reads
+each weight once per step regardless of how many sequences share the step, so
+aggregate throughput scales with concurrency until the batch hits the compute
+roofline, while per-request decode rate falls proportionally. The defaults:
+
+- `--parallel 4`: admit a decode batch of up to 4. The worker clamps this to 1
+  for families that cannot batch (SSM / hybrid / mixed-cache, i.e. any model
+  where `supports_batching()` is false), so the default is safe for every
+  architecture. When an explicit split configuration is clamped this way, the
+  worker restores the whole configured context as the one effective request
+  window and publishes that post-load value to `/props`, `/slots`, and
+  `/v1/models`.
+  `supports_batching()` being true does not by itself mean a family runs one
+  forward per tick: only families that override `forward_batched()` (Llama 3,
+  Llama 4, Qwen 3, Qwen 3.5, Gemma 3, Helium, Muse Glimmer, and Qwen3-MoE
+  since #1616) do. Every other batching family runs the `LanguageModel`
+  default, which calls the single-sequence `forward()` once per row and
+  evaluates the B graphs together, so its aggregate scaling comes only from
+  overlapping independent single-token graphs. The 2026-09-04 M1 Ultra profile
+  in `docs/benchmark_results/moe-batched-decode-m1ultra-2026-09-04.md` measured
+  that fallback on `qwen3-30b-a3b-4bit` before the override landed.
+- `--max-batch-prefill 4`: batch up to 4 pending prompts into one prefill pass.
+  Only families that opt into `supports_batched_prefill()` (Llama 3, Qwen 3,
+  Qwen 3.5, and aliases such as Qwen 2.5) use it; others fall back to sequential
+  prefill automatically.
+- Prompt-prefix cache on, bounded to a 2 GiB KV budget (`--prompt-cache-*` to
+  retune). A repeated shared prefix (for example a long system prompt) is
+  prefilled once and reused.
+
+Escape hatches restore the previous single-client behavior: `--parallel 1`
+(single decode slot), `--no-batch` (legacy sequential worker, no scheduler),
+`--max-batch-prefill 1` (sequential prefill), and `--no-prompt-cache`.
+
+### Token-exactness: `mlxcel run` and the server
+
+`mlxcel run` (with and without `-p`) and its chat REPL are clients of the
+server engine since epic #2166 Phase 5 (issue #2173, [ADR 0007](adr/0007-unified-batch-native-engine.md)).
+They start the model worker in-process at one slot (`--parallel 1`,
+`--max-batch-size 1`, so decode storage resolves to dense) and submit each
+turn through the `/v1/chat/completions` request path: the same chat-template
+render, the same worker options, the same `StreamFilter` reasoning split, tool
+parsing and stop strings. No HTTP listener is opened. The CLI's sampling flags
+become that server's options (`mlxcel run --temp 0.7` resolves like
+`mlxcel-server --temp 0.7`), and the CLI keeps greedy as its base sampler when
+`generation_config.json` is silent.
+
+The contract is an equivalence invariant rather than shared code: for the
+same chat request under `MLXCEL_SDPA_DETERMINISTIC=1`, greedy output from
+`mlxcel run -p` and from the server is identical. `make engine-parity
+MODEL=<dir>` checks it with arm `e:run` (the settings `run -p --temp 0` builds)
+against arm `f:server` (the same request on the `mlxcel-server` default
+configuration, four slots, paged storage when the model supports it), prompt
+cache off on both. On GB10 both pairs are identical for Qwen3-1.7B 4-bit and
+Llama-3.2-1B 4-bit. The same run compares the server at B=1, dense and paged,
+with the raw-completion client (arm `d:engine`, `mlxcel_core::engine::DirectEngine`)
+and with `mlxcel generate`'s own call of that client (arm `a:cli`, which adds
+the one-token warmup `generate` runs), so a divergence can be placed on the
+scheduler's policy, the storage, or the engine. Since Phase 6 (#2176) every
+front renders the chat template through one function (`server::chat_front`),
+so the arms on the harness's render and the `e:run` / `f:server` arms see the
+same prompt, `enable_thinking` default included.
+
+Two server features still change near-tie greedy tokens and are tracked as
+measured divergences rather than covered by the invariant: a prompt-cache hit
+forwards only the suffix of a cached prefix (the chat REPL runs with the cache
+on, the server default; `run -p` runs with it off because one request has
+nothing to reuse), and continuous batching with other live sequences. To
+reproduce the single-request path on the server, use `--max-batch-size 1`
+(dense storage) or `--decode-storage-backend dense` while keeping the default
+admission width, and `--no-prompt-cache`.
+
+On ROCm the invariant holds without `MLXCEL_SDPA_DETERMINISTIC` (the variable is read only by the CUDA overlay), and the dense-vs-paged pair is a recorded divergence index rather than a gate ([ADR 0007](adr/0007-unified-batch-native-engine.md), "What parity means on ROCm and Metal"). Measured on gfx1151 after the epic (#2192, [results](benchmark_results/rocm-unified-engine-gfx1151-2026-10-08.md)): on Qwen3-0.6B 4-bit and Llama-3.1-8B 4-bit every pair the harness compares is identical for the greedy and the seeded case, the paged arm included (it ran the HIP paged v2 kernel, 1764 to 2080 launches per run), except the documented seeded prompt-cache miss-vs-hit row; a 128-token teacher-forced decode-step trace of a dense server against a paged server disagrees at TODO_PAGED positions and at TODO_PAGED_DECIDED decided positions. On the Mamba hybrid granite-4.0-h-tiny 4-bit the CLI, `run` and the dense server are identical; paged storage is `n/a` (the worker falls back to dense), and the prompt cache's history-boundary split (`prefill[0..45)+prefill[45..48)` against the cache-off `prefill[0..48)`) is a different partition, so the cache-off and cache-miss arms diverge there, at token 47 greedy and token 0 seeded.
+
+> Backend note (CUDA / Blackwell, e.g. GB10): batched decode used to be a
+> throughput wash on CUDA because the `M*B < 8` quantized matmul fell back to
+> per-row qmv, re-reading the weights once per sequence (aggregate flat at
+> ~45-50 tok/s across B=1/2/4 on llama-3.1-8b-4bit). The multirow qmv path
+> (issue #725, `MLXCEL_QMV_MULTIROW`, on by default) amortizes the weight reads
+> across the batch, so aggregate decode now scales with concurrency on CUDA
+> too: 40.4 / 68.5 / 74.2 tok/s at 1/2/4 clients on llama-3.1-8b-4bit on GB10
+> (vs 40.5 / 49.8 / 49.6 with the kill switch off). Scaling stays sublinear
+> versus Metal because attention KV reads still grow with B; the small-M
+> `qmm_sm80` tile shape (`M*B >= 8`) remains upstream MLX territory. For the
+> same reason, keep `--parallel` at 7 or below on CUDA (both server binaries
+> also accept `--n-parallel`): the multirow window covers 2-7 rows, and a full batch of 8+ decode
+> rows crosses into the under-tiled `qmm_sm80` shape, which measures worse
+> than per-row decode until the upstream small-M tile lands. The shipped
+> default of 4 sits comfortably inside the window. See
+> `docs/benchmark_results/qmv-multirow-gb10-2026-07-11.md`. `--max-batch-prefill`
+> (large-M, tile-tuned, `docs/benchmark_results/qmm-sm121-tile-tuning-gb10-2026-07-10.md`)
+> and the prompt cache remain independent wins on CUDA.
+
+Memory sizing: the KV footprint grows with the active batch, so budget for up to
+`--parallel` concurrent sequences' KV. With auto `--parallel -1`, mlxcel
+matches b10621's unified default: four slots are exposed, every slot can use
+the whole `--ctx-size` window, and the scheduler enforces that all live
+prompt+generated tokens together stay within that shared budget. With an
+explicit positive `--parallel` (or explicit `--max-batch-size`) the context is
+split across the active slots (`ctx_size / parallel` per slot) unless
+`--kv-unified` is also set; `--no-kv-unified` forces split windows. Leave
+`--ctx-size` at 0 to use the model default. Admission control
+(`--kv-cache-budget`, `--max-kv-size`) still sheds load under pressure, so a
+large `--parallel` degrades to queueing rather than OOM.
+
+Measured scaling (Apple M1 Ultra, Metal; `meta-llama-3.1-8b-instruct-4bit`,
+512-token prompt, 128 new tokens; `scripts/bench_serving_concurrency.py`).
+The baseline column is the previous default `--parallel 1`. The batched column
+was measured with `--max-batch-prefill 4` and a batch ceiling high enough to
+expose each concurrency level (`--parallel 8`), so the 8-client row reflects a
+`--parallel 8` server; the shipped default is `--parallel 4`, whose batch caps
+at 4 (the 4-client row is the default at saturation, and 8 clients would run 4
+batched plus 4 queued). Aggregate is tokens/sec summed across concurrent
+clients; TTFT is time-to-first-token:
+
+| clients | aggregate tok/s (`-p1`) | aggregate tok/s (batched) | TTFT mean ms (`-p1`) | TTFT mean ms (batched) |
+|--------:|------------------------:|--------------------------:|---------------------:|-----------------------:|
+| 1 | 56.6 | 56.8 | 889 | 783 |
+| 2 | 71.5 | 99.9 | 1150 | 114 |
+| 4 | 65.6 | 107.9 | 3257 | 189 |
+| 8 | 62.8 | 105.1 (`-p8`) | 7514 | 348 (`-p8`) |
+
+At 4 concurrent clients the default delivers 1.90x the single-client aggregate
+throughput and cuts mean TTFT under load ~17x (3257 ms to 189 ms), while
+single-client throughput is unchanged. On a higher-bandwidth decode target (for
+example GB10) the weights-read amortization headroom is larger; that number is
+pending a CUDA measurement session.
+
+The batched-decode default is paired with an `auto` paged KV budget
+(`--kv-cache-budget auto`, the default): the #122 block-budget admission bounds
+KV for the concurrent batch and returns backpressure instead of letting four
+full-context sequences run into an OOM abort. On the dense decode backend the
+budget is inert. Disable the guard with `--kv-cache-budget none`. Memory-
+constrained hosts can also lower `--parallel` or cap `--ctx-size` (see the
+context-sizing note in [environment-variables.md](environment-variables.md)).
+
+### One prefill plan, and when a prompt-cache hit reproduces a miss
+
+Since #2170 the CLI generator and the scheduler prefill through one `PrefillPlan` (`mlxcel_core::prefill_plan`): the adopted prompt-cache prefix is skipped, a snapshot family's chat prompt is split once at its history boundary (#1143, one unpadded forward, the point the prompt cache snapshots), the rest is cut into chunk pieces, and a piece is tile-padded on M5+ hardware only where the model opts in. The direct engine and an otherwise idle server use 2048. While another sequence is decoding, the server uses 512; an explicit `--prefill-chunk-size` (or `--batch-size` / `LLAMA_ARG_BATCH`) or `MLXCEL_PREFILL_CHUNK` pins both states. The scheduler runs one piece per tick and rebuilds the continuation from the live cursor, so the chunk may change safely when the decode batch empties or becomes active. The Gemma 4 MTP burst remains on the alone value and takes its row-wise prefill ranges from the same plan.
+
+Two prefills of the same prompt that forward the same pieces from the same KV state are bitwise identical under `MLXCEL_SDPA_DETERMINISTIC=1`. Two that partition the prompt differently are not: the CUDA quantized matmul routes a forward of fewer than 8 rows to the per-row `qmv` kernel and larger ones to the tiled `qmm` kernel, attention over a short query block tiles differently from the full causal pass, and the two reduce in different orders, so KV and logits differ in the last bit and a greedy stream can flip at a near-tie token. The split at the history boundary, `--prefill-chunk-size`, and a prompt-cache hit (which forwards only the suffix after the adopted prefix) are all partitions.
+
+So a prompt-cache hit reproduces the cold (miss) run of the same prompt exactly when its adopted prefix ends on one of the cold plan's split points (`PrefillPlan::reproduces`): the history boundary of a snapshot family, or a chunk edge. That is the plan half of the condition; the other half is that the adopted rows were themselves written by the same pieces, as a boundary snapshot of an earlier turn or a primed prefix forwarded as one piece are. Rows a donor wrote by decode steps, or inside a longer forward, are a different partition even when the adopted length is a split point. A prefill whose chunk changes with scheduler state is likewise a different partition; prefills that run in the same scheduler states keep the existing reproduction invariant. `make engine-parity` measures both shapes on GB10 (2026-10-07, 64 greedy and seeded tokens, the hit primed with the prompt's history prefix):
+
+| model | miss partition | hit partition | miss vs hit |
+|---|---|---|---|
+| lfm2-350m-8bit (snapshot family) | `prefill[0..48)+prefill[48..51)` | `adopted[0..48)+prefill[48..51)` | identical, both cases |
+| qwen3-1.7b-4bit (dense KV) | `prefill[0..52)` | `adopted[0..45)+prefill[45..52)` | greedy diverges at token 0 (4792 vs 785), seeded at token 11 |
+| qwen3-1.7b-4bit, `--server-prefill-chunk 45` | `prefill[0..45)+prefill[45..52)` | `adopted[0..45)+prefill[45..52)` | identical, both cases |
+| llama-3.2-1b-instruct-4bit (dense KV) | `prefill[0..75)` | `adopted[0..71)+prefill[71..75)` | greedy identical, seeded diverges at token 25 |
+| llama-3.2-1b-instruct-4bit, `--server-prefill-chunk 71` | `prefill[0..71)+prefill[71..75)` | `adopted[0..71)+prefill[71..75)` | identical, both cases |
+
+The dense-KV rows diverge because their cold plan has no split point at 45 or 71: the hit's 7-row and 4-row suffix forwards run through `qmv`, the cold run's 52-row and 75-row forwards through `qmm`. Giving every family the history-boundary split would make those two rows identical, but it would cost every cold chat prefill a second forward launch and make the prompt cache change the output of a single-turn request (off vs miss, today identical for dense-KV families), which the Phase 5 `mlxcel run` versus `mlxcel generate` comparison relies on; it was rejected for #2170. The invariant to rely on is therefore: cache off and a cold prefill with the cache on are identical for every family without a history-boundary split, a hit from a split point is identical to the miss, and a hit from inside a piece is a partition change of the #203 / #325 / #326 near-tie class, pinned by the `mlxcel_core::prefill_plan` tests and `scheduler_prompt_cache_plan_tests::cache_hit_reproduces_miss_exactly_from_a_plan_split_point` (the divergence of an inside-a-piece hit is measured in the table above, not asserted numerically by a test).
+
+Known limitations of the plan, recorded for the epic's end-of-run measurement:
+
+- The history segment of a snapshot family's prefill (the span before the history boundary, #1143) is always one unchunked forward, whatever `--prefill-chunk-size` says. This predates the plan (it has been the case since #1143), and the plan keeps it because the segment is where the prompt cache snapshots the model state. A long chat history on a snapshot family therefore prefills as one forward that does not interleave with concurrent decode ticks; only the pieces after the boundary do.
+- PR #2226 measured the tradeoff that the adaptive default resolves: with four Llama-3.2-1B 4-bit streams decoding and an 8192-token request admitted, 2048 produced 127.9–128.9 ms stream ITL p95 during admission and 1903–2060 ms admitted-request TTFT; 512 produced 55.8–56.4 ms ITL p95 and 3768–4067 ms TTFT (three rounds). The scheduler therefore uses 512 only while `active_batch` is non-empty and returns to 2048 when the decode streams finish (#2228).
+
+The shipped policy passed its fresh-release GB10 acceptance run: three
+quiet-host admission rounds measured 54.1, 54.8, and 55.2 ms live-stream ITL
+p95, below the 62.0 ms limit. Five-round idle-server TTFT comparisons placed
+the policy median inside the explicit-2048 null range on both Qwen3-1.7B and
+Llama-3.2-1B. See the
+[raw results and protocol](benchmark_results/adaptive-prefill-chunk-gb10-2026-10-11.md).
+
+### Decode headroom under a tight budget (`--kv-admission-watermark`)
+
+When the budget is small relative to the concurrent work, admitting a request
+into exactly the free blocks leaves the running rows nowhere to grow. The next
+decode ticks then preempt the least-progressed row, which re-prefills from
+scratch when it is admitted again. `--kv-admission-watermark F` keeps the
+fraction `F` of the block budget free at admission: a request is admitted only
+when the free blocks minus `F * budget` cover it. To make that room it evicts
+cold prompt-cache prefixes and, for a higher-priority request, preempts
+strictly lower-priority rows (as admission already does for the request
+itself) before it waits. The watermark applies
+only while a decode batch is live, so a request that fits the budget is never
+refused; it waits for running rows to finish instead. `0` disables it, and it
+is inert without a block budget.
+
+The default, 0.01, is the smallest value on the measured grid that lowered
+preemptions without losing a turn. On GB10 with meta-llama-3.1-8b-instruct-4bit,
+`--kv-cache-budget 600000000` (4444 blocks), `--max-batch-size 4`, and three
+concurrent 3-turn conversations of 600-token generations, each value run twice
+with identical results:
+
+| Watermark | Preemptions | Decode reclaim passes | Turns completed | Wall time |
+|-----------|-------------|-----------------------|-----------------|-----------|
+| 0 | 10 | 43 | 9 / 9 | 103-104 s |
+| 0.01 | 6 | 6 | 9 / 9 | 90-91 s |
+| 0.02 | 6 | 6 | 9 / 9 | 89-90 s |
+| 0.05 | 5 | 5 | 9 / 9 | 89-90 s |
+| 0.10 | 1 | 2 | 9 / 9 | 86 s (one run) |
+| 0.15 | 1 | 3 | 9 / 9 | 88 s (one run) |
+
+Raise it when a tight budget preempts often and the extra queueing latency
+for new requests is acceptable.
+
+Two more rules keep the budget accounting honest (issue #2088). A request
+that adopted a cached prefix is charged only for the blocks its suffix will
+mint, since the adopted blocks are already in use. When a running row needs a
+block and none is free, the reclaim order is: evict a cold prompt-cache
+prefix, then drop a queued request's adopted prefix (it re-prefills cold when
+admitted), then preempt a running row.
+
+### How a chunked prefill shares ticks with decode (`--prefill-grant-interval`)
+
+The flag table above says `--prefill-chunk-size` "bounds prefill's effect on
+decode latency". That is true, and it is worth stating what the tick policy
+actually does, because the shape is not what a chunk size usually implies.
+
+A prompt longer than `--prefill-chunk-size` is admitted, runs chunk 0, and is
+then parked. From that point the tick policy resolves in favour of decode for as
+long as any sequence is active. Before issue #1011 it resolved that way
+*forever*: the policy is a pure function of scheduler state, and running a decode
+changes none of the state it reads, so the parked prompt made no progress at all
+until the last decoding sequence finished. Measured on an M1 Ultra, the prefill
+held at chunk 1 of 19 for 20 s while decode advanced 162 to 344 steps. With
+requests arriving continuously that wait has no ceiling, so neither does the
+admitted request's time to first token.
+
+`--prefill-grant-interval N` (default 16) bounds it. After `N` consecutive
+decode ticks the next tick is GRANTED to the parked prefill, which runs one
+chunk and resets the count. So:
+
+- **The bound.** The parked prompt advances at least one chunk per `N + 1`
+  ticks, so a `C`-chunk prompt reaches its first token within `C * (N + 1)`
+  ticks of admission, however long the batch keeps decoding.
+- **The price.** Over one grant cycle the decoding streams get `N` tokens per
+  `N * D + P` of wall clock, for a decode step `D` and a chunk forward `P`, so
+  their mean inter-token latency during the admission window is `D + P / N`.
+  Their p95 is a different shape: one gap in `N + 1` carries the chunk, so the
+  chunk shows up in p95 whenever `N < 19` and hides above p95 otherwise. The
+  hiccup is the same size either way; only its frequency changes, so tuning `N`
+  to keep a percentile clean is not the same as making the streams faster.
+
+`N` is therefore the TTFT-versus-ITL dial, on the same frontier
+`--prefill-chunk-size` moves from the other direction: a smaller chunk makes
+each hiccup smaller, a smaller interval makes them more frequent and the
+admitted request faster. `--prefill-grant-interval 0` disables the grant and
+restores the pre-#1011 arbitration, unbounded wait included. Measured frontier:
+[`docs/benchmark_results/prefill-fairness-m1ultra-2026-08-03.md`](benchmark_results/prefill-fairness-m1ultra-2026-08-03.md).
+
+Two further things worth knowing when reading latency numbers:
+
+- With the batch already at `--parallel`, a queued request is not admitted at
+  all, so it contributes no prefill and none of the above arises. The scenario
+  "a long prompt prefills while others decode" needs `--parallel` strictly above
+  the number of active streams.
+- At most one chunked prefill is ever parked. The scheduler holds it in a single
+  slot and the chunked branch short-circuits above the admission branch, so
+  while one prompt is parked no further request is admitted whatever the batch's
+  occupancy. Shortening the parked prompt's stay therefore also shortens the
+  head-of-line wait of everything queued behind it.
+
+Issue #908 analysed the same branch and decided against fixing it with a fused
+ragged forward; see
+[ADR 0005](adr/0005-mixed-prefill-decode-step-execution.md). The experimental
+`MLXCEL_MIXED_STEP=1` remains as the extreme end of the frontier: every tick
+advances both workloads, which minimizes the parked prompt's TTFT and maximizes
+what the decoding streams pay. It is a measurement instrument, not a supported
+operator knob. `scripts/bench_mixed_step_admission.py` drives the scenario and
+attributes each run through `mlxcel_batch_mixed_steps_total` (the #908
+prototype) and `mlxcel_batch_prefill_grants_total` (the #1011 grant);
+`scripts/bench/starvation_probe.sh` samples the same counters over time.
+
+### Bounding the batched-prefill transient (`--max-batch-prefill-tokens`)
+
+The `--kv-cache-budget` guard above bounds steady-state KV, not the transient a
+batched prefill allocates while it runs. When two or more cold prompts share one
+padded batched prefill, the path pads every row to the window's longest prompt
+`L` and materializes a stacked `[B, L, L]` FP32 attention mask plus a
+`[B, L, hidden]` forward. Left uncapped, `B` long prompts arriving together
+allocate an `O(B*L^2)` mask that ignores `--prefill-chunk-size`: four 8k prompts
+build a `[4, 8192, 8192]` FP32 mask, about 1 GiB, a spike far above the working
+set of the sequential chunked prefill those prompts take when batched prefill is
+off. On the serving path an allocation failure at this eval is now caught at the
+fallible `try_eval` FFI boundary and fails just the cohort's requests instead of
+aborting the whole server (issue #822); a persistent run of consecutive eval
+failures across cohorts still trips a shutdown guard, so the transient itself
+remains an availability edge the KV budget does not model.
+
+`--max-batch-prefill-tokens N` caps the drained batched window by total padded
+tokens (`rows * L`). Draining stops before a row that would push `rows * L` past
+`N`; the remaining rows stay queued and prefill on later ticks (short ones
+re-batch, long ones take the chunked single-sequence path). A head prompt too
+long to join a two-row batch (`2 * head_len > N`) skips the batched path
+entirely and prefills chunked. The bound follows from the token budget: a cohort
+of `B >= 2` rows padded to `L` costs `B*L <= N` tokens, and since `L <= (B*L)/2`
+the mask stays within `N^2 / 2` elements, i.e. `~N^2` bytes at FP16 and
+`~2*N^2` at FP32.
+
+The default budget is derived, not fixed: `2 * max_batch_prefill * min(prefill_chunk_size, 512)`
+(the shipped `2 * 4 * 512 = 4096`; the 2x headroom absorbs the padding slop of
+real 512-token prompts, whose chat template pushes them slightly over 512), so a
+full batch of short prompts stays eligible for batching while a window of longer
+prompts spills to the chunked path. The per-row share is capped at 512 so the
+ADR 0007 chunk default (2048) does not quadruple the budget and multiply the
+worst-case mask sixteen times (#2170). At the default the FP32 mask is bounded to `2 * 4096^2` bytes, about 34 MiB,
+negligible beside model activation memory. `0` (the flag, or
+`MLXCEL_MAX_BATCH_PREFILL_TOKENS=0`) disables the cap for the pre-#715 unbounded
+behavior. The flag takes precedence over `MLXCEL_MAX_BATCH_PREFILL_TOKENS`, which
+takes precedence over the derived default (see
+[environment-variables.md](environment-variables.md)).
+
+The analytic prediction for four concurrent 8k-token prompts on
+`meta-llama-3.1-8b-instruct-4bit` (Apple M1 Ultra, Metal):
+
+| config | prefill mask window | mask transient (analytic) | path |
+|--------|--------------------:|--------------------------:|------|
+| uncapped (`--max-batch-prefill-tokens 0`) | `[4, 8192, 8192]` FP32 | `4 * 8192^2 * 4 B` = 1024 MiB | single unchunked batched forward |
+| default cap (4096) | four `[≤2048, 8192]` chunk masks | `2048 * 8192 * 4 B` = 64 MiB (one at a time) | 8k prompts spill to the chunked single-sequence path |
+
+The empirical A/B (server phys-footprint peak: RSS does not capture MLX Metal
+buffers on Apple Silicon, so use `/usr/bin/footprint -p <pid>` for
+`phys_footprint_peak`) is pending a measurement session. Reproduce with a server
+started at `--max-batch-prefill-tokens 0` versus the default, driven by four
+concurrent 8k-token requests (`scripts/bench_serving_concurrency.py --concurrency 4
+--prompt-tokens 8192`, `--max-tokens` small to isolate prefill).
+
+Short-prompt concurrency (the #714 default motivation) is unaffected by
+construction: at `--prompt-tokens 512 --concurrency 4` all four rows cost
+`4 * 512 = 2048` padded tokens, half the default budget, so they batch with
+headroom even when the chat template pushes each prompt slightly past 512; the
+`2 * head_len <= budget` admission holds (`2 * 512 <= 4096`). TTFT and aggregate
+throughput match the #714 table above (empirical re-run pending the same
+session).
+
+### Paged decode and the prompt-prefix cache
+
+Decode state and the cross-request prompt-prefix cache share one refcounted,
+copy-on-write block pool (the default for batch-capable pool-backed families;
+`--decode-storage-backend dense` opts out). Concurrent requests that share a
+prompt prefix store that prefix's KV once and skip re-prefilling it: adoption
+is non-consuming (clone-and-pin), so one stored prefix serves any number of
+simultaneous borrowers, and Automatic Prefix Caching (on by default, disable
+with `--apc-enabled=false`) lets requests that diverge after a shared prefix
+reuse the common part. The mechanism, the measured memory and prefill-token
+savings, the decode throughput, and `--kv-cache-budget` are documented in
+[turbo-kv-cache.md](turbo-kv-cache.md#unified-paged-kv-cache). The paged backend
+is covered by `tests/paged_scheduler_parity.rs` for the scheduler-shaped
+qwen3/llama3 Fp16 dense-natural-cache path at B=1/B=2, and by a CUDA qwen3 arm
+that requires greedy-token equality with bounded logit RMS when TF32 is
+disabled. Do not generalize that evidence to VLM front ends, model-owned caches,
+Turbo/quantized-KV modes, or all CUDA reduction geometries.
+
+#### Reasoning models whose clients echo only `content`
+
+Some chat templates render an earlier turn differently depending on whether the following assistant message carries `reasoning_content`. AI21 Jamba-Reasoning keeps its thinking instruction on an earlier user turn only in that case, so a client that sends back only `content` (the OpenAI SDK default) re-renders that turn shorter than it was generated and the follow-up misses the prompt cache. While the prompt cache is on, the chat routes remember the exact reasoning they returned for each plain (non-tool-call) reply and put it back into a later content-only assistant turn, as if the client had echoed it: `/v1/chat/completions` (`reasoning_content`, issue #2110), `/v1/responses` (the `reasoning` output item) and `/v1/messages` (the `thinking` block, recorded only when the request enabled extended thinking, since otherwise the client never receives it), streaming and non-streaming (issue #2118). A stored trace is found only by a request with the same model, template signature (template, kwargs, tools), session (`prompt_cache_key`, then `user`), identical preceding messages and identical assistant `content`; any edit misses, a miss changes nothing, and reasoning the client echoed itself (`reasoning_content`, a Responses `reasoning` input item, or an Anthropic `thinking` block) always wins. The store holds only a 32-byte key and the reasoning text, is bounded to 16 MiB and 4096 entries with least-recently-used eviction (`MLXCEL_REASONING_ECHO_MAX_BYTES`, `0` disables), and is empty after a restart. It is not consulted under `cache_prompt: false`, `--reasoning-format none` or `deepseek-legacy` (the trace already travels inline in `content`), or `--skip-chat-parsing`, and it does not cover the prompt-inspection routes. The next-turn warm-up (#1144) on `/v1/chat/completions` renders the reply with its reasoning whenever the store kept it, and renders the request as it was rendered (filled turns included), so the warmed prefix matches what a content-only follow-up renders after its own fill (issue #2118).
+
+#### The fused decode kernel
+
+Since v0.4.4 a batched paged decode step runs as **one fused attention launch
+over the whole batch** (issue #899) rather than as a per-sequence loop that
+copied each sequence's visible KV out of the pool before attending. The kernel
+reads the pool's scattered pages in place through a CSR page table and splits
+the KV range across thread blocks, so its parallelism grows with context
+instead of saturating. Measured against the previous path on an Apple M1 Ultra:
+1.4x to 3.1x at batch 4 across 1K to 32K of context, and 1.3x to 1.5x for a
+single sequence at 16K and 32K
+(`docs/benchmark_results/paged-decode-v2-m1ultra-2026-07-31.md`).
+
+What it does *not* serve falls back to the previous gather-then-SDPA path, per
+launch, under the same parity limits described above:
+
+| case | why |
+|---|---|
+| a lone request under 4096 visible KV tokens | measured slower there (0.91x at batch 1 with 1K of context) |
+| a multi-request launch under 512 visible tokens per request | below the measured evidence, and gather is trivially cheap at that size |
+| a layer whose pool rows span more than one slab | the kernel reads one contiguous buffer per side |
+| multi-token steps: batched prefill, speculative / MTP verify | the kernel serves a single query token per sequence |
+| logit-softcap families, explicit attention masks | no soft-cap or mask term in the kernel |
+| Int8 / Turbo KV modes | those sequences keep dense caches and are never pool-backed |
+
+The floor is two-regime because the measured loss is a property of batch 1, not
+of total work: at 1024 tokens of context per request the kernel runs 0.91x at
+batch 1 but 1.41x at batch 4 and 1.47x at batch 8, since a batched launch
+spreads the same chunk count over more requests and amortizes the merge pass.
+
+#### Where the dense-versus-paged choice lives
+
+The kernel is picked by the cache, not by the model forward
+([ADR 0008](adr/0008-kv-attention-dispatch-in-the-cache.md), issue #2171;
+[ADR 0009](adr/0009-engine-step-api.md), issue #2172).
+`KVCache::attend` appends the step's K/V and runs attention for the storage
+behind that cache, and `cache::attend_batched` does the same for one layer of a
+batch. Qwen3, Llama 3 and the families that reuse their attention (Qwen2,
+Qwen2.5, Helium, the VLM text backbones) call these; DeepSeek V2's absorbed
+decode goes through `MlaLatentCache::attend`. The model-owned families hold
+their per-sequence state in their own cache enums and attend through the same
+rule: Gemma 3's `Cache::attend` routes a global layer to `KVCache::attend` and
+a sliding layer to `RotatingKVCache::attend` (whose write path stays
+`update_and_fetch`, where the #2182 decode undo log records every speculative
+write), and Llama 4's `Llama4Cache::attend` routes a chunked layer to
+`ChunkedKVCache::attend`. A batch over any of these runs
+`cache::attend_batched_rows`, one attention per row through the row's own
+cache. No model reads `is_paged_backed()`, and the scheduler no longer builds a
+per-step `DecodeBatchContext`: `forward_batched_with_ids` takes the ids and the
+caches only, and the storage policy is whatever `CachePool` wired when the
+sequence was opened.
+
+- The pooled launch keys on `caches[0].is_paged_backed()` at an unmasked
+  single-token step, so every batched caller (the synchronous step, the
+  lookahead prime, `forward_batched`) reaches the fused launch the same way. A
+  batch that mixes pool-backed and dense rows declines before it writes and
+  runs each row through `attend` on its own storage.
+- Model-owned state is never pool-backed, so Gemma 3 and Llama 4 always take
+  the dense rows of the table whichever `--decode-storage-backend` the server
+  runs. The dense-pointer `paged_decode_attention_dense_compat` and
+  `_rotating_compat` routes they used to select on the paged backend were
+  per-row C++ loops (block slices, a concat, one SDPA per row); the per-row
+  `attend` loop is the same attention without the block concat, not
+  bit-identical to it. On the dense backend an FP16 or Int8 Gemma 3 row runs
+  the exact ops it ran before; a Gemma 3 global layer in any Turbo mode with a
+  dequant-first or compressed decode variant (Turbo4Asym, Turbo4Delegated, and
+  sparse-V behind its environment gates) now takes the variant
+  `KVCache::attend` selects, as Qwen3 does, instead of `update_and_fetch` plus
+  SDPA. Llama 4's RoPE layers run the whole block batched on both backends
+  (projections, residuals, the post-attention norm and the MoE feed-forward;
+  before #2172 the dense backend ran every row through the single-row block),
+  with the per-row attention unchanged. A real-checkpoint check
+  (`scheduler_real_batch_parity_tests`, gemma-3-1b-it-4bit under
+  `MLXCEL_SDPA_DETERMINISTIC=1`) gives two concurrent greedy requests the
+  same token streams as each request alone, on both backends.
+- The [2026-10-11 GB10 paired/null storage sweep](benchmark_results/model-owned-storage-gb10-2026-10-11.md)
+  kept `supports_paged_decode_backend()` true for both model-owned families.
+  None of the six prompt/concurrency cells per family cleared its rotating
+  paged-repeat null spread in either direction. Therefore `auto` on a
+  multi-slot server and an explicit `paged` request still select paged
+  storage for Gemma 3 and Llama 4, including the pool allocation and
+  per-step mirror, while their attention continues through the dense rows
+  described above.
+- Batched decode over Turbo caches takes the dequant-first variants that
+  single-sequence decode already used, instead of a full dequant per step. The
+  attention is the same exact math in a different op order, so it is not
+  bit-identical to the old batched route.
+- The FP16 layers of a non-FP16 paged layout (the Boundary-V layers a Turbo mode
+  keeps at FP16, and the last layer under `--kv-skip-last-layer`) hold dense
+  caches. They now run a per-row dense update plus SDPA instead of the removed
+  `paged_decode_attention_dense_compat` route: the same attention without the
+  concat copy, but not bit-identical to it.
+
+#### Seeing which path ran
+
+The server announces the first occurrence of each distinct dispatch outcome at
+**info**, with no `RUST_LOG` needed:
+
+```text
+INFO ...: paged decode v2: fused v2 launch (batch 4, 3828 visible KV tokens, 16 chunks, merge on)
+INFO ...: paged decode v2: gather: the layer spans 3 K / 3 V pool slabs and the fused kernels read one buffer per side (slab_blocks=32); raise --ctx-size or MLXCEL_PAGED_SLAB_BLOCKS so a layer's rows fit one slab
+INFO ...: paged decode v2: gather: 1024 visible KV tokens across 1 request(s) is below the 4096-token dispatch floor
+INFO ...: paged decode v2: gather: pinned by MLXCEL_PAGED_ATTENTION_NATIVE
+INFO ...: paged decode v2: fused v2 cascade launch (batch 4, 4 of them sharing 256 pages / 8192 KV tokens read once; 8 shared-span chunks, 4 suffix chunks)
+```
+
+A run that never prints `fused v2 launch` never used the fused kernel, whatever
+its throughput looks like. Check for that line before drawing any conclusion
+from a before/after comparison.
+
+Two knobs, neither normally needed:
+
+- `MLXCEL_PAGED_ATTENTION_NATIVE=0` is the kill switch. It restores the
+  pre-#899 gather behaviour end to end, for bisecting a suspected kernel
+  regression. `=1` forces the fused path for every servable shape, bypassing
+  the token floor; that is the supported way to benchmark the declined corner.
+  The floors themselves move with `MLXCEL_PAGED_V2_MIN_KV_TOKENS` (lone
+  request, default 4096) and `MLXCEL_PAGED_V2_MIN_KV_TOKENS_PER_REQUEST`
+  (multi-request, default 512).
+- `MLXCEL_CASCADE_ATTENTION=1` enables two-level cascade decode (issue #903):
+  a whole-page prompt prefix shared by several sequences in the batch is
+  attended once for the subgroup and merged into each member's per-request
+  suffix state, instead of being re-read once per sequence. Off by default,
+  pending a serving measurement. Its own outcome line says when it ran, and
+  `/metrics` carries `mlxcel_paged_decode_launches_total{path="cascade"}`
+  alongside the flat and gather counts. See
+  [Cascade attention](cascade-attention.md).
+- `MLXCEL_PAGED_SLAB_BLOCKS` overrides the pool's slab size in blocks. The
+  server derives it from `--ctx-size` and `--parallel`, clamped by the KV
+  budget, and logs the resolved value at startup (`Paged KV slab size: N blocks
+  per layer`). A layer's first write allocates its whole slab, so this
+  front-loads exactly the KV bytes the startup memory estimate already reports
+  for that batch and context. **Serving contexts longer than `--ctx-size`
+  implies makes layers outgrow the slab and silently returns them to the gather
+  path**; raise `--ctx-size` or set this variable if the startup line looks too
+  small. `0` pins the historical 32-block default.
+
+Recurrent and hybrid SSM / linear-attention families cannot safely reuse
+arbitrary KV blocks, so they keep the hybrid-SSM/APC exclusion. Families that
+opt into `supports_snapshot_reuse()` instead use a separate exact-prefix
+snapshot bucket: on a healthy finish the scheduler copies the model-owned
+state, and on the next turn it restores that state only when the stored token
+vector is a whole prefix of the incoming request in the same session. A
+speculative burst that finishes partway through a verified batch (a stop
+string, generation bound, context bound or repetition loop before the batch's
+last token) does not donate, because the model-owned state is already ahead of
+the committed tokens. The
+unmatched suffix is still prefilled normally, with no recurrent state
+truncation or cross-session sharing. The supported snapshot families are
+Mamba, Mamba2, Jamba, Nemotron-H, Qwen 3.5 / 3.6 text, MoE, and VLM wrappers,
+and Gemma 4 text, VLM, and Unified wrappers.
+
+For multimodal servers, `--enable-vlm-prefix-cache` opts image requests into
+prompt-prefix reuse across same-session follow-up turns with the same image.
+The default stays off for VLM requests, and text-only prompt-cache behavior is
+unchanged.
+
+### Speculative decoding under continuous batching
+
+Supplying a drafter checkpoint (`--draft-model` on `mlxcel serve`,
+`--model-draft` on `mlxcel-server`; the spellings are cross-aliased) turns on
+server-side speculative decoding. The kind is auto-detected from the drafter's
+`config.json` (`--draft-kind mtp|dflash` overrides), and the draft block size
+K is resolved at startup (`--draft-block-size` and its two environment
+spellings override it): a width the drafter checkpoint declares for itself
+wins first, then a measured default for the running compute capability and the
+target's quantization mode (issue #1797; a DFlash drafter against an
+affine-quantized target on GB10 resolves to 4), then the flat per-kind
+constant, 4 for MTP and 16 for DFlash. The resolved width and which of those
+produced it are logged at startup on the `speculative=` line.
+
+Whether the singleton (B=1) speculative burst actually runs is decided by an
+adaptive policy (issues #333/#736), not by the flag alone. The first 4
+qualifying requests of each (target, drafter, hardware, K) pairing are
+profiled with speculation forced on; each profiled burst also runs 2
+classic-step probe rounds (drafterless single-token verifies that emit real
+greedy tokens), so the policy can compare the measured speculative round cost
+against the measured classic step time and settle to Enable, Decline, or the
+static per-hardware default when the estimate is ambiguous. The verdict is
+persisted under `${MLXCEL_CACHE_DIR:-$HOME/.cache/mlxcel}/mtp-policy/` and
+logged at settle time (`adaptive MTP policy: settled verdict ... est_speedup=...
+[measured]`), so a restart skips profiling. Changing K re-profiles. Because
+the decision is measured, the same binary enables a pairing where the
+speculative round pays for itself (Gemma 4 12B + assistant: 1.90x to 3.14x on
+M5 Max depending on how predictable the output is,
+~1.5x on GB10 with the multirow qmv verify) and declines it where it does not
+(the same pairing on M1 Ultra, or on CUDA with `MLXCEL_QMV_MULTIROW=0`).
+
+`GET /v1/internal/mtp-policy` reports the current pairing's state through a
+versioned, supported interface: whether the verdict has settled and which way,
+how many qualifying samples a profiling window still needs, and why no policy
+is running when there is none. A host application should read it there rather
+than parsing the hint files, which are a private on-disk format. See
+[Adaptive MTP policy API](mtp-policy-api.md).
+
+Scheduling: for non-batchable targets (the 12B Unified family) an enabled B=1
+burst equals their inherent single-slot serialization. For batch-capable
+targets, the B=1 MTP arm is served tick-cooperatively by default (issue #734):
+the request runs one speculative round per scheduler tick, alternating with
+the classic decode/prefill actions, so concurrent classic-decode rows advance
+between rounds instead of stalling for the whole request. This bounds the
+head-of-line stall a speculative request imposes on concurrent rows to about
+one round; the scheduler logs it as the max single-tick `burst_wall_ms` at
+finalize (on the validation pairing this dropped a multi-second whole-burst
+stall to about one round of steady-state occupancy, roughly 23x faster
+time-to-first-token for the concurrent classic rows). The interleaving is not
+free: on the validation pairing the strict alternation cost roughly 27% of
+the combined two-request aggregate decode throughput, so
+`MLXCEL_MTP_TICK_SLICE=0` restores the legacy run-to-completion burst for
+deployments that serve speculative requests without concurrent classic traffic
+and want raw speculative throughput. DFlash B=1 and every B>1 batched burst
+still run to completion inside one tick regardless of the flag. Concurrent
+speculative requests that share a prompt length, `max_tokens`, and sampling
+config can instead run as one B>1 batched burst, but that path is experimental
+and stays behind `MLXCEL_ENABLE_MTP_BATCH` (plus
+`MLXCEL_ENABLE_MTP_BATCH_RAGGED` for mixed prompt lengths). On the Gemma 4
+geometries whose MTP verify runs row by row (the 31B everywhere, the 12B on
+CUDA) the batched burst is decode-exact since issue #2190: each row is
+prefilled and verified through the B=1 calls and only the cache write is
+batched. It runs on CUDA for windows of up to 4 rows short enough that the
+sliding cache never compacts under a lagging row, and declines to classic
+decode otherwise; see
+[the GB10 record](benchmark_results/gemma4-mtp-batched-gb10-2026-10-07.md).
+
+A tick-cooperative slice spans the request's whole generation, so the single
+speculative slot would otherwise be held for that entire time. Since issue
+#746 the slot rotates across concurrent speculative requests instead of
+serving only the first one: while a slice is in flight, up to 2 further
+tick-slice-eligible requests are parked in a grant backlog (any beyond that
+cap fall back to classic decode, the pre-#746 behavior), and once the active
+request has run `MLXCEL_MTP_SLICE_GRANT_ROUNDS` slices (default 8, slice 0
+included) with the backlog non-empty, it is parked at the next round boundary
+and the slot is granted to the next request, priority lane first and FIFO
+within a lane, with an anti-starvation floor: an entry passed over by 2 grant
+decisions becomes overdue and must be granted next regardless of lane, so a
+sustained stream of higher-priority arrivals (priorities are client-assignable
+via the `X-Priority` header) can delay a lower-priority request only by a
+bounded number of grants, never stall its stream outright. The backlog cap
+applies at admission; a park transiently holds cap + 1 backlog entries until
+the next promotion, so total live speculative sessions (the active request
+plus parked and waiting ones, each holding its per-sequence KV) peak at 3.
+A parked request resumes from its saved session state on its
+next grant, with the worker's one drafter handle handed over through the same
+return/take plumbing the end of a request uses (safe because the MTP
+assistant drafter's reset is a no-op and every round re-arms the drafter from
+the session's own stored verify output), so the token streams are
+byte-identical to uncontended runs. The budget binds only under contention:
+a single speculative request never rotates and behaves exactly as under
+#734. `MLXCEL_MTP_SLICE_GRANT_ROUNDS=0` disables rotation and restores the
+whole-generation hold, including the classic fallback for every concurrent
+speculative request.
+
+Operator controls, all env-level (see
+[environment-variables.md](environment-variables.md)): `MLXCEL_ENABLE_MTP_B1`
+pins the B=1 decision in either direction and suppresses profiling,
+`MLXCEL_MTP_ADAPTIVE=0` disables the adaptive policy in favor of the static
+per-hardware gates, `MLXCEL_MTP_SLICE_GRANT_ROUNDS` sizes (or disables) the
+speculative-slot grant rotation, and `MLXCEL_QMV_MULTIROW=0` restores the
+stock per-row CUDA quantized-matmul kernel under the verify.
+
+On CUDA, the same draft/verify shape diversity (multiplied by batch size and
+sequence-length bucket) is also what drives MLX's own captured-graph-cache
+LRU hardest; mlxcel raises `MLX_CUDA_GRAPH_CACHE_SIZE` to 2000 at startup by
+default so a long-lived server does not hit MLX's fatal `Cache thrashing`
+abort at its own 400 default (issue #818, `MLX_CUDA_GRAPH_CACHE_SIZE` in
+[environment-variables.md](environment-variables.md)).
+
+### Prompt lookup under continuous batching
+
+`--draft-kind prompt-lookup` (on `mlxcel serve` and `mlxcel-server`, with no
+drafter checkpoint; a `--draft-model` with it fails startup) offers n-gram
+prompt-lookup speculation per request inside the batch scheduler (#2255). It
+pays off on replies that copy the prompt (edits, reformatting, quoting). At
+prefill completion an eligible request gets a `PromptLookupDrafter`;
+`--draft-block-size` sets the largest proposal (default 7) and the backend draft policy is `gated` on CUDA, `graded` elsewhere. The
+startup summary includes `max_draft`, `policy`, `max_batch`,
+`min_tokens_per_round`, `shadow_confirm_tokens`, and
+`plain_rounds_before_pipeline`.
+
+The CUDA server opts into a break-even governor (#2264): after two drafted
+rounds, an EMA (weight 0.5) below four emitted tokens per verify round
+(accepted proposals plus the bonus), with the latest round also below that
+floor, pauses the row. One zero-accept round is exempt if its preceding
+accepted-token EMA meets the floor. This grace never extends beyond the first
+consecutive low-yield round; pausing still requires the emitted-token EMA to
+be below the floor. This preserves isolated misses after strong copy evidence while
+partially accepted, unprofitable rounds pause without that grace. It is a
+heuristic measured on the workloads in the benchmark report, not a guarantee
+for arbitrary prose. A round that already meets the floor can repay startup
+EMA debt without pausing. The floor is capped at
+`max_draft + 1` for explicitly narrower blocks, so full acceptance keeps
+drafting. Paused rows immediately
+permit pipelining and continue shadow lookups; seven consecutive proposed
+tokens must come true before verification resumes with fresh evidence.
+Ordinary proposal-free asks re-prime after the first ask instead of the CLI's
+three. Each row keeps its own evidence even at concurrency two; a proposing
+peer still makes the shared tick synchronous. The CLI defaults and the graded
+policy remain unchanged. The [GB10 break-even report](benchmark_results/server-prompt-lookup-break-even-gb10-2026-10-11.md) records the final passing matrix: chat −0.275%, short-copy +149–159%, and long-copy 1.52–2.82×. These measurements cover Qwen3-1.7B 4-bit on GB10; the boundary-miss heuristic is not a guarantee for other workloads.
+
+Each decode tick asks the eligible rows for a proposal. A row that proposes
+runs one verify round on its own (the round `mlxcel generate --prompt-lookup`
+runs), and every other row takes the regular batched step, so concurrent
+requests keep getting a token every tick; there is no run-to-completion burst.
+Ticks where nobody proposes stay on the lookahead pipeline. A proposal found
+while a step is in flight commits that step without submitting the next one,
+and the following tick verifies synchronously, so the switch costs no forward;
+the pipeline resumes once the drafters report a run of rounds without
+proposals.
+
+Each proposing row costs one extra forward per tick, so verify rounds run only
+while the active decode batch has at most `--prompt-lookup-max-batch` rows
+(default 2; at a gate of 8 one chat-template workload lost 13 % at concurrency
+4 on GB10). Above that every row decodes plainly, its drafter records no miss,
+and it resumes when the batch shrinks. On paged storage a sequence stops
+verifying once total context passes 4608 tokens. The original 4096-target
+benchmark actually tokenizes to 4099–4102 prompt tokens; with its 256-token
+continuation it needs up to 4358 positions. A separate admission diagnostic
+found that the old 4096 cutoff suppressed every proposal in that workload.
+The 4608 cap is the smallest 512-token boundary covering that envelope; it
+keeps 8192-token contexts excluded, where gathered verification previously
+lost performance (0.62x on a 59% acceptance prompt). This boundary rationale
+does not establish the new configuration's performance; the full same-build
+acceptance run is required. See the [context diagnostic](benchmark_results/data/server-prompt-lookup-break-even-gb10-2026-10-11/context-diagnostic.md).
+Dense storage has no such limit.
+
+Before the break-even governor, the flag gained on output that copied its
+prompt (+53 to +67 % at B=1 on GB10
+for a repeat-the-paragraph prompt, up to 2.8x with a long document in front)
+but cost 3.5 % on chat whose reply copied little (25 to 45 % of proposed
+tokens accepted), because each proposal also ends the lookahead for a tick.
+Turn it on for workloads that quote or edit their input. Measurements:
+[`docs/benchmark_results/server-prompt-lookup-gb10-2026-10-11.md`](benchmark_results/server-prompt-lookup-gb10-2026-10-11.md);
+the server break-even governor addresses these low-yield rounds (#2264). Verify rounds also stay off under a unified KV
+budget (`--kv-unified`). Requests with images, audio or video, structured
+output, per-token logprobs, mirostat, adaptive-p or the extended sampler chain
+(dynamic temperature, `min_keep`), and models whose state a cache trim cannot
+roll back (recurrent, hybrid and model-owned families), decode plainly; a
+`debug` log names the reason. A finished request reports its verify rounds in
+the `timings` block with `draft_kind: "prompt-lookup"` (see
+[speculative-acceptance.md](speculative-acceptance.md)). `--spec-type none` turns prompt lookup off like any other drafter.
+
+The first eligible prefill, normally the server's startup warmup request, runs
+one verify forward at every block width (2 through `--draft-block-size` + 1)
+and unwinds each, as `mlxcel generate --prompt-lookup` does before it decodes,
+so the first requests do not pay each width's first-use kernel cost
+mid-decode.
+
+## Disaggregated serving
+
+Prefill is compute-bound and decode is memory-bound, so a deployment can run them
+on separate processes (or machines) with a router in front. `--node-role`
+selects the role:
+
+- **`prefill`**: runs prompt prefill, samples the first token, and hands the
+  sequence's KV cache off to a decode node over TCP.
+- **`decode`**: receives the KV handoff, continues autoregressive decode, and
+  returns the continuation.
+- **`router`**: a model-free HTTP front (it loads only a tokenizer and chat
+  template, not model weights). It tokenizes the client request, routes it to a
+  prefill node, and merges the prefill node's first token with the decode node's
+  continuation into one SSE stream back to the client.
+- **absent (hybrid)**: single-node serving, byte-identical to a server started
+  with no distributed flags.
+
+Request flow (topology A): client HTTP request -> router -> prefill node (TCP)
+-> decode node (TCP) -> router merges the two halves -> client SSE.
+
+Networking flags:
+
+| Flag | Role | Purpose |
+|------|------|---------|
+| `--serving-bind <addr>` | prefill, decode, router | This node's own role-transport listener (`host:port`). |
+| `--decode-peers <addr,...>` | prefill, router | On a router, the decode pool it balances; on a prefill node, the static fallback used only when the router does not pick a decode target for a request. |
+| `--prefill-peers <addr,...>` | decode, router | On a router, the prefill pool it balances; on a decode node, the prefill node(s) it accepts handoffs from. |
+
+### Multi-node routing, load balancing, and failover
+
+With more than one prefill or decode node, the router balances both pools
+(issue #201). For each request it picks a prefill node and, independently, a
+decode node, both round-robin across the nodes the registry currently considers
+online (the router has no live per-node load telemetry, so round-robin is the
+strategy that actually spreads load). The chosen decode node travels to the
+prefill node in the request frame's `decode_target` field, so the prefill node
+hands the KV cache to the router-balanced decode node rather than to its own
+`--decode-peers` config. The field is optional on the wire: a frame without it
+(an older router) leaves the prefill node on its config fallback, and an older
+prefill node ignores it and uses config, so mixed-version pools keep working.
+
+As opt-in defense-in-depth (issue #389), a prefill node can validate the
+router-chosen `decode_target` against an allowlist before connecting. The
+allowlist source is the dedicated `MLXCEL_DECODE_ALLOWLIST` environment variable,
+a comma-separated list of numeric `IP:port` values (parsed as `SocketAddr`) set to the full pool of router-selectable decode nodes (the shared cluster config); hostname:port entries are not resolved and are skipped with a warning. It is independent of `--decode-peers`,
+which stays the static handoff fallback only, so enabling the allowlist does not
+constrain router balancing. When `MLXCEL_DECODE_ALLOWLIST` is unset the prefill
+stays permissive and logs a warning rather than rejecting, so balancing is never
+silently broken; see [`docs/distributed.md`](distributed.md) for the security
+rationale.
+
+The router tracks node health and fails over without wedging:
+
+- A transport error when sending a request to a prefill node marks that node
+  unreachable, re-routes its in-flight requests, and retries the request on a
+  healthy node. When no prefill node is left, the request fails cleanly with an
+  error rather than hanging.
+- A background health monitor TCP-probes every peer's serving address on an
+  interval. A node that stops accepting connections is marked unreachable (so
+  routing skips it, including a dead decode node the router never sends to
+  directly), and a node that starts accepting again is restored to online.
+- Admission control runs before every dispatch: when the prefill queue is full
+  or no prefill node is available, the router returns HTTP 503 instead of
+  attempting a dispatch that cannot succeed.
+
+`GET /router/stats` reports the per-node dispatch counts for both pools, the
+registered nodes with their current health status, and the routing-metrics
+snapshot, so an operator can confirm the spread and see which nodes are down.
+
+The handoff transfers the paged block contents (not just metadata) over the
+transport, so the decode node reconstructs the exact KV the prefill node built;
+see `src/distributed/kv_cache_serde/`. The disaggregated output is byte-identical
+to a single-node run, verified end to end by `tests/disaggregated_router_e2e.rs`
+(three real processes) and at the cache level by `tests/paged_handoff_parity.rs`.
+
+Implementation entry points: `src/server/router_front.rs` (the router front),
+`src/distributed/disaggregated/{coordinator,handoff_impl,serving_protocol}.rs`
+(the role loops and wire protocol), and `src/server/batch/` (the scheduler
+serving-role entries).
+
+### Example: three processes on localhost
+
+```bash
+# Decode node: receives KV handoffs on :8304.
+mlxcel-server -m models/<ckpt> --port 8302 \
+    --parallel 2 --max-batch-size 2 --decode-storage-backend paged \
+    --node-role decode --serving-bind 127.0.0.1:8304
+
+# Prefill node: prefills, hands off to the decode node.
+mlxcel-server -m models/<ckpt> --port 8301 \
+    --parallel 2 --max-batch-size 2 --decode-storage-backend paged \
+    --node-role prefill --serving-bind 127.0.0.1:8305 \
+    --decode-peers 127.0.0.1:8304
+
+# Router: model-free HTTP front on :8300.
+mlxcel-server -m models/<ckpt> --port 8300 \
+    --node-role router --serving-bind 127.0.0.1:8306 \
+    --prefill-peers 127.0.0.1:8305 --decode-peers 127.0.0.1:8304
+
+# Client talks only to the router.
+curl http://127.0.0.1:8300/v1/chat/completions \
+    -H 'content-type: application/json' \
+    -d '{"model":"m","messages":[{"role":"user","content":"What is 2 + 2?"}],"stream":true,"temperature":0}'
+```
+
+### Scope and limitations
+
+- Pool-backed Fp16 families only (the dense-natural backends such as qwen3 and
+  llama3). Model-owned-state families and recurrent/hybrid SSM models are
+  excluded from the paged handoff; the exact-prefix snapshot cache described
+  above is a single-node prompt-cache optimization and is not serialized across
+  disaggregated prefill/decode roles.
+- Text-only. The router serves `POST /v1/chat/completions` and `POST /v1/completions`; multimodal requests are rejected.
+- On `/v1/completions`, three option groups are rejected with HTTP 400 because the disaggregated wire protocol does not carry the data they require: `logprobs`, `response_format` (structured output), and explicit reasoning/thinking budgets. Requests without those fields work normally.
+- A forced `tool_choice` (`"required"` or a named function, #1319) is accepted on `/v1/chat/completions` rather than rejected the way `response_format` is: the router still narrows the declared tools and injects the same prompt instruction the single-node path uses, but the disaggregated wire protocol cannot carry a compiled grammar constraint to the decode node, so the call is enforced through the prompt only and is logged once at `warn`. Combining a forced `tool_choice` with `response_format` on the same request still 400s, matching single-node.
+- `stop` sequences are not forwarded to the worker nodes by the router. This is a pre-existing limitation shared with the chat path.
+- `completion_tokens` in the usage block uses the worker's authoritative generated-token count carried over the disaggregated wire protocol (issue #387), so it is exact for both byte-level BPE tokenizers (Qwen, Llama) and byte-fallback tokenizers (Gemma `<0xXX>` byte sequences), and `finish_reason` matches single-node. A node that predates the wire field (a mixed-version cluster) falls back to counting emitted detokenized text pieces, which can under-count for byte-fallback tokenizers and flip `finish_reason` between `"length"` and `"stop"`.
+- `/v1/chat/completions` reports the same `usage` shape as `/v1/completions` (`prompt_tokens`, `completion_tokens`, `total_tokens`): the non-streaming response always carries it, and the streaming response sends it as a trailing chunk with empty `choices` when the request sets `stream_options.include_usage`, matching single-node (issue #398).
+- The router stream filter suppresses model-specific structural markers (`<think>`, tool-call delimiters) and routes thinking content to `reasoning_content` plus the default identical `reasoning` alias, matching the single-node Chat Completions path; `--reasoning-alias-field none` suppresses the duplicate. Tool-call parsing is not yet supported on the router path: only `content` and the configured reasoning fields are emitted.
+- Co-locating the roles on one machine adds transport hops without the scaling
+  benefit of separate prefill and decode hardware, so a single-machine setup is
+  for validation. The throughput case for disaggregation is separate prefill and
+  decode pools under load.
