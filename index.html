@@ -1867,10 +1867,10 @@ const renderReadme = (htmlContent, lang) => {
                     try {
                         
                         // #performance 섹션 안의 3개의 .info 카드 가져오기
-                        const infoBlocks = document.querySelectorAll('#performance .info');
+                        const infoBlocks = document.querySelectorAll('#blog .info');
                         
                         // #performance 섹션의 최상단 타이틀 수정
-                        const mainTitle = document.querySelector('#performance .title h3');
+                        const mainTitle = document.querySelector('#blog .title h3');
                         if (mainTitle) mainTitle.innerText = "Latest";
                         
                         items.forEach((item, i) => {
