@@ -1,0 +1,187 @@
+# Adaptive MTP policy API (`/v1/internal/mtp-policy`)
+
+`mlxcel-server` decides per machine whether the singleton (B=1) MTP speculative burst is worth running for the pairing it is serving. It profiles the first few qualifying requests, settles on an enable or decline verdict, and persists that verdict so a restart does not re-profile. See `MLXCEL_MTP_ADAPTIVE` in [Environment variables](environment-variables.md) for how the decision is made, and [Continuous batching](CONTINUOUS_BATCHING.md) for where it sits in the scheduler.
+
+That verdict is the only machine-specific answer to "does MTP help for this pairing here", and it is what a host application wants to show a user. This endpoint is the supported way to read it.
+
+Implementation source map:
+
+| Module | Responsibility |
+|--------|----------------|
+| `src/server/batch/mtp_policy.rs` | The policy state machine, the persisted hint, and the published `MtpPolicySnapshot`. |
+| `src/server/batch/observability.rs` | Holds the last snapshot the worker published. |
+| `src/server/routes/mtp_policy.rs` | Route handler and the wire body. |
+
+## Endpoint
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/v1/internal/mtp-policy` | Report the adaptive MTP policy state for the running pairing. |
+
+No `/v1`-less alias is mounted.
+
+On a model-serving node, the endpoint is always mounted, unlike `/props`, `/slots`, and `/metrics`, which are gated behind CLI flags. The one exception is the disaggregated router front-end (`--node-role router`): its router app mounts only `/health`, `/router/stats`, `/v1/chat/completions`, and `/v1/completions`, and 404s everything else, exactly as it already does for `/v1/models`, `/v1/cache/stats`, and `/metrics`. On the nodes where it is mounted, the endpoint answers with a well-formed body in every state, including when no policy is running at all, so a consumer can poll it unconditionally and never has to tell "nothing to report" apart from "this server does not serve this path". It sits behind the same API-key middleware as every other route, and its payload is as coarse as the persisted hint: a verdict, an acceptance rate, a sample count, and the pairing identity. No prompt data, no token ids, nothing request-identifying.
+
+## Response body
+
+```json
+{
+  "schema_version": 1,
+  "state": "settled",
+  "reason": null,
+  "decline_detail": null,
+  "verdict": "enable",
+  "mtp_enabled": true,
+  "target": "Gemma4-12B",
+  "drafter": "Gemma4-12B-MTP",
+  "hardware": "M5-16c",
+  "block_size": 4,
+  "acceptance_rate": 0.62,
+  "samples": 4,
+  "samples_required": 4,
+  "samples_remaining": null
+}
+```
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `schema_version` | integer | Wire schema version of this body. See [Versioning and compatibility](#versioning-and-compatibility). |
+| `state` | string | `"settled"`, `"profiling"`, `"forced"`, `"unavailable"`, or `"exactness_declined"`. |
+| `reason` | string or null | Why the policy is unavailable. Non-null only when `state` is `"unavailable"`. |
+| `decline_detail` | string or null | The exactness probe's one-line reason. Non-null only when `state` is `"exactness_declined"`; the same sentence the boot-time WARN logs. |
+| `verdict` | string or null | `"enable"` or `"decline"` once settled, `null` otherwise. Same values as the `verdict` field of the persisted hint. |
+| `mtp_enabled` | boolean or null | Whether the *policy* is not blocking the B=1 MTP burst right now. This is the live gate, not the verdict: it is `true` while profiling, because profiling forces MTP on at the policy level. It does not mean a burst is actually running: later runtime gates (target support, exactness, capability checks) can still reject every burst attempt, in which case profiling never accumulates a sample despite `mtp_enabled: true`. |
+| `target` | string or null | Served model directory basename. |
+| `drafter` | string or null | Draft model directory basename. |
+| `hardware` | string or null | Coarse hardware-class label that keys the persisted verdict. Apple hosts keep the generation-plus-core form, for example `"M5-16c"`. Non-Apple hosts prefix the GPU backend and, when the backend publishes one, the device architecture, for example `"cuda-Unknown-0c"` or `"rocm-gfx1151-Unknown-0c"`, so a CUDA verdict is not reused on ROCm (issue #1887). |
+| `gpu_vendor` | string | GPU vendor of the serving host: `"Apple"`, `"Nvidia"`, `"Amd"` or `"Unknown"`. |
+| `gpu_device` | string or null | Device name as the backend reports it, for example `"AMD Radeon 8060S Graphics"`, or null when the backend publishes none. |
+| `gpu_architecture` | string or null | Architecture string in the running backend's own vocabulary: `gfx1151` on ROCm, `sm_89` on CUDA, an Apple GPU family string on Metal. Not comparable across vendors, so read it together with `gpu_vendor`. |
+| `block_size` | integer or null | Draft block size (K) the pairing is keyed on. |
+| `acceptance_rate` | number or null | Coarse measured acceptance rate (accepted draft tokens over proposed). Running value while profiling, final value once settled, `null` when nothing was measured. Rounded to two decimals once settled, matching the persisted hint exactly; while profiling it is the raw unrounded running quotient instead. |
+| `samples` | integer | Qualifying samples accumulated so far, or behind the settled verdict. `0` when forced or unavailable. |
+| `samples_required` | integer | Qualifying samples a profiling window needs before it settles. |
+| `samples_remaining` | integer or null | Qualifying samples still needed. Non-null only while `state` is `"profiling"`, because nothing is pending in any other state. |
+
+The four fields `target`, `drafter`, `hardware`, and `block_size` are the pairing key. A consumer showing a verdict should confirm they match the pairing it is showing, in particular `block_size`: a verdict profiled at one K does not carry to another, and changing `--draft-block-size` / `MLXCEL_DRAFT_BLOCK_SIZE` starts a fresh profiling window. `--num-draft-tokens` is a separate, offline-only `generate` setting and does not reach the policy key.
+
+### States
+
+| `state` | Meaning |
+|---------|---------|
+| `settled` | A verdict is in effect, either measured in this process or restored from a persisted hint. `verdict` says which way. |
+| `profiling` | Still accumulating samples. There is no verdict yet; `samples_remaining` says how many qualifying single-request generations are still needed. MTP is forced on at the policy level meanwhile, so `mtp_enabled` is `true`. Limitation: if per-request runtime gates below the policy (target support, per-sequence capability checks) reject every burst attempt, no sample is ever recorded and this state persists with `samples: 0`. The one structural case of that starvation, the exactness-probe veto, reports as `exactness_declined` instead since issue #1298. |
+| `exactness_declined` | The runtime exactness probe declined the pairing: the multi-token verify block is not byte-identical to the single-token chain on this hardware under any available kernel selection, so the B=1 burst never dispatches and requests serve classic decode. `decline_detail` carries the probe's reason, `mtp_enabled` is `false`, and no verdict will ever arrive, which is exactly why this is not `profiling`. `MLXCEL_MTP_ALLOW_INEXACT=1` opts into running anyway, forfeiting the temperature-0 byte-identity contract. |
+| `forced` | `MLXCEL_ENABLE_MTP_B1` pinned the decision. Nothing was profiled and nothing was measured, so `verdict`, `acceptance_rate`, and `samples` carry no measurement. `mtp_enabled` still reports what the pin resolved to. |
+| `unavailable` | No adaptive policy is running. `reason` says why. |
+
+`forced` is deliberately not folded into `settled`. An operator pin is not a measured verdict, and a consumer that rendered it as "this machine measured MTP as worth it here" would be reporting something nobody measured. Render a pin as a pin.
+
+### Unavailable reasons
+
+| `reason` | Meaning |
+|----------|---------|
+| `no_mtp_dispatch` | The server has no MTP speculative dispatch: no drafter was supplied, or the drafter resolved to a different speculative kind. The B=1 MTP burst never runs, so `mtp_enabled` is `false`. |
+| `adaptive_disabled` | `MLXCEL_MTP_ADAPTIVE` is off, so nothing is measured or persisted. What decides the B=1 burst instead is `MLXCEL_ENABLE_MTP_B1` when it is also set (an operator pin), or the static per-hardware gate when it is not. `mtp_enabled` reports whichever of the two decided. |
+| `worker_not_ready` | No batch worker has published a policy state yet: the model is still loading. This is transient. Every worker variant publishes at startup, including the legacy single-sequence (`--no-batch`) worker and the OpenXLA worker, which have no MTP path at all and publish `no_mtp_dispatch` immediately rather than leaving `worker_not_ready` as their steady state. `mtp_enabled` is `null`. |
+
+Distinguishing these is the point of the endpoint. Reading the hint files from another process could not: an empty directory meant "still profiling", "no MTP configured", and "the cache root resolved somewhere else" all at once, and the consumer degraded to a blank surface in every case.
+
+## Versioning and compatibility
+
+The body carries `schema_version`, an integer that starts at `1`.
+
+Within one `schema_version`, mlxcel promises:
+
+- Existing fields keep their names, their types, and their meanings.
+- The `state`, `reason`, and `verdict` label sets only grow. A new state or a new unavailable reason can appear without a version bump.
+- New fields may be added.
+
+A consumer must therefore ignore unknown fields, and must treat an unrecognised `state`, `reason`, or `verdict` label as "no verdict I can render" rather than as an error. A consumer that hard-fails on an unknown label will break on a release that adds one.
+
+`schema_version` is bumped for anything that breaks those promises: a removed or renamed field, a changed field type, a changed meaning, or a narrowed label set. A bump is a breaking change and gets a changelog entry. A consumer that does not recognise the `schema_version` it receives should treat the body as unreadable and show nothing, rather than guessing at the fields.
+
+`schema_version` is independent of the persisted hint's `version` (`HINT_VERSION`). The hint version tracks the on-disk format and the verdict semantics behind it, and it is bumped whenever a stored verdict must be discarded and re-profiled. The two numbers are unrelated and will drift apart.
+
+## Relationship to the persisted hint files
+
+Settled verdicts are still written to `${MLXCEL_CACHE_DIR:-$HOME/.cache/mlxcel}/mtp-policy/<key-hash>.json`, and that behavior is unchanged. The files are how a verdict survives a restart; they are not an interface. `HINT_VERSION`, the subdirectory name, and the hint body are private and can change in a patch release without notice.
+
+This endpoint exposes everything the hint file carries (the hint already includes the pairing's `hardware` label), plus the states a file cannot express: profiling, forced, unavailable. Read it instead of the files.
+
+## Example: is MTP running, and why
+
+```bash
+curl -s http://127.0.0.1:8080/v1/internal/mtp-policy | jq
+```
+
+While profiling:
+
+```json
+{
+  "schema_version": 1,
+  "state": "profiling",
+  "reason": null,
+  "decline_detail": null,
+  "verdict": null,
+  "mtp_enabled": true,
+  "target": "Gemma4-12B",
+  "drafter": "Gemma4-12B-MTP",
+  "hardware": "M5-16c",
+  "block_size": 4,
+  "acceptance_rate": 0.58,
+  "samples": 2,
+  "samples_required": 4,
+  "samples_remaining": 2
+}
+```
+
+which renders as "measuring: 2 of 4 single-request generations done".
+
+On a server with no drafter:
+
+```json
+{
+  "schema_version": 1,
+  "state": "unavailable",
+  "reason": "no_mtp_dispatch",
+  "decline_detail": null,
+  "verdict": null,
+  "mtp_enabled": false,
+  "target": null,
+  "drafter": null,
+  "hardware": null,
+  "block_size": null,
+  "acceptance_rate": null,
+  "samples": 0,
+  "samples_required": 4,
+  "samples_remaining": null
+}
+```
+
+The pairings the policy can report on are the singleton MTP families: Gemma 4 with its assistant drafter, Qwen 3.5 / 3.6 / 3.8 with the `qwen3_5_mtp` head, Inkling with its in-checkpoint `mtp.safetensors`, and GLM-4.7-Flash (`glm4_moe_lite`) with the `glm4_moe_lite_mtp` block that `mlxcel split-mtp` extracts (issue #1326). Every one of them passes through the same exactness probe before the policy sees a sample, so `exactness_declined` can appear for any of them.
+
+On a generation 15+ host whose pairing fails the exactness probe under both kernel selections (measured on the Gemma 4 31B + bf16 assistant pairing on M3 Ultra and M5 Max, issue #1279):
+
+```json
+{
+  "schema_version": 1,
+  "state": "exactness_declined",
+  "reason": null,
+  "decline_detail": "verify block position 0 differs from the single-token chain in 245722 of 524288 logit bytes. Disabling qmv_wide did not make it exact either.",
+  "verdict": null,
+  "mtp_enabled": false,
+  "target": "gemma-4-31b-it-4bit",
+  "drafter": "gemma-4-31b-it-assistant-bf16",
+  "hardware": "M5-40c",
+  "block_size": 4,
+  "acceptance_rate": null,
+  "samples": 0,
+  "samples_required": 4,
+  "samples_remaining": null
+}
+```
+
+which renders as "MTP configured but vetoed; running classic decode", with the reason available verbatim.
+
+The same state is also included in the `/health` observability snapshot under `observability.mtp_policy`, in a similar but unversioned shape (it spells the state field `status` and omits `schema_version` and `samples_remaining`), for operators already polling that endpoint. `/health` is an operator surface with no stability promise; `/v1/internal/mtp-policy` is the one with the contract above.
