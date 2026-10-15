@@ -554,7 +554,7 @@
                     <div class="dp1">
                         <ul>
                             <li><a class="menu menu_" href="#get-started"><span>Get Started</span></a></li>
-                            <li><a class="menu menu_" href="#performance"><span>Performance</span></a></li>
+                            <li><a class="menu menu_" href="#blog"><span>Blog</span></a></li>
                             <li><a class="menu menu_docs" href="docs.html"><span>Docs</span></a></li>
                             <li><a class="menu menu_fulfillment" href="https://github.com/lablup/mlxcel" target="_blank" rel="noopener noreferrer"><span>Github</span><span class="sr-only"> (새 창 / opens in new tab)</span></a></li>
                         </ul>
@@ -914,7 +914,45 @@ cargo build --release --features metal,accelerate</pre></div></div>
                 </div>
             </section>
 
-            <section class="section section03 sub_section" id="performance">
+            <section class="section section05 sub_section">
+                <div class="title_style02 staggered">
+                    <div class="title">
+                        <h3>Optional GUI</h3>
+                    </div>
+                    <div class="desc">
+                        <p>mlxcel-server can be used directly through HTTP clients.<br>Backend.AI Go is available as a companion UI for local chat,<br>model management, and multi-model routing.</p>
+                    </div>
+                </div>
+
+                <div class="tab_container">
+                    <div class="scroll">
+                        <div class="tab_nav"></div>
+                    </div>
+                    <div class="tab_area">
+                        <img src="bgo-chat-dark.webp" alt="" class="base_img">
+                        <div class="tab_item on">
+                            <img src="bgo-chat-dark.webp" alt="Chat">
+                        </div>
+                        <div class="tab_item">
+                            <img src="bgo-models-list-dark.webp" alt="Models">
+                        </div>
+                        <div class="tab_item">
+                            <img src="bgo-agent-squad-dark.webp" alt="Agent Squad">
+                        </div>
+                        <div class="tab_item">
+                            <img src="bgo-agent-team-dark.webp" alt="Agent Team">
+                        </div>
+                        <div class="tab_item">
+                            <img src="bgo-dashboard-dark.webp" alt="Dashboard">
+                        </div>
+                        <div class="tab_item">
+                            <img src="bgo-engines-dark.webp" alt="Engines">
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="section section03 sub_section" id="blog">
                 <div class="title_style02 staggered">
                     <div class="title lang-ko">
                         <h3 class="noto-sans-kr-bold">mlxcel 주요 핵심 기능</h3>
@@ -996,44 +1034,6 @@ cargo build --release --features metal,accelerate</pre></div></div>
                                     </div>
                                 </div> -->
                             </div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <section class="section section05 sub_section">
-                <div class="title_style02 staggered">
-                    <div class="title">
-                        <h3>Optional GUI</h3>
-                    </div>
-                    <div class="desc">
-                        <p>mlxcel-server can be used directly through HTTP clients.<br>Backend.AI Go is available as a companion UI for local chat,<br>model management, and multi-model routing.</p>
-                    </div>
-                </div>
-
-                <div class="tab_container">
-                    <div class="scroll">
-                        <div class="tab_nav"></div>
-                    </div>
-                    <div class="tab_area">
-                        <img src="bgo-chat-dark.webp" alt="" class="base_img">
-                        <div class="tab_item on">
-                            <img src="bgo-chat-dark.webp" alt="Chat">
-                        </div>
-                        <div class="tab_item">
-                            <img src="bgo-models-list-dark.webp" alt="Models">
-                        </div>
-                        <div class="tab_item">
-                            <img src="bgo-agent-squad-dark.webp" alt="Agent Squad">
-                        </div>
-                        <div class="tab_item">
-                            <img src="bgo-agent-team-dark.webp" alt="Agent Team">
-                        </div>
-                        <div class="tab_item">
-                            <img src="bgo-dashboard-dark.webp" alt="Dashboard">
-                        </div>
-                        <div class="tab_item">
-                            <img src="bgo-engines-dark.webp" alt="Engines">
                         </div>
                     </div>
                 </div>
@@ -1855,10 +1855,10 @@ const renderReadme = (htmlContent, lang) => {
                     try {
                         
                         // #performance 섹션 안의 3개의 .info 카드 가져오기
-                        const infoBlocks = document.querySelectorAll('#performance .info');
+                        const infoBlocks = document.querySelectorAll('#blog .info');
                         
                         // #performance 섹션의 최상단 타이틀 수정
-                        const mainTitle = document.querySelector('#performance .title h3');
+                        const mainTitle = document.querySelector('#blog .title h3');
                         if (mainTitle) mainTitle.innerText = "Latest";
                         
                         items.forEach((item, i) => {
