@@ -1821,22 +1821,32 @@ const renderReadme = (htmlContent, lang) => {
 
             // [추가] 블로그 피드(JSON)를 고정값으로 하드코딩하여 #performance 영역(.info)에 덮어씌우는 로직
             document.addEventListener('DOMContentLoaded', () => {
+                // Strips markdown links/quotes so summaries read as plain text.
+                function plainText(text) {
+                    return String(text || '')
+                        .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+                        .replace(/^>\s*/gm, '')
+                        .replace(/\*\*/g, '')
+                        .trim();
+                }
+
                 function renderBlogFeed() {
+                    var lang = document.body.classList.contains('en') ? 'en' : 'ko';
                     try {
                         // GitHub Actions가 매일 동기화하는 data/blog-feed.json을 같은 도메인에서 불러옴
-                        fetch('data/blog-feed.json', { cache: 'no-cache' })
+                        fetch('data/blog-feed-' + lang + '.json', { cache: 'no-cache' })
                             .then(function (res) {
                                 if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
                                 return res.json();
                             })
-                            .then(function (data) { renderBlogCards(data.items || []); })
+                            .then(function (data) { renderBlogCards(data.items || [], lang); })
                             .catch(function (err) { console.error('Failed to load blog feed:', err); });
                     } catch (err) {
                         console.error('Failed to load blog feed:', err);
                     }
                 }
 
-                function renderBlogCards(items) {
+                function renderBlogCards(items, lang) {
                     try {
                         
                         // #performance 섹션 안의 3개의 .info 카드 가져오기
@@ -1874,7 +1884,7 @@ const renderReadme = (htmlContent, lang) => {
                                     titleEl.style.overflow = 'hidden';
                                 }
                                 if (descEl) {
-                                    descEl.innerText = item.summary;
+                                    descEl.innerText = plainText(item.summary);
                                     descEl.style.fontSize = '1rem';
                                     descEl.style.opacity = '0.8';
                                     descEl.style.display = '-webkit-box';
@@ -1885,25 +1895,29 @@ const renderReadme = (htmlContent, lang) => {
                                 
                                 // 2. 기존 미디어 영역(SVG) 보존하며 이미지 오버레이 추가
                                 const img = document.createElement('img');
+                                img.className = 'blog-cover';
+                                img.alt = '';
                                 img.src = item.image;
                                 // opacity 0.85로 설정하여 뒤의 SVG 컬러풀한 배경이 살짝 비치도록 연출
                                 img.style.cssText = 'position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover; z-index:1; opacity:0.85; transition: transform 0.3s ease;';
-                                
+                                // 언어 전환으로 다시 그릴 때 이전 이미지 제거
+                                media.querySelectorAll('img.blog-cover').forEach(function (old) { old.remove(); });
+
                                 // 호버 시 이미지 살짝 확대 효과 (생동감 추가)
-                                info.addEventListener('mouseenter', () => img.style.transform = 'scale(1.05)');
-                                info.addEventListener('mouseleave', () => img.style.transform = 'scale(1)');
-                                
+                                // on* 속성을 사용해 다시 그려도 이벤트가 중복 등록되지 않도록 함
+                                info.onmouseenter = () => img.style.transform = 'scale(1.05)';
+                                info.onmouseleave = () => img.style.transform = 'scale(1)';
+
                                 // 3. 클릭 시 해당 블로그 글로 새창 열기
+                                const newWindowLabel = lang === 'en' ? '(opens in new tab)' : '(새 창 / opens in new tab)';
                                 info.style.cursor = 'pointer';
-                                info.addEventListener('click', () => window.open(item.url, '_blank'));
+                                info.onclick = () => window.open(item.url, '_blank');
                                 // 키보드 사용자도 카드를 포커스하고 Enter로 열 수 있도록 링크 역할 부여
                                 info.setAttribute('role', 'link');
                                 info.setAttribute('tabindex', '0');
-                                info.setAttribute('aria-label', item.title + ' (새 창 / opens in new tab)');
-                                info.addEventListener('keydown', (e) => {
-                                    if (e.key === 'Enter') window.open(item.url, '_blank');
-                                });
-                                
+                                info.setAttribute('aria-label', item.title + ' ' + newWindowLabel);
+                                info.onkeydown = (e) => { if (e.key === 'Enter') window.open(item.url, '_blank'); };
+
                                 media.appendChild(img);
                             }
                         });
@@ -1911,6 +1925,7 @@ const renderReadme = (htmlContent, lang) => {
                         console.error('Failed to parse fixed blog feed:', err);
                     }
                 }
+                window._renderBlogFeed = renderBlogFeed;
                 renderBlogFeed();
             });
 
@@ -1945,6 +1960,7 @@ const renderReadme = (htmlContent, lang) => {
                                 window._readmeRenderFn(window._readmeEnContent, 'ko');
                             }
                         }
+                            if (window._renderBlogFeed) window._renderBlogFeed();
                     });
                 }
             });

@@ -1,10 +1,11 @@
 {
   "source": {
+    "lang": "ko",
     "title": "Backend.AI Blog",
     "feed_url": "https://www.backend.ai/ko/rss/blog-feed.json",
     "home_page_url": "https://www.backend.ai/blog"
   },
-  "syncedAt": "2026-10-15T13:26:22.191Z",
+  "syncedAt": "2026-10-15T13:32:55.858Z",
   "items": [
     {
       "id": "2026-10-demo-day-care-junction-x-ai-go",
