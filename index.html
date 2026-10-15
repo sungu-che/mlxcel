@@ -112,7 +112,7 @@
         /*.main_section .media{}*/
         .main_section.on .area{transform: scale(1.0); opacity: 1;}
         .main_section.on .media iframe{top: 2px; opacity: 1; cursor: none; pointer-events: none;}
-        .main_section .media iframe{position: relative; overflow: hidden; border: 1px solid #000; border-top-left-radius: 1rem; border-top-right-radius: 1rem; border-bottom: 0; width: 100%; height: 290px; top: 50px; opacity: 0; transition-duration: 2.0s; transition-delay: 1.0s;}
+        .main_section .media iframe{position: relative; overflow: hidden; border: 1px solid #000; border-top-left-radius: 1rem; border-top-right-radius: 1rem; border-bottom: 0; max-width: 810px; width: 100%; height: 290px; top: 50px; opacity: 0; transition-duration: 2.0s; transition-delay: 1.0s;}
 
         .main_section .tc{ justify-content: flex-start; } 
         .main_section .title_style01{position: relative; padding: 6rem 0 0 0; z-index: 0; opacity: 0;}
@@ -144,7 +144,7 @@
 
         .title_style02{margin: 5rem 0; text-align: center;}
         .title_style02 h3 strong{font-size: 2.5rem;}
-        .title_style02 .title h3{font-size: 2.5rem; font-weight: 600;}
+        .title_style02 .title h3{font-size: 2.5rem; height: 3rem; font-weight: 600;}
         .section02 .title_style02 .title h3 span{font-size: 2.5rem !important;}
 
 
@@ -226,7 +226,7 @@
 
         .section05 .title_style02{margin-bottom: 3rem;}
         .section05 .title_style02.staggered.active .char{color: rgb(40, 171, 108);}
-        .section05 .tab_container{overflow: hidden; position: relative; padding-top: 3rem;}
+        .section05 .tab_container{overflow: hidden; position: relative; margin: auto; padding-top: 3rem; max-width: 860px;}
         .section05 .tab_container .tab_area{position: relative; margin: 2rem; padding: 2rem 2rem 0.5rem; border-radius: 1rem; background-color: rgb(0, 41, 38);}
         .section05 .tab_container .scroll{position: absolute; left: 1rem; top: 0; right: 1rem; overflow-x:scroll;}
         .section05 .tab_container .tab_nav{white-space: nowrap; text-align: center; z-index: 1;}
@@ -333,6 +333,7 @@
 
         .cols{  }
         .section03 .col3{ position: relative; margin: 0 2rem; }
+        .section03 .col3 .tb{margin: auto; max-width: 830px;}
         .section03 .col3 .tc{ width: 33.33%; justify-content: initial; }
         .section03 .media{ position: relative; overflow: hidden; border-radius: 1rem;}
 
@@ -352,7 +353,7 @@
         .out-bottom { transform-origin: 84px 93px; }
         .in-bottom { transform-origin: 84px 93px; }
 
-        #readme{ margin: 0 auto; padding: 0 2rem 3rem; max-width: 740px; }
+        #readme{ margin: 0 auto; padding: 0 2rem 3rem; max-width: 810px; }
         #readme .title_style02{}
         #readme h2,
         #readme .octicon-link{display: none;}
@@ -974,10 +975,10 @@ cargo build --release --features metal,accelerate</pre></div></div>
             <section class="section section03 sub_section" id="blog">
                 <div class="title_style02 staggered">
                     <div class="title lang-ko">
-                        <h3 class="noto-sans-kr-bold">mlxcel 주요 핵심 기능</h3>
+                        <h3 class="noto-sans-kr-bold">Blog</h3>
                     </div>
                     <div class="title lang-en">
-                        <h3 class="noto-sans-kr-bold">mlxcel Core Features</h3>
+                        <h3 class="noto-sans-kr-bold">Blog</h3>
                     </div>
                 </div>
 
@@ -1878,7 +1879,7 @@ const renderReadme = (htmlContent, lang) => {
                         
                         // #performance 섹션의 최상단 타이틀 수정
                         const mainTitle = document.querySelector('#blog .title h3');
-                        if (mainTitle) mainTitle.innerText = "Latest";
+                        if (mainTitle) mainTitle.innerText = "Blog";
                         
                         items.forEach((item, i) => {
                             if (infoBlocks[i]) {
