@@ -1,0 +1,106 @@
+{
+  "source": {
+    "title": "Backend.AI Blog",
+    "feed_url": "https://www.backend.ai/ko/rss/blog-feed.json",
+    "home_page_url": "https://www.backend.ai/blog"
+  },
+  "syncedAt": "2026-10-15T13:26:22.191Z",
+  "items": [
+    {
+      "id": "2026-10-demo-day-care-junction-x-ai-go",
+      "title": "Demo Day Care 팀, AI:GO로 벤치마크 결과를 시각화하다",
+      "summary": "8월 21일부터 23일까지 포항 POSTECH에서 열린...",
+      "url": "https://www.backend.ai/ko/blog/customer-story/2026-10-demo-day-care-junction-x-ai-go",
+      "image": "https://cdn.lablup.com/user_story_junction_ko_c6b7642aa9.jpg",
+      "date_modified": "2026-10-02T00:00:00.000Z"
+    },
+    {
+      "id": "2026-09-from-datacenters-to-tokenfactories",
+      "title": "지능을 계량하는 시대: 데이터센터에서 토큰 팩토리로",
+      "summary": "우리는 오랜 시간 동안 표준화된 계량을 해 왔습니다. ...",
+      "url": "https://www.backend.ai/ko/blog/engineering/2026-09-from-datacenters-to-tokenfactories",
+      "image": "https://cdn.lablup.com/token_factory_ko_2x_ec71926a8d.png",
+      "date_modified": "2026-09-28T00:00:00.000Z"
+    },
+    {
+      "id": "2026-08-building-a-unified-ai-accelerator-testbed",
+      "title": "OpenStack 기반 사내 인프라와 퍼블릭 클라우드를 통합한 AI 가속기 테스트베드 구축 및 운영",
+      "summary": "> 이 글은 2026 OCP Korea Tech Day...",
+      "url": "https://www.backend.ai/ko/blog/engineering/2026-08-building-a-unified-ai-accelerator-testbed",
+      "image": "https://cdn.lablup.com/openstack_ko_d76a8cee96.jpg",
+      "date_modified": "2026-09-23T00:00:00.000Z"
+    },
+    {
+      "id": "2026-08-introducing-ai-go",
+      "title": "개인용 에이전틱 AI 플랫폼, AI:GO를 소개합니다",
+      "summary": "래블업에서 AI\\:GO라는 Personal Agenti...",
+      "url": "https://www.backend.ai/ko/blog/engineering/2026-08-introducing-ai-go",
+      "image": "https://cdn.lablup.com/aigo_ko_a52cbc155c.jpg",
+      "date_modified": "2026-09-11T00:00:00.000Z"
+    },
+    {
+      "id": "nota-ai-backend-ai-fasttrack-solar-open-2",
+      "title": "노타가 Backend.AI FastTrack 3으로 Solar Open 2 모델을 효율적으로 경량화하는 방법",
+      "summary": "'독자 AI 파운데이션 모델 프로젝트'는 대한민국 정부...",
+      "url": "https://www.backend.ai/ko/blog/customer-story/nota-ai-backend-ai-fasttrack-solar-open-2",
+      "image": "https://cdn.lablup.com/Nota_AIFM_Interview_ko_912c29aa8e.jpg",
+      "date_modified": "2026-07-31T00:00:00.000Z"
+    },
+    {
+      "id": "2026-07-backend-ai-rngd-performance-whitepaper-release",
+      "title": "래블업 - 퓨리오사에이아이, RNGD 성능검증 백서 발간",
+      "summary": "![Backend.AI와 RNGD를 스위트 구성으로 다...",
+      "url": "https://www.backend.ai/ko/blog/news/2026-07-backend-ai-rngd-performance-whitepaper-release",
+      "image": "https://cdn.lablup.com/RNGD_Whitepaper_release_ko_829c109d20.jpg",
+      "date_modified": "2026-07-29T00:00:00.000Z"
+    },
+    {
+      "id": "2026-07-serving-solar-open-2-on-dgx-spark",
+      "title": "DGX Spark 두 대로 경험하는 Solar Open 2 모델 서빙",
+      "summary": "오늘은 업스테이지가 Solar Open 2 모델을 공개...",
+      "url": "https://www.backend.ai/ko/blog/engineering/2026-07-serving-solar-open-2-on-dgx-spark",
+      "image": "https://cdn.lablup.com/Serving_Solar_Open_2_with_Two_DGX_Spark_Systems_ko_86b0b6fbcf.jpg",
+      "date_modified": "2026-07-24T00:00:00.000Z"
+    },
+    {
+      "id": "2026-06-open-korean-corpora",
+      "title": "우리는 정말 데이터가 부족할까?",
+      "summary": "한국어 자연어 처리를 이제 막 시작한 연구자가 있다고 ...",
+      "url": "https://www.backend.ai/ko/blog/engineering/2026-06-open-korean-corpora",
+      "image": "https://cdn.lablup.com/korean_language_data_ko_2ea28aebd0.jpg",
+      "date_modified": "2026-07-01T00:00:00.000Z"
+    },
+    {
+      "id": "ml-researcher-leveraged-skku-supercomputing-center",
+      "title": "Backend.AI로 인프라 걱정 없이 연구에 집중하다",
+      "summary": "검색과 자연어 처리를 연구하는 최은성 님은 2019년 ...",
+      "url": "https://www.backend.ai/ko/blog/customer-story/ml-researcher-leveraged-skku-supercomputing-center",
+      "image": "https://cdn.lablup.com/user_story_skku_researcher_ko_v2_0a1126b58a.jpg",
+      "date_modified": "2026-06-25T00:00:00.000Z"
+    },
+    {
+      "id": "2026-06-installing-backend-ai-on-nvidia-dgx-spark",
+      "title": "Backend.AI on DGX Spark: 오픈소스 버전 설치하기 튜토리얼",
+      "summary": "> Backend.AI에서 기본으로 제공하는 TUI(T...",
+      "url": "https://www.backend.ai/ko/blog/engineering/2026-06-installing-backend-ai-on-nvidia-dgx-spark",
+      "image": "https://cdn.lablup.com/backend_ai_spark_ko_17bd1a34eb.jpg",
+      "date_modified": "2026-06-22T00:00:00.000Z"
+    },
+    {
+      "id": "2026-06-heterogeneous-gpu-operation",
+      "title": "다양한 AI 가속기의 시대: Backend.AI의 이기종 GPU 운영 전략",
+      "summary": "GPU를 구매할 때 한 가지 벤더만 고르면 간단하겠지만...",
+      "url": "https://www.backend.ai/ko/blog/engineering/2026-06-heterogeneous-gpu-operation",
+      "image": "https://cdn.lablup.com/heterogeneous_gpus_ko_b559d649a3.jpg",
+      "date_modified": "2026-06-19T00:00:00.000Z"
+    },
+    {
+      "id": "2026-06-vlm-overreaction-visual-emergency",
+      "title": "비전-언어 모델 안전성 판단의 함정: 안전한 장면을 위험한 장면으로 판단하는 이유",
+      "summary": "어느 날 소방서에 다급한 화재 신고가 들어옵니다. 누군...",
+      "url": "https://www.backend.ai/ko/blog/engineering/2026-06-vlm-overreaction-visual-emergency",
+      "image": "https://cdn.lablup.com/vision_language_model_ko_e85c3395cc.jpg",
+      "date_modified": "2026-06-18T00:00:00.000Z"
+    }
+  ]
+}
