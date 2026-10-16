@@ -127,6 +127,8 @@
 
         /* ---------- Rendered markdown ---------- */
         .md{max-width: 760px; overflow-wrap: anywhere;}
+        .md a{text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px;}
+        .md a:hover{text-decoration-thickness: 2px;}
         .md h1, .md h2, .md h3, .md h4{color: var(--text); font-weight: 600; letter-spacing: -0.01em; scroll-margin-top: 80px;}
         .md h1{font-size: 2.2rem; line-height: 1.2; margin: 0 0 1rem; letter-spacing: -0.02em;}
         .md h2{font-size: 1.5rem; margin: 2.6rem 0 0.8rem; padding-bottom: 0.4rem; border-bottom: 1px solid var(--line);}
@@ -215,10 +217,15 @@
         }
         #unofficial-notice-close:hover{background: var(--bg-active);}
         #unofficial-notice-close:focus-visible{outline: 2px solid var(--accent-soft); outline-offset: 2px;}
+        a:focus-visible, button:focus-visible, input:focus-visible{outline: 2px solid var(--accent-soft); outline-offset: 2px;}
+        /* Skip link: hidden until focused by keyboard */
+        .skip-link{position: absolute; left: 1rem; top: -100px; z-index: 100; padding: 0.6rem 1rem; background: #fff; color: #000; border-radius: 8px; font-size: 0.9rem;}
+        .skip-link:focus{top: 0.75rem; text-decoration: none;}
         @media (max-width: 600px){ #unofficial-notice{font-size: 0.78rem; padding-right: 3rem;} }
     </style>
 </head>
 <body>
+    <a class="skip-link" href="#content">본문으로 건너뛰기 / Skip to content</a>
     <header id="topbar">
         <div class="inner">
             <button id="menu-btn" aria-label="Open navigation">
