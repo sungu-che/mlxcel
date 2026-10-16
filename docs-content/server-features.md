@@ -165,6 +165,38 @@ match neither the base model nor the fine-tune. In a pipeline-parallel run a
 stage that owns none of the adapter's layers still applies nothing, which stays
 a valid load.
 
+The unfused path also checks that the model actually consumes every adapter
+layer. A term reaches the forward pass only when the layer is built by one of
+the shared linear constructors; a layer a family builds some other way (an
+embedding table, a hand-built projection) would keep its base weights. Such an
+adapter fails startup with every unclaimed layer listed. On an unquantized base
+`--lora-fuse` can serve it instead, since fusion writes the deltas into the base
+weights (on an untied checkpoint; a tied one refuses an embedding pair, below).
+
+An `lm_head` pair is refused when the checkpoint ties its output projection to
+its input embeddings, either because `config.json` sets `tie_word_embeddings`
+or because the checkpoint stores no `lm_head.weight` of its own. The model then
+reads its logits through the embedding matrix, so the pair would either never
+be applied or silently untie the two projections. A tied mlx-lm model has no
+`lm_head` module, so `mlx_lm.lora` never trains such a pair.
+
+A `model.embed_tokens` pair (or its `language_model.model.embed_tokens` /
+`model.language_model.embed_tokens` VLM spelling) on the same kind of checkpoint
+is refused too. mlx-lm can train one when `lora_parameters.keys` names the
+embedding, and its `LoRAEmbedding` applies the delta to the embedding lookup and
+to the tied head alike. The load paths here read every pair as a linear
+projection, so before the refusal the fused path adapted both ends while the
+unfused path adapted only the head. Merge an mlx-lm adapter of this kind with
+`mlx_lm.fuse` and load the merged checkpoint. The single-process (fused and
+unfused) and pipeline-parallel loaders give the same answer for both pairs.
+
+Mixture-of-experts expert adapters are not supported on either path. mlx-lm's
+`LoRASwitchLinear` stores one low-rank pair per expert as 3-D `lora_a` /
+`lora_b` tensors, and an adapter that contains them fails the load with an
+error naming the limitation. Leave the expert projections out of the LoRA
+target set; pairs on an MoE model's other projections are checked like any
+other adapter.
+
 ## Sampling, structured output, and reasoning
 
 The server exposes the commonly used llama-server sampling stages, including
@@ -282,6 +314,15 @@ are returned in `rejected`. Mutable groups include request timeouts, generation
 defaults, DRY, language bias, reasoning budget, chat-template kwargs, loop
 detection, and diffusion defaults.
 
+Read-only entries report their startup value as plain JSON: an absent value is
+`null`, an enum is its CLI spelling (`preemption_policy: "longest-first"`,
+`decode_storage_backend: "auto"`, `serving_mode: "hybrid"`), and a structured
+value such as `tensor_parallel`, `prompt_cache`, `batch_kv_quant` or
+`cors_policy` is a flat object of named fields (schema type `object`, or
+`object_or_null` for `gcp`, `pipeline_parallel_runtime` and
+`remote_pipeline_stage`). `kv_cache_budget` is the `--kv-cache-budget` spelling
+(`auto`, `disabled`, or a byte count) or `null`.
+
 ## Transport and access control
 
 Configure API keys with repeatable `--api-key` values, comma-separated values,
@@ -303,7 +344,9 @@ environment map.
 ## Deliberate non-goals
 
 mlxcel does not ship llama-server's embedded Web UI and does not execute tools,
-MCP servers, an agent loop, or the UI CORS proxy. Enabling those compatibility
+MCP servers, an agent loop, or the UI CORS proxy. Its own bundled WebUI is a
+separate, opt-in feature started with `--webui`; see
+[`webui/README.md`](webui/README.md). Enabling those compatibility
 flags fails at startup instead of silently pretending that the capability is
 active. `/tools` and `/cors-proxy` retain the disabled-feature response shape
 expected by clients. Client-declared tools and parsed `tool_calls` remain

@@ -3,8 +3,8 @@
     "repo": "lablup/mlxcel",
     "ref": "main",
     "dir": "docs",
-    "commit": "15c3da3993a29fd5498d46b81a01f0c54bebb9e3",
-    "commitDate": "2026-10-15T12:31:01Z"
+    "commit": "cadc6366a39df407a3c2a1f413e348f25cfa457f",
+    "commitDate": "2026-10-16T06:38:51Z"
   },
   "files": [
     {
@@ -29,7 +29,7 @@
       "name": "benchmarks.md",
       "slug": "benchmarks",
       "title": "Benchmarks",
-      "size": 86728
+      "size": 88269
     },
     {
       "name": "block-diffusion.md",
@@ -89,7 +89,7 @@
       "name": "llama-server-compat.md",
       "slug": "llama-server-compat",
       "title": "llama-server compatibility boundary (b10621)",
-      "size": 142664
+      "size": 144924
     },
     {
       "name": "mla-absorbed-decode.md",
@@ -101,7 +101,7 @@
       "name": "README.md",
       "slug": "README",
       "title": "mlxcel documentation layout",
-      "size": 6917
+      "size": 7256
     },
     {
       "name": "adding-models.md",
@@ -149,7 +149,7 @@
       "name": "server-features.md",
       "slug": "server-features",
       "title": "Server features and deployment guide",
-      "size": 16089
+      "size": 18857
     },
     {
       "name": "speculative-acceptance.md",
@@ -161,7 +161,7 @@
       "name": "supported-models.md",
       "slug": "supported-models",
       "title": "Supported models",
-      "size": 245251
+      "size": 246011
     },
     {
       "name": "f32-attention-widen-audit.md",
@@ -185,7 +185,7 @@
       "name": "webui-integration-matrix.md",
       "slug": "webui-integration-matrix",
       "title": "WebUI integration requirement matrix (#1848)",
-      "size": 23105
+      "size": 23969
     }
   ]
 }
