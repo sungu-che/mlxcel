@@ -3,8 +3,8 @@
     "repo": "lablup/mlxcel",
     "ref": "main",
     "dir": "docs",
-    "commit": "cadc6366a39df407a3c2a1f413e348f25cfa457f",
-    "commitDate": "2026-10-16T06:38:51Z"
+    "commit": "8744c87ffa6ff138c4e3ff02d6a52e06015d0392",
+    "commitDate": "2026-10-17T03:57:17Z"
   },
   "files": [
     {
@@ -89,7 +89,7 @@
       "name": "llama-server-compat.md",
       "slug": "llama-server-compat",
       "title": "llama-server compatibility boundary (b10621)",
-      "size": 144924
+      "size": 145086
     },
     {
       "name": "mla-absorbed-decode.md",
@@ -149,7 +149,7 @@
       "name": "server-features.md",
       "slug": "server-features",
       "title": "Server features and deployment guide",
-      "size": 18857
+      "size": 19673
     },
     {
       "name": "speculative-acceptance.md",
@@ -179,7 +179,7 @@
       "name": "turbo-kv-cache.md",
       "slug": "turbo-kv-cache",
       "title": "TurboQuant KV cache",
-      "size": 37701
+      "size": 37918
     },
     {
       "name": "webui-integration-matrix.md",
