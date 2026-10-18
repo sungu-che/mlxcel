@@ -3,8 +3,8 @@
     "repo": "lablup/mlxcel",
     "ref": "main",
     "dir": "docs",
-    "commit": "8744c87ffa6ff138c4e3ff02d6a52e06015d0392",
-    "commitDate": "2026-10-17T03:57:17Z"
+    "commit": "74f9ae1d2300460e6771cad8960db03e1427f378",
+    "commitDate": "2026-10-17T10:07:41Z"
   },
   "files": [
     {
@@ -149,7 +149,7 @@
       "name": "server-features.md",
       "slug": "server-features",
       "title": "Server features and deployment guide",
-      "size": 19673
+      "size": 20267
     },
     {
       "name": "speculative-acceptance.md",
@@ -161,7 +161,7 @@
       "name": "supported-models.md",
       "slug": "supported-models",
       "title": "Supported models",
-      "size": 246011
+      "size": 250909
     },
     {
       "name": "f32-attention-widen-audit.md",
