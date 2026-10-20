@@ -3,8 +3,8 @@
     "repo": "lablup/mlxcel",
     "ref": "main",
     "dir": "docs",
-    "commit": "93b15cbf0f343a09ed9ed617853c384dd287c7e1",
-    "commitDate": "2026-10-19T08:22:31Z"
+    "commit": "5d35b3ba91ce220484b64e77317629b92f2519fc",
+    "commitDate": "2026-10-20T06:38:16Z"
   },
   "files": [
     {
@@ -47,7 +47,7 @@
       "name": "code-guidelines.md",
       "slug": "code-guidelines",
       "title": "Code Modification Guidelines",
-      "size": 30820
+      "size": 32434
     },
     {
       "name": "CONTINUOUS_BATCHING.md",
@@ -71,7 +71,7 @@
       "name": "environment-variables.md",
       "slug": "environment-variables",
       "title": "Environment variables",
-      "size": 216223
+      "size": 219189
     },
     {
       "name": "sparse-paged-decode.md",
@@ -83,7 +83,7 @@
       "name": "installation.md",
       "slug": "installation",
       "title": "Installation",
-      "size": 62792
+      "size": 65155
     },
     {
       "name": "llama-server-compat.md",
@@ -161,7 +161,7 @@
       "name": "supported-models.md",
       "slug": "supported-models",
       "title": "Supported models",
-      "size": 255784
+      "size": 258399
     },
     {
       "name": "f32-attention-widen-audit.md",
@@ -179,7 +179,7 @@
       "name": "token-classification.md",
       "slug": "token-classification",
       "title": "Token classification and span extraction",
-      "size": 8112
+      "size": 20844
     },
     {
       "name": "turbo-kv-cache.md",
