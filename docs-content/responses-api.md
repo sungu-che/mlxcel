@@ -202,6 +202,10 @@ Phase 1 emits events such as:
 
 Reasoning streams as `response.reasoning_text.delta` events inside a `reasoning` output item, ahead of the message item, and never as `output_text`. This holds when the chat template primes an open thinking block (for example a generation prompt ending in `<think>\n`), where the model writes only the close marker: the stream starts inside the reasoning item, as the non-streaming split does.
 
+Harmony (GPT-OSS) replies surface their `analysis` channel as the same `reasoning` output item, with or without tool calls, and `usage.output_tokens_details.reasoning_tokens` is the token count of that reasoning text, identical for streaming and non-streaming requests. Multiple analysis or `<think>` segments are accumulated through the same streaming filter in both response modes, without parser-added separators or dropped later segments. It is 0 when the reply has no reasoning.
+
+Function calls stream while they are generated for the formats `/v1/chat/completions` streams incrementally (Hermes / Qwen JSON, Mistral `[ARGS]` and JSON list, Llama 3 JSON, Qwen3-Coder XML; see `docs/server-features.md`). Once a call's name is complete, any open reasoning or message item is closed and a `function_call` item is added with `status: "in_progress"` and empty `arguments`; `response.function_call_arguments.delta` events then carry the argument fragments. After generation, `response.function_call_arguments.done` and `response.output_item.done` carry the authoritative parsed arguments, and the call keeps its streamed `call_id` in the completed response. For a streamed request that parses tool calls, `response.completed` (and the copy stored for `previous_response_id`) is built from the items the stream sent: same item ids and `output_index` order, each message segment as its own `message` item (prose before and after a call are two items), function calls with their streamed `fc_` id, `call_id` and parsed arguments, and `output_text` as the concatenation of the message segments. If the streamer panics on a fragment, it is contained and the remaining arguments arrive from the final parse. Non-streaming responses are unchanged. For Hermes, Granite, Mistral and Llama 3, object `arguments` are the model's raw JSON text, not a re-serialization. A streamed call that the final parse does not confirm is logged at `warn` with the response id and closed as `incomplete`; the parsed calls are then emitted as separate items. Other formats emit each call as one `output_item.added`, one argument delta, `.done`, and `output_item.done` after generation, as before.
+
 ## Response and conversation stores
 
 The stores are in memory and are bounded by entry count, approximate retained
@@ -256,6 +260,10 @@ Qwen3-Coder and GLM, Kimi K2, pythonic) get the instruction and the narrowed
 tool list only, and a forced choice that ends without a call is logged at
 `warn`. A tool schema the grammar engine cannot express falls back to that same
 instruction-only path instead of failing the request.
+
+A `call_id` the model emitted with the call is passed through to the
+`function_call` item (and its streaming events). The server mints a `call_`
+id only when the model gave none.
 
 A forced `tool_choice` cannot be combined with `text.format` of type
 `json_schema`: the two constraints would each claim the whole generation, so

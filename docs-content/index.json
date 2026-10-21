@@ -3,8 +3,8 @@
     "repo": "lablup/mlxcel",
     "ref": "main",
     "dir": "docs",
-    "commit": "5d35b3ba91ce220484b64e77317629b92f2519fc",
-    "commitDate": "2026-10-20T06:38:16Z"
+    "commit": "e55ed9fb063881b20723eb591bcb06da7f059d45",
+    "commitDate": "2026-10-21T07:08:11Z"
   },
   "files": [
     {
@@ -53,7 +53,7 @@
       "name": "CONTINUOUS_BATCHING.md",
       "slug": "CONTINUOUS_BATCHING",
       "title": "Continuous batching and disaggregated serving",
-      "size": 65247
+      "size": 65275
     },
     {
       "name": "distributed.md",
@@ -65,19 +65,25 @@
       "name": "embeddings.md",
       "slug": "embeddings",
       "title": "Embeddings and reranking APIs and CLI",
-      "size": 62063
+      "size": 62422
     },
     {
       "name": "environment-variables.md",
       "slug": "environment-variables",
       "title": "Environment variables",
-      "size": 219189
+      "size": 231474
     },
     {
       "name": "sparse-paged-decode.md",
       "slug": "sparse-paged-decode",
       "title": "Fused sparse decode via page indirection",
       "size": 19324
+    },
+    {
+      "name": "image-generation.md",
+      "slug": "image-generation",
+      "title": "Image generation",
+      "size": 16300
     },
     {
       "name": "installation.md",
@@ -101,7 +107,7 @@
       "name": "README.md",
       "slug": "README",
       "title": "mlxcel documentation layout",
-      "size": 7509
+      "size": 7979
     },
     {
       "name": "adding-models.md",
@@ -114,6 +120,12 @@
       "slug": "model-catalog",
       "title": "Model Catalog",
       "size": 5825
+    },
+    {
+      "name": "model-triage.md",
+      "slug": "model-triage",
+      "title": "Model coverage triage",
+      "size": 14150
     },
     {
       "name": "nemotron-voicechat.md",
@@ -137,7 +149,7 @@
       "name": "responses-api.md",
       "slug": "responses-api",
       "title": "OpenAI Responses API subset (`/v1/responses`)",
-      "size": 16081
+      "size": 18433
     },
     {
       "name": "python-client.md",
@@ -149,7 +161,7 @@
       "name": "server-features.md",
       "slug": "server-features",
       "title": "Server features and deployment guide",
-      "size": 20267
+      "size": 24112
     },
     {
       "name": "speculative-acceptance.md",
@@ -161,7 +173,7 @@
       "name": "supported-models.md",
       "slug": "supported-models",
       "title": "Supported models",
-      "size": 258399
+      "size": 259660
     },
     {
       "name": "f32-attention-widen-audit.md",
@@ -179,7 +191,7 @@
       "name": "token-classification.md",
       "slug": "token-classification",
       "title": "Token classification and span extraction",
-      "size": 20844
+      "size": 21083
     },
     {
       "name": "turbo-kv-cache.md",
@@ -188,10 +200,16 @@
       "size": 37918
     },
     {
+      "name": "vision-model-scope.md",
+      "slug": "vision-model-scope",
+      "title": "Vision model scope",
+      "size": 11062
+    },
+    {
       "name": "webui-integration-matrix.md",
       "slug": "webui-integration-matrix",
       "title": "WebUI integration requirement matrix (#1848)",
-      "size": 23969
+      "size": 24131
     }
   ]
 }
