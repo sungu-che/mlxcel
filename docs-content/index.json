@@ -3,8 +3,8 @@
     "repo": "lablup/mlxcel",
     "ref": "main",
     "dir": "docs",
-    "commit": "e55ed9fb063881b20723eb591bcb06da7f059d45",
-    "commitDate": "2026-10-21T07:08:11Z"
+    "commit": "56bd9cd5430dcfb4aab601444f2a42bb70f19199",
+    "commitDate": "2026-10-21T18:30:25Z"
   },
   "files": [
     {
@@ -149,19 +149,19 @@
       "name": "responses-api.md",
       "slug": "responses-api",
       "title": "OpenAI Responses API subset (`/v1/responses`)",
-      "size": 18433
+      "size": 30020
     },
     {
       "name": "python-client.md",
       "slug": "python-client",
       "title": "Python client",
-      "size": 12478
+      "size": 12651
     },
     {
       "name": "server-features.md",
       "slug": "server-features",
       "title": "Server features and deployment guide",
-      "size": 24112
+      "size": 24220
     },
     {
       "name": "speculative-acceptance.md",
@@ -191,7 +191,7 @@
       "name": "token-classification.md",
       "slug": "token-classification",
       "title": "Token classification and span extraction",
-      "size": 21083
+      "size": 21503
     },
     {
       "name": "turbo-kv-cache.md",
@@ -203,7 +203,7 @@
       "name": "vision-model-scope.md",
       "slug": "vision-model-scope",
       "title": "Vision model scope",
-      "size": 11062
+      "size": 11992
     },
     {
       "name": "webui-integration-matrix.md",
