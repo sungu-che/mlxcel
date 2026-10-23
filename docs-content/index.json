@@ -3,8 +3,8 @@
     "repo": "lablup/mlxcel",
     "ref": "main",
     "dir": "docs",
-    "commit": "56bd9cd5430dcfb4aab601444f2a42bb70f19199",
-    "commitDate": "2026-10-21T18:30:25Z"
+    "commit": "f69dd3010f813a49d1644afcbbf3aa242939603a",
+    "commitDate": "2026-10-23T05:42:22Z"
   },
   "files": [
     {
@@ -56,6 +56,12 @@
       "size": 65275
     },
     {
+      "name": "dense-prediction.md",
+      "slug": "dense-prediction",
+      "title": "Dense prediction",
+      "size": 11904
+    },
+    {
       "name": "distributed.md",
       "slug": "distributed",
       "title": "Distributed inference",
@@ -71,13 +77,19 @@
       "name": "environment-variables.md",
       "slug": "environment-variables",
       "title": "Environment variables",
-      "size": 231474
+      "size": 233493
     },
     {
       "name": "sparse-paged-decode.md",
       "slug": "sparse-paged-decode",
       "title": "Fused sparse decode via page indirection",
       "size": 19324
+    },
+    {
+      "name": "gelu-call-sites.md",
+      "slug": "gelu-call-sites",
+      "title": "GELU call sites and the upstream activation each one ports",
+      "size": 64606
     },
     {
       "name": "image-generation.md",
@@ -89,7 +101,7 @@
       "name": "installation.md",
       "slug": "installation",
       "title": "Installation",
-      "size": 65155
+      "size": 65781
     },
     {
       "name": "llama-server-compat.md",
@@ -107,7 +119,7 @@
       "name": "README.md",
       "slug": "README",
       "title": "mlxcel documentation layout",
-      "size": 7979
+      "size": 8151
     },
     {
       "name": "adding-models.md",
@@ -173,7 +185,7 @@
       "name": "supported-models.md",
       "slug": "supported-models",
       "title": "Supported models",
-      "size": 259660
+      "size": 268049
     },
     {
       "name": "f32-attention-widen-audit.md",
@@ -203,13 +215,13 @@
       "name": "vision-model-scope.md",
       "slug": "vision-model-scope",
       "title": "Vision model scope",
-      "size": 11992
+      "size": 11865
     },
     {
       "name": "webui-integration-matrix.md",
       "slug": "webui-integration-matrix",
       "title": "WebUI integration requirement matrix (#1848)",
-      "size": 24131
+      "size": 24846
     }
   ]
 }
