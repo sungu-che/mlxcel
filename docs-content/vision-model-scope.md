@@ -2,7 +2,7 @@
 
 This page is the scope record for the task-specific vision and generative-media families that `lablup/mlxcel#524` collected from the VLM reference: object detection, instance segmentation, 3D body estimation, grounding, and diffusion image or video generation. Each family has one disposition with the evidence it rests on, so a coverage question has a recorded answer. Families that are generative chat or completion VLMs are tracked separately in [model-triage.md](model-triage.md) (`lablup/mlxcel#548`) and the individual port issues `lablup/mlxcel#533` through `lablup/mlxcel#547`.
 
-Last checked against `main` at `e160079e`.
+Last checked against `main` at `68d7cc36`.
 
 ## Why these families were out of scope
 
@@ -23,6 +23,7 @@ mlxcel already has non-chat paths, and they are the precedent for any re-scoping
 | Family | Checkpoint / Issues | In-tree evidence |
 |---|---|---|
 | `rt_detr_v2` | RT-DETRv2 checkpoints, including the Docling layout checkpoints (`docling-layout-heron`) (PR `lablup/mlxcel#80`) | `src/vision/detection/rt_detr_v2/` (ResNet-vd backbone, AIFI plus FPN/PAN hybrid encoder, 6-layer deformable decoder with iterative box refinement, labels through `id2label`), `src/vision/detection/rt_detr_v2/sanitize.rs` (layout-guarded conv permutation), `src/commands/detect.rs` (`RtDetrV2Predictor::from_pretrained`). It is a standalone runtime family outside the generate loop, listed by `mlxcel arch --json`. See [supported-models.md](supported-models.md). |
+| `pp_doclayout_v3` | PaddlePaddle/PP-DocLayoutV3 and converted `PP-DocLayoutV3-mlx` checkpoints (`lablup/mlxcel#2412`) | `src/vision/detection/pp_doclayout_v3/` implements HGNetV2-L, the hybrid encoder, mask-enhanced query initialization, six-layer deformable decoder, and GlobalPointer reading-order head. The loader accepts the provenance-distinct Paddle and converted layouts, while `mlxcel detect` emits dense one-based model reading order for direct Falcon-OCR layout input. |
 | `florence2` | `mlx-community/Florence-2-base-ft-bf16` and its 4-bit and 8-bit conversions (epic `lablup/mlxcel#850`, PRs `lablup/mlxcel#1060`, `lablup/mlxcel#1063`, `lablup/mlxcel#1064`, `lablup/mlxcel#1069`, `lablup/mlxcel#1071`, `lablup/mlxcel#1082`, `lablup/mlxcel#1083`) | `src/models/detection.rs` (`"florence2" => Florence2VLM`), `src/models/florence2/` (DaViT tower, BART encoder-decoder, task prompts, location-token post-processing), `src/loading/vlm_florence2.rs`, and the seq2seq server worker from PR `lablup/mlxcel#1083`. The seq2seq loop this record named as the blocker now exists. The `-large-ft` MLX conversions load but do not generate usable text (upstream `Blaizzy/mlx-vlm#1840`); [supported-models.md](supported-models.md) recommends `-base-ft`. |
 | `locateanything` | `mlx-community/LocateAnything-3B-4bit` (`lablup/mlxcel#847`, PR `lablup/mlxcel#1070`) | `src/models/detection.rs` (`"locateanything" => LocateAnythingVLM`), `src/vision/locateanything.rs`, `src/loading/vlm_locateanything.rs`. The standard autoregressive decode path is supported. The parallel box-decoding head (`pbd`, `n_future_tokens = 6`) and coordinate-token-to-box post-processing are not implemented; [supported-models.md](supported-models.md) records them as a follow-up, and no open issue tracks them. |
 | `nemotron_parse` | `nvidia/NVIDIA-Nemotron-Parse-2.0` and its `mlx-community/Nemotron-Parse-2.0-{4bit,8bit}` conversions (`lablup/mlxcel#1369`, PR `lablup/mlxcel#2034`) | `src/models/detection.rs` (`"nemotron_parse" => NemotronParseVLM`), `src/models/nemotron_parse/` (C-RADIO ViT-H/16 tower, compression neck, 10-layer pre-norm mBART decoder), `src/loading/vlm_nemotron_parse.rs`, `src/commands/generate_nemotron_parse.rs` (CLI driver), and `src/server/nemotron_parse_worker.rs` (single-stream server worker). It is a document OCR and layout model that emits markdown with box and class tokens, so it is not one of the families `lablup/mlxcel#524` collected, but it shares the encoder-decoder plumbing the `florence2` row describes. Greedy-token parity against the reference is checked by `tests/nemotron_parse_real_model.rs`, which is `#[ignore]`-gated on a local checkpoint. See [supported-models.md](supported-models.md). |
@@ -50,14 +51,21 @@ A checkpoint the probe does not recognize keeps the `model_type not found` or fi
 
 ### Dense prediction, segmentation and 3D, epic `lablup/mlxcel#2382`
 
-The tree includes the `mlxcel predict` output surface (`lablup/mlxcel#2349`) and its dense-family registry. SAM 3 is registered there for prompted image segmentation and memory-based video tracking; later rows remain tracked by their port issues.
+The tree includes the `mlxcel predict` output surface (`lablup/mlxcel#2349`),
+its dense-family registry, and the shared `mlxcel detect` surface. Every epic
+family below is now implemented through one of those native runtimes.
 
 | Family | `model_type` | Port issue | Output path |
 |---|---|---|---|
+| `dinov2` | `dinov2` or `dinov2_with_registers` | `lablup/mlxcel#2350` | Native `mlxcel predict` feature tensors and metadata. |
+| `sapiens2` | `sapiens2` | `lablup/mlxcel#2371` | Native pose, segmentation, normal, pointmap, matting, and backbone prediction. |
+| `video_depth_anything` | `video_depth_anything` | `lablup/mlxcel#2352` | Native still-image and temporal depth prediction. |
+| `moge3` | `moge3` | `lablup/mlxcel#2355` | Native monocular geometry, depth, normal, validity, and intrinsics prediction. |
 | `sam3` | `sam3_video` or `sam3` | `lablup/mlxcel#2429` | Native `mlxcel predict` detector, instance masks and memory tracker with text or pixel-box prompts. |
-| `sam3_1` | `sam3.1_video` with a `sam3.1` detector sub-config | `lablup/mlxcel#2430` | Same as `sam3`, plus Object Multiplex tracking of up to 16 objects per pass. Shares most components with `sam3`. |
-| `sam3d_body` | `sam3d_body` with a `dinov3` vision sub-config | `lablup/mlxcel#2432` | Mesh vertices, joint transforms, 3D keypoints and camera parameters, driven by a parametric body model. Furthest from existing code. |
-| `rfdetr` | `rf-detr` | `lablup/mlxcel#2431` | Boxes ride `mlxcel detect` beside RT-DETRv2 rather than `predict`, so the issue is tracked from `lablup/mlxcel#2382` outside its phase DAG. Needs a DINOv2 backbone, the deformable decoder, and a mask output for the optional segmentation head. |
+| `sam3_1` | `sam3.1_video` or `sam3.1` | `lablup/mlxcel#2430` | Same as `sam3`, plus Object Multiplex tracking of up to 16 objects per pass. The video checkpoint contains a `sam3.1` detector sub-config and shares most components with `sam3`. |
+| `sam3d_objects` | `sam3d_objects` | `lablup/mlxcel#2381` | Native image-and-mask object reconstruction to RGB OBJ or Gaussian PLY. |
+| `sam3d_body` | `sam3d_body` with a `dinov3` vision sub-config | `lablup/mlxcel#2432` | Native human mesh, 3D keypoint, joint-coordinate, and camera prediction. |
+| `rf-detr` | `rf-detr` (alias `rfdetr`) | `lablup/mlxcel#2431` | Native `mlxcel detect` implementation with the released windowed DINOv2 backbone, C2f projector, deformable decoder, COCO boxes, and optional source-resolution segmentation masks through `--masks-dir`. |
 
 ## Not re-scoped
 
