@@ -3,8 +3,8 @@
     "repo": "lablup/mlxcel",
     "ref": "main",
     "dir": "docs",
-    "commit": "f69dd3010f813a49d1644afcbbf3aa242939603a",
-    "commitDate": "2026-10-23T05:42:22Z"
+    "commit": "511dce9669da5c2bc8887e197af334c95681f16e",
+    "commitDate": "2026-10-23T23:54:46Z"
   },
   "files": [
     {
@@ -17,7 +17,7 @@
       "name": "architecture.md",
       "slug": "architecture",
       "title": "Architecture overview",
-      "size": 16213
+      "size": 16573
     },
     {
       "name": "audio-preprocessing.md",
@@ -59,7 +59,7 @@
       "name": "dense-prediction.md",
       "slug": "dense-prediction",
       "title": "Dense prediction",
-      "size": 11904
+      "size": 23327
     },
     {
       "name": "distributed.md",
@@ -77,7 +77,7 @@
       "name": "environment-variables.md",
       "slug": "environment-variables",
       "title": "Environment variables",
-      "size": 233493
+      "size": 236796
     },
     {
       "name": "sparse-paged-decode.md",
@@ -185,7 +185,7 @@
       "name": "supported-models.md",
       "slug": "supported-models",
       "title": "Supported models",
-      "size": 268049
+      "size": 274319
     },
     {
       "name": "f32-attention-widen-audit.md",
@@ -215,7 +215,7 @@
       "name": "vision-model-scope.md",
       "slug": "vision-model-scope",
       "title": "Vision model scope",
-      "size": 11865
+      "size": 12935
     },
     {
       "name": "webui-integration-matrix.md",

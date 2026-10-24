@@ -113,7 +113,7 @@ Implemented VLM variants include:
 - PaddleOCR-VL (`paddleocr_vl`): document-OCR VLM pairing a NaViT dynamic-resolution SigLIP-style vision encoder (Conv2d patch embedding, cached bilinearly interpolated learned position embeddings for repeated page grids, 2D vision RoPE, `cu_seqlens`-packed attention with uniform and length-bucketed batched fast paths, and a spatial-merge projector) with a lightweight ERNIE-4.5 text decoder that uses MRoPE. Best for plain OCR, tables, formulas, and chart understanding.
 - Step-3.7 (`step3p7`): StepFun's multimodal model. A 47-block `perception_encoder` ViT tower (Conv2d patchify, learned absolute position embeddings bilinearly resized for the patch grid, 2D vision RoPE, LayerScale, quick-GELU MLP) feeds two stride-2 conv downsamplers and a linear projector into the text hidden size. Each image runs a base pass (728 px, 52x52 grid collapsed to 169 tokens) and, when larger than 728 px, a tiled-patch pass (504 px windows, each 36x36 grid collapsed to 81 tokens); features are ordered patches-first then base per image and scattered into `<im_patch>` placeholders. The text decoder is the Step-3.5 MoE stack (`text_config.model_type: step3p5`), reused as the backbone. Text-only prompts work through the same checkpoint.
 - dots.ocr (`dots_ocr`): document-OCR VLM (rednote-hilab) pairing a 42-block `dots_vit` dynamic-resolution ViT with a Qwen2 text decoder. The tower shares the Qwen2-VL vision machinery (`cu_seqlens`-packed block-diagonal attention, 2D vision RoPE, merge-block patch ordering) but uses RMSNorm blocks, a SwiGLU vision MLP, a patch embed with bias and a trailing RMSNorm, and a `post_trunk_norm`; its merger projects each 2x2 patch block straight to the text width (no separate connector). Plain 1D RoPE text decode, no MRoPE. Best for layout analysis (bbox + category JSON), plain OCR, tables, formulas, and Markdown conversion.
-- Falcon-OCR (`falcon_ocr`): TII's 300M early-fusion document-OCR VLM, and the one VLM in the tree with no vision tower at all. Each 16x16 RGB patch is flattened and pushed through a single linear `img_projector` straight into the token stream, and one 22-layer decoder reads image and text together under a hybrid mask that is bidirectional inside every image block (`<|image_cls|>`, four register tokens, and the patch tokens) and causal everywhere else. The decoder is Llama-derived with five differences: a fused `wqkv`, weightless RMSNorm everywhere except the final norm (including the per-head Q/K norms, which is why the checkpoint ships only five tensors per layer), per-head learned attention sinks, a squared-ReLU gated MLP over a row-interleaved fused `w13` that the loader de-interleaves, and a 3-D rotary that puts a 1-D temporal rotary on the low half of each head and a 2-D per-head spatial rotary (driven by the shipped `freqs_cis_golden` table) on the high half. An entire image block collapses onto one temporal position, so intra-image geometry is carried by the spatial rotary alone. The checkpoint uses the raw `dim` / `n_layers` / `ffn_dim` config keys; the HF spellings are also accepted. Chunked prefill is disabled for this family, matching upstream. Prompts are expanded at the token level: image blocks are prepended (or substituted for an existing `<|image|>` placeholder) and `<|OCR_PLAIN|>` is appended when the prompt does not already end with it, since the model needs the task token to transcribe rather than describe. The layout-aware second stage (category routing, nested-box suppression, region cropping, per-category instructions) is wired to the CLI through `--layout-detections`; see [Falcon-OCR layout-aware OCR](#falcon-ocr-layout-aware-ocr) below. The PP-DocLayoutV3 detector that feeds it is a separate architecture and is not included, so the detections are an input rather than something mlxcel produces.
+- Falcon-OCR (`falcon_ocr`): TII's 300M early-fusion document-OCR VLM, and the one VLM in the tree with no vision tower at all. Each 16x16 RGB patch is flattened and pushed through a single linear `img_projector` straight into the token stream, and one 22-layer decoder reads image and text together under a hybrid mask that is bidirectional inside every image block (`<|image_cls|>`, four register tokens, and the patch tokens) and causal everywhere else. The decoder is Llama-derived with five differences: a fused `wqkv`, weightless RMSNorm everywhere except the final norm (including the per-head Q/K norms, which is why the checkpoint ships only five tensors per layer), per-head learned attention sinks, a squared-ReLU gated MLP over a row-interleaved fused `w13` that the loader de-interleaves, and a 3-D rotary that puts a 1-D temporal rotary on the low half of each head and a 2-D per-head spatial rotary (driven by the shipped `freqs_cis_golden` table) on the high half. An entire image block collapses onto one temporal position, so intra-image geometry is carried by the spatial rotary alone. The checkpoint uses the raw `dim` / `n_layers` / `ffn_dim` config keys; the HF spellings are also accepted. Chunked prefill is disabled for this family, matching upstream. Prompts are expanded at the token level: image blocks are prepended (or substituted for an existing `<|image|>` placeholder) and `<|OCR_PLAIN|>` is appended when the prompt does not already end with it, since the model needs the task token to transcribe rather than describe. The layout-aware second stage (category routing, nested-box suppression, region cropping, per-category instructions) is wired to the CLI through `--layout-detections`; see [Falcon-OCR layout-aware OCR](#falcon-ocr-layout-aware-ocr) below. PP-DocLayoutV3 is a separate native detector; its ordered JSON output feeds the layout-aware Falcon-OCR stage.
 - Jina VLM (`jvlm`, also accepted as `jina_vlm`): Jina AI's small multilingual VLM. A 27-layer SigLIP-so400m-class ViT (linear patch embedding over already-patchified 14x14 pixels, learned absolute positions, no class token, fused `attn.qkv`, tanh-GELU MLP) feeds a Molmo-style connector: features from two intermediate layers are concatenated on the channel axis (`vit_layers: [-4, -10]`, 2 x 1152 = 2304 wide), two learned `pad_embed` rows are added where the coverage mask reports padding, the 27x27 patch grid is zero-padded to 28x28 and pooled 2x2 by a cross-attention block whose single query is the mean of each window, and a SwiGLU projector maps the result into the 2048-wide text stream. `vit_layers` resolves against a hidden-state list that includes the `post_lnorm` output, so `[-4, -10]` selects the outputs of layers 24 and 18 and the last two blocks are never loaded. The text decoder is Qwen2-class with an OLMo tensor layout: fused `attn.qkv`, GQA 16/8 at head_dim 128, per-head Q/K RMSNorm, a fused `ffn.gate_up` ordered `[up, gate]`, RoPE theta 1e6, no biases, and an untied `lm_head`. The vocabulary is split into a 151936-row base table plus a 128-row extension holding `<im_start>` / `<im_end>` / `<im_patch>` / `<im_col>` / `<|image|>` / `<im_slice>`. The image processor is Molmo's overlap-and-resize cropper: `smart_resize` to a patch-aligned size inside the pixel budget, then a stretch to a crop tiling with 4-patch overlap margins, 378x378 crops, and a thumbnail emitted first, with the token block laid out as `<im_start> [<im_patch> * w <im_col>] * h <im_end>`. Prompts follow the checkpoint's own chat template (` User: <image> text Assistant:`, with the leading space gated by `always_start_with_space`) and carry the BOS the reference processor prepends. The MLX conversion drops upstream's `chat_template.jinja`, so that template is also built in and used when the checkpoint declares none, which the server needs for text-only turns (under the generic `User:`/`Assistant:` fallback the model answers "17" to "What is the capital of France?"). Config is nested (`text_config.block_config.attn_config`, `vision_config.vl_connector_config`) rather than flat HF keys, and the released MLX conversion is mixed precision: language layer 0, every norm, the embedding tables, the ViT patch embedding and positional table, and `vision_model.layers.N.ffn.down` stay bf16 while the rest is 4-bit affine. Validated on `jinaai/jina-vlm-mlx`.
 - GLM-4V (`glm4v`): GLM-4V ViT vision tower (3D patch embedding, bilinear-resampled learned position embeddings, Conv2d spatial downsample, SwiGLU patch merger) plus a GLM-4 text backbone driven by sectioned even/odd MRoPE. Reuses the shared Qwen-VL image processor and prompt/token plumbing.
 - GLM-4V MoE (`glm4v_moe`): GLM-4.5V-class variant reusing the GLM-4V ViT vision tower with a GLM-4 MoE text backbone (grouped `noaux_tc` routing, shared experts, `first_k_dense_replace` dense layers) driven by sectioned half-split MRoPE. Reuses the GLM-4 MoE machinery and the shared Qwen-VL runtime.
@@ -303,15 +303,56 @@ banner. Nothing else in the video path depends on a version-gated feature, so
 ffmpeg 9.x work unchanged. On ffmpeg 4.x and older, video input is not
 supported; upgrade the system binary.
 
-## Standalone vision encoders and dense prediction
+## Object detection
 
-`mlxcel predict` runs image encoders and dense predictors outside the token-generation and object-detection runtimes. See [Dense prediction](dense-prediction.md) for the file contract.
+`mlxcel detect` dispatches by the exact `model_type` in `config.json`.
+All detector families return original-image pixel boxes through the shared JSON
+contract; only PP-DocLayoutV3 includes `reading_order`.
 
-| Family | Detection | Task | Inputs | Outputs | Status |
-|---|---|---|---|---|---|
-| DINOv2 | `dinov2`, `dinov2_with_registers` | `features` | one image | `last_hidden_state`, normalized class `pooler_output`, spatial-only `hidden_patch_tokens` | supported on Metal and CUDA; ROCm partial |
+| Family | `model_type` | Checkpoint layouts | Ordering | Status |
+|---|---|---|---|---|
+| RT-DETRv2 | `rt_detr_v2` | converted MLX | geometric CLI fallback | supported on Metal and CUDA; ROCm partial |
+| PP-DocLayoutV3 | `pp_doclayout_v3` | raw Paddle/Hugging Face `model.*` and converted MLX | GlobalPointer page order | supported on Metal and CUDA; ROCm partial |
+| RF-DETR Base / Seg Small | `rf-detr` (alias `rfdetr`) | released Hugging Face `model.*` and idempotently converted MLX | geometric CLI fallback | supported on ROCm; Metal and CUDA unverified |
+
+RF-DETR uses a windowed DINOv2 backbone, C2f projector, two-stage deformable
+decoder, and an optional instance-segmentation head. Base and segmentation
+checkpoints print COCO-labelled detections as JSON on stdout. With a
+segmentation checkpoint, `--masks-dir DIR` additionally writes source-resolution
+8-bit masks as `DIR/mask-000.png`, `DIR/mask-001.png`, and so on in printed
+detection order, and records each path in its JSON row. Without that flag the
+segmentation head and source-resolution mask materialization are skipped.
+Detection-only checkpoints reject `--masks-dir` before weights are loaded.
+
+PP-DocLayoutV3 validates the complete checkpoint key, shape, dtype, and
+finiteness contract before constructing HGNetV2-L, the hybrid encoder,
+mask-enhanced query initialization, and its six decoder layers. Raw checkpoint
+convolution kernels are transposed only when the global `model.` namespace
+proves their provenance; mixed layouts and rename collisions are rejected.
+
+## Standalone vision and dense prediction
+
+`mlxcel predict` runs image encoders and dense predictors outside the token-generation runtime. RF-DETR uses `mlxcel detect` and the detector JSON contract. See [Dense prediction](dense-prediction.md) for details.
+
+| Family | Runtime and checkpoint spellings | Tasks | Concrete output files |
+|---|---|---|---|
+| DINOv2 | `predict`; `dinov2`, `dinov2_with_registers` | `features` | `result.safetensors`, `meta.json` |
+| Sapiens2 | `predict`; `sapiens2` | `pose`, `seg`, `normal`, `pointmap`, `matting`, `backbone` | Every task writes `result.safetensors` and `meta.json`; non-empty pose also writes `keypoints.json`; `seg` writes `segmentation.png`; `normal` writes `normal.png` |
+| SAM 3 | `predict`; `sam3_video`, `sam3` | Image: `detect`, `segment`; tracker checkpoint: `detect`, `segment`, `track` | `result.safetensors`, `meta.json`, `instances.json`; image masks such as `masks/000.png`; video masks such as `masks/f000012_o003.png`; `detect` writes no mask PNG |
+| Video Depth Anything | `predict`; `video_depth_anything` | `depth` | `result.safetensors`, `meta.json`; still image `depth.png`; video frames `depth/000000.png`, `depth/000001.png`, ... |
+| MoGe3 | `predict`; `moge3` | `geometry` | `result.safetensors`, `meta.json`, `depth.png`, `normal.png`, `mask.png` |
+| SAM 3.1 | `predict`; `sam3.1_video`, `sam3.1` | `detect`, `segment`, `track` | `result.safetensors`, `meta.json`, `instances.json`; image masks such as `masks/000.png`; video masks such as `masks/f000012_o003.png`; `detect` writes no mask PNG |
+| SAM 3D Objects | `predict`; `sam3d_objects` | `mesh` | Always `result.safetensors`, `meta.json`; selected format writes `mesh.obj` or `gaussian.ply`, optionally `gaussian_4.ply` |
+| SAM 3D Body | `predict`; `sam3d_body` | `body_mesh` | `mesh.obj`, `result.safetensors`, `meta.json`, empty `instances.json`; the tensor file contains `vertices`, `keypoints_3d`, `joint_coords`, `camera`; no `keypoints.json` |
+| RF-DETR Base / Seg Small | `detect`; `rf-detr` (`rfdetr` alias) | Detection; segmentation checkpoints optionally add masks | JSON on stdout; with a segmentation checkpoint and `--masks-dir DIR`, source-resolution 8-bit `DIR/mask-000.png`, `DIR/mask-001.png`, ... in printed detection order; detection-only runs write no mask files |
+
+Every `predict` family uses the shared writer, including an `instances.json`
+file; it is empty for outputs without detected instances. The table calls out
+instance and mask paths where they are part of the family task.
 
 The shared DINOv2 encoder loads the small, base, large, and giant Hugging Face layouts, including the giant model's SwiGLU feed-forward layers. It supports boolean patch masking, optional register tokens, normalized intermediate layers for dense consumers, rectangular position interpolation, and both Hugging Face interpolation modes: explicit size with configurable antialiasing and the legacy `0.1` scale-factor offset. Standalone prediction aligns the image to the checkpoint patch size and applies ImageNet normalization. Server embedding routes and DINO classifier heads are not included.
+
+Video Depth Anything reuses that encoder for the published Small, Base, and Large relative and metric checkpoints, then applies the temporal DPT head over exact 32-frame windows. The offline predictor implements the published 10-frame overlap, keyframe conditioning, scale/shift alignment for relative depth, metric-scale bypass, and eight-frame blend. Inputs use the upstream 518-pixel lower-bound resize with OpenCV cubic sampling and 14-pixel multiples. Outputs are source-resolution F32 depth maps; video runs also write one `depth/NNNNNN.png` preview per frame. Webcam, streaming, and a server route are outside this family.
 
 ### Falcon-OCR layout-aware OCR
 
@@ -320,32 +361,38 @@ two-stage mode: detect the page's layout regions, then OCR each region on its
 own with the instruction that region's class was trained on, which is what
 produces per-region text instead of one undifferentiated block.
 
-**mlxcel does not ship a document-layout detector.** The reference's first stage
-loads PP-DocLayoutV3 through `transformers.AutoModelForObjectDetection`; that is
-a separate object-detection architecture and is not part of this port. Only the
-second stage is implemented, so the region boxes have to come from somewhere
-else and are supplied as a file:
+mlxcel ships PP-DocLayoutV3 as a native detector and accepts both released
+checkpoint layouts: Paddle/Hugging Face tensors under the raw `model.`
+namespace and converted MLX tensors. Generate the region file with `detect`,
+then pass it to Falcon-OCR:
 
 ```bash
+mlxcel detect -m models/PP-DocLayoutV3 -i page.png --format json > regions.json
 mlxcel generate -m models/mlx/falcon-ocr \
   --image page.png \
   --layout-detections regions.json
 ```
+
+The detector resizes to 800 by 800 with the checkpoint's exact Torchvision
+uint8 bicubic path, runs HGNetV2-L plus the hybrid encoder and six-layer
+deformable decoder, and decodes the GlobalPointer order head across all queries
+before confidence filtering. Its output preserves that global, column-aware
+order as dense one-based `reading_order` values.
 
 `-p/--prompt` is unused on this path (it is ignored with a note if passed):
 every region's prompt is the OCR instruction its layout class maps to. Each
 region is cropped from `--image`, OCRed on its own, and printed with its class,
 score, and pixel box.
 
-The accepted JSON is the shape `mlxcel detect --format json` prints, so a
-detector mlxcel gains later feeds this path without a format change:
+The accepted JSON is the shape `mlxcel detect --format json` prints, so
+PP-DocLayoutV3 feeds this path without an adapter:
 
 ```json
 {
   "detections": [
-    {"label": "title", "confidence": 0.95,
+    {"label": "title", "confidence": 0.95, "reading_order": 1,
      "box": {"l": 60, "t": 55, "r": 940, "b": 140}},
-    {"label": "text", "confidence": 0.90,
+    {"label": "text", "confidence": 0.90, "reading_order": 2,
      "box": {"l": 60, "t": 295, "r": 940, "b": 450}}
   ]
 }
@@ -372,9 +419,9 @@ page is OCRed as one `plain` region, matching the reference. A one-line summary
 reports the counts, so a region that disappeared is visible rather than silent.
 
 Regions are OCRed and printed in the order the file lists them; nothing
-reorders them. The reference detector emits reading order, and so does `mlxcel
-detect` (top to bottom, then left to right), so the two commands pipe together
-directly:
+reorders them. PP-DocLayoutV3 emits model-predicted reading order, while
+RT-DETRv2 has no order head and keeps the geometric top-to-bottom,
+left-to-right fallback. Both forms pipe directly:
 
 ```bash
 mlxcel detect -m models/docling-layout-heron-mlx-bf16 -i page.png --format json > layout.json
@@ -644,14 +691,21 @@ Every non-Gemma-4 model defaults to disabled (bit-exact baseline preserved). The
 ## Dense prediction
 
 - Sapiens2 (`sapiens2`): Meta's human-centric ViT backbone and five published task heads. The loader accepts the flat and legacy nested checkpoint schemas, separate or fused Q/K/V projections, and both PyTorch and MLX convolution layouts. Config-driven 0.4B, 0.8B, 1B, and 5B backbones use 2D RoPE, per-layer MHSA/GQA schedules, QK RMSNorm, LayerScale, and SwiGLU. Pose checkpoints return source-space keypoints, scores, and boxes through the upstream affine crop, flip test, DARK refinement, and UDP transform; callers may provide pixel `xyxy` boxes or use the full image. Segmentation returns class IDs, normal estimation returns normalized vectors, pointmap estimation returns pointmaps and its learned scale, and matting returns alpha and foreground planes. Normal and pointmap preprocessing preserve aspect ratio with padding; the other dense tasks use the checkpoint's stretched 1024x768 canvas. Still-image inference is supported through `mlxcel predict`; automatic person detection, video, streaming, and server routes are outside this family.
+- SAM 3D Body (`sam3d_body`): `mlxcel predict --task body_mesh` reconstructs a colorless 18,439-vertex human mesh with DINOv3 and MHR. Optional source-pixel `bbox` and row-major `cam_int` options control the crop and camera. Outputs are `mesh.obj`, `result.safetensors` (`vertices`, `keypoints_3d`, `joint_coords`, `camera`), `meta.json`, and empty `instances.json`. The released BF16-backbone/F32-decoder-and-MHR precision is preserved. Hand refinement, overlays, video and automatic person detection are outside the port.
+- SAM 3D Objects (`sam3d_objects`): image-and-mask reconstruction with automatic MoGe-3 depth, shared DINOv2 conditioning, deterministic two-stage flow, sparse latents, FlexiCubes triangle meshes, and 32- or 4-Gaussian heads. `mlxcel predict` writes object-local RGB OBJ and binary Gaussian PLY plus separate pose and latent tensors. RGBA alpha and supplied XYZ point maps are supported.
+- MoGe3 (`moge3`): monocular geometry estimation with the released F32 DINOv2-L/14 and DINOv2-g/14 checkpoints. Four intermediate encoder grids feed convolutional point, mask, and normal heads; a coordinate-only sparse 3D U-Net refines factorized depth without constructing a dense voxel volume. `mlxcel predict` returns source-resolution points, depth, validity, normals, and normalized intrinsics. Resolution levels 0-9, exact token counts, fixed or recovered field of view, projection/masking controls, zero or bounded repeated refinement, and per-step tensors are supported. Batch CLI input, video, streaming, and server routes are outside the port.
+
 
 Dense prediction checkpoints run through `mlxcel predict`; see [Dense prediction](dense-prediction.md) for the CLI and file contract.
 
-| Family | `model_type` | Inputs | Tasks | Output | Status |
-|--------|--------------|--------|-------|--------|--------|
-| SAM 3 | `sam3`, `sam3_video` | image or video, repeatable text prompts, pixel xyxy boxes | `detect`, `segment`, `track` | source-pixel boxes and scores; source-resolution u8 instance masks; stable video object IDs | bf16 and affine 4-bit MLX checkpoints; quantized linears load through `UnifiedLinear` |
-
 SAM 3 image segmentation defaults to a 0.3 score threshold and 0.5 NMS IoU; video tracking defaults to 0.15 and propagates objects through the checkpoint's memory tracker. `mlxcel arch --json` reports the family under the `predict` runtime with `masks` output.
+
+SAM 3.1 reuses the SAM 3 detector and adds three FPN neck branches plus an
+Object Multiplex tracker. It packs 16 objects into each internal bucket and
+propagates every bucket in a single tracker invocation per later video frame.
+Video boxes filter frame-zero text detections by region; mid-video object
+addition, reconditioning, and interactive point refinement are outside this
+CLI implementation.
 
 ## Speech-to-text (ASR)
 
