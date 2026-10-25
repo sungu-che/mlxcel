@@ -54,14 +54,51 @@ roofline, while per-request decode rate falls proportionally. The defaults:
   window and publishes that post-load value to `/props`, `/slots`, and
   `/v1/models`.
   `supports_batching()` being true does not by itself mean a family runs one
-  forward per tick: only families that override `forward_batched()` (Llama 3,
-  Llama 4, Qwen 3, Qwen 3.5, Gemma 3, Helium, Muse Glimmer, and Qwen3-MoE
-  since #1616) do. Every other batching family runs the `LanguageModel`
-  default, which calls the single-sequence `forward()` once per row and
-  evaluates the B graphs together, so its aggregate scaling comes only from
-  overlapping independent single-token graphs. The 2026-09-04 M1 Ultra profile
+  forward per tick: families with a native decode path include Llama 3,
+  Llama 4, Qwen 3, Gemma 3, Helium, Qwen3-MoE, Apertus, Cohere, Cohere 2,
+  Ernie 4.5 dense, ExaOne, Gemma, Gemma 2, GLM-4, Granite, Hunyuan v1 dense,
+  GPT-2, GPT-BigCode, GPT-NeoX, InternLM 2/3, MiMo, MiniCPM, MiniMax-M3,
+  NanoChat, Nemotron, OLMo, OLMo 2/3, OpenELM, Phi, Phi-3, Phi-3-small,
+  StableLM, BitNet, Seed-OSS, SmolLM3, StarCoder2, and
+  TeleChat3, Mixtral, PhiMoE, Phixtral, Qwen2-MoE, OLMoE, DBRX, DeepSeek v1,
+  GLM-4 MoE, ERNIE 4.5 MoE, Hunyuan MoE, Bailing MoE, Dots1, MiniMax,
+  Klear, Solar Open, Exaone MoE, and Cohere 2 MoE, plus the MLA backbones
+  DeepSeek V2/V3/V3.2, MiniCPM3, Mistral 4,
+  GLM-4 MoE Lite, Youtu, and the Qwen2-VL/Qwen2.5-VL/Qwen3-VL/
+  Qwen3-VL-MoE/Qwen3-Omni text-decode paths. Qwen VL partitions identified
+  single-token rows into plain-RoPE and MRoPE groups while preserving row
+  order; prefill, missing sequence ids, stored-position rows, and Qwen3
+  model-global DeepStack state retain exact per-row dispatch. DeepStack state
+  remains model-global pending #2567. GLM-4V (also used by GLM-OCR), GLM-4V
+  MoE, Hunyuan-VL, ERNIE-4.5-MoE-VL, PaddleOCR-VL, and Cohere Compass likewise
+  group identified decode rows by their plain/MRoPE position mode, execute one
+  decoder graph per group, and scatter logits back to scheduler order.
+  Distinct per-sequence deltas stay native; stored-position rows, prefill, and
+  missing sequence ids retain exact per-row dispatch. Compass preserves its
+  sliding/full attention split and falls back for the whole call while its
+  model-global DeepStack state is present, pending #2567. ERNIE decode always
+  uses the text expert bank; its image-token expert dispatch remains prefill
+  only. The tensor-parallel Llama, Qwen 3, Qwen 3.5,
+  Gemma 3, ERNIE 4.5, and
+  Hunyuan v1 dense runtimes also share one native decode graph across active
+  rows at each rank and layer. Phi-3V, Phi-4-SigLIP, Granite Vision,
+  DeepSeek-OCR, OCR-2, GLM MoE DSA, DeepSeek-VL2, Kimi-VL, MiniMax-M3-VL,
+  and Youtu-VL
+  delegate text-only decode to their native text tower. Every other batching
+  family runs the
+  `LanguageModel` default, which calls the single-sequence `forward()` once per
+  row and evaluates the B graphs together, so its aggregate scaling comes only
+  from overlapping independent single-token graphs. The 2026-09-04 M1 Ultra
+  profile
   in `docs/benchmark_results/moe-batched-decode-m1ultra-2026-09-04.md` measured
   that fallback on `qwen3-30b-a3b-4bit` before the override landed.
+  MiniMax-M3 sparse attention keeps its extra index-key head in the cache, but
+  passes only the model's value heads to attention. This also corrects the
+  prior single-row path, where cache allocation padded values to the
+  index-augmented key-head count and could produce a K/V head-shape failure.
+  Batched decode projects index keys and queries once for the full batch, then
+  slices them by row after each row's cached prefill.
+  At startup the worker reports either `decode path: native batched forward` or `decode path: per-row fallback (aggregate decode throughput will not scale with --parallel)` for every batching-capable model. Single-device Qwen 3.5, Qwen 4 Exp, and Muse Glimmer currently report the fallback because their serving decode-width paths still dispatch identified rows sequentially; an anonymous-batch or batched-prefill override does not make serving decode native.
 - `--max-batch-prefill 4`: batch up to 4 pending prompts into one prefill pass.
   Only families that opt into `supports_batched_prefill()` (Llama 3, Qwen 3,
   Qwen 3.5, and aliases such as Qwen 2.5) use it; others fall back to sequential
@@ -69,6 +106,8 @@ roofline, while per-request decode rate falls proportionally. The defaults:
 - Prompt-prefix cache on, bounded to a 2 GiB KV budget (`--prompt-cache-*` to
   retune). A repeated shared prefix (for example a long system prompt) is
   prefilled once and reused.
+
+Exaone MoE has an intentional historical B=1 exception: its former `LanguageModel` adapter discarded K/V on every call and copied back only an offset. The corrected path retains request history and matches the persistent `AnyKVCache` reference across the sliding window, so outputs may differ from that broken baseline even at one request (#2559).
 
 Escape hatches restore the previous single-client behavior: `--parallel 1`
 (single decode slot), `--no-batch` (legacy sequential worker: the same scheduler at `max_batch_size=1`),
@@ -92,7 +131,7 @@ same chat request under `MLXCEL_SDPA_DETERMINISTIC=1`, greedy output from
 `mlxcel run -p` and from the server is identical. `make engine-parity
 MODEL=<dir>` checks it with arm `e:run` (the settings `run -p --temp 0` builds)
 against arm `f:server` (the same request on the `mlxcel-server` default
-configuration, four slots, paged storage when the model supports it), prompt
+  configuration, four slots, paged storage when the model supports it), prompt
 cache off on both. On GB10 both pairs are identical for Qwen3-1.7B 4-bit and
 Llama-3.2-1B 4-bit. The same run compares the server at B=1, dense and paged,
 with the raw-completion client (arm `d:engine`, `mlxcel_core::engine::DirectEngine`)
@@ -429,7 +468,11 @@ The kernel is picked by the cache, not by the model forward
 behind that cache, and `cache::attend_batched` does the same for one layer of a
 batch. Qwen3, Llama 3 and the families that reuse their attention (Qwen2,
 Qwen2.5, Helium, the VLM text backbones) call these; DeepSeek V2's absorbed
-decode goes through `MlaLatentCache::attend`. The model-owned families hold
+decode goes through `MlaLatentCache::attend`. The latent MLA families keep
+their compressed latent and positional-key cache representation, batch the
+shared projections and MLPs, then update and attend through each request's
+ragged cache row. DeepSeek V3.2 and GLM MoE DSA likewise apply the DSA indexer
+selection independently to each row after the batched index projections. The model-owned families hold
 their per-sequence state in their own cache enums and attend through the same
 rule: Gemma 3's `Cache::attend` routes a global layer to `KVCache::attend` and
 a sliding layer to `RotatingKVCache::attend` (whose write path stays
