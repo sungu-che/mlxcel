@@ -3,8 +3,8 @@
     "repo": "lablup/mlxcel",
     "ref": "main",
     "dir": "docs",
-    "commit": "511dce9669da5c2bc8887e197af334c95681f16e",
-    "commitDate": "2026-10-23T23:54:46Z"
+    "commit": "d7ffd3e0b54842c512b0197dd7fc0ebad404a5bb",
+    "commitDate": "2026-10-25T07:52:24Z"
   },
   "files": [
     {
@@ -29,7 +29,7 @@
       "name": "benchmarks.md",
       "slug": "benchmarks",
       "title": "Benchmarks",
-      "size": 89931
+      "size": 91472
     },
     {
       "name": "block-diffusion.md",
@@ -47,13 +47,13 @@
       "name": "code-guidelines.md",
       "slug": "code-guidelines",
       "title": "Code Modification Guidelines",
-      "size": 32434
+      "size": 32520
     },
     {
       "name": "CONTINUOUS_BATCHING.md",
       "slug": "CONTINUOUS_BATCHING",
       "title": "Continuous batching and disaggregated serving",
-      "size": 65275
+      "size": 68793
     },
     {
       "name": "dense-prediction.md",
@@ -65,7 +65,7 @@
       "name": "distributed.md",
       "slug": "distributed",
       "title": "Distributed inference",
-      "size": 11716
+      "size": 12051
     },
     {
       "name": "embeddings.md",
@@ -77,7 +77,7 @@
       "name": "environment-variables.md",
       "slug": "environment-variables",
       "title": "Environment variables",
-      "size": 236796
+      "size": 237601
     },
     {
       "name": "sparse-paged-decode.md",
@@ -101,7 +101,7 @@
       "name": "installation.md",
       "slug": "installation",
       "title": "Installation",
-      "size": 65781
+      "size": 66089
     },
     {
       "name": "llama-server-compat.md",
@@ -161,7 +161,7 @@
       "name": "responses-api.md",
       "slug": "responses-api",
       "title": "OpenAI Responses API subset (`/v1/responses`)",
-      "size": 30020
+      "size": 30130
     },
     {
       "name": "python-client.md",
