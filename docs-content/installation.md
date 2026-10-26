@@ -16,7 +16,8 @@ static binaries: platform GPU/runtime libraries are still required.
 | Linux with NVIDIA CUDA | secondary | `cuda` | Release builds currently target CUDA 13-era systems; other versions depend on MLX/CUDA compatibility. |
 | Linux with AMD ROCm | experimental | `rocm` | Source build only. Validated on RDNA 3.5 (`gfx1151`, Strix Halo) with ROCm 10.0 / HIP 7.15; tracked in lablup/mlxcel#1801. See [Linux with AMD ROCm](#linux-with-amd-rocm-experimental). |
 | Linux CPU-only | not a release target | none | May compile in limited configurations, but it is not a useful or validated inference target for this project. |
-| Windows | not documented here | — | The current public installation path is macOS/Linux. |
+| Windows with NVIDIA CUDA | experimental | `cuda` | Source build only, single node (no tensor or pipeline parallelism). Validated natively on `aarch64-pc-windows-msvc` (NVIDIA RTX Spark N1X); the build glue also covers `x86_64-pc-windows-msvc`. See [Windows with NVIDIA CUDA](#windows-with-nvidia-cuda-experimental). |
+| Windows with AMD ROCm | experimental | `rocm` | Source build only, single node. Validated natively on `x86_64-pc-windows-msvc` with a Radeon 8060S (`gfx1151`) and ROCm 10.1.0; runs without the ROCm `bin` directory on `PATH` or `ROCM_PATH` set. See [Windows with AMD ROCm](#windows-with-amd-rocm-experimental). |
 
 ## Cargo feature flags
 
@@ -32,7 +33,7 @@ opt-in seams, diagnostics harnesses, or test scaffolding.
 | `metal` | off | Apple Silicon Metal GPU backend (delegates to `mlxcel-core/metal`). Standard on macOS. |
 | `accelerate` | off | Apple Accelerate CPU BLAS backend (delegates to `mlxcel-core/accelerate`). Standard on macOS. |
 | `cuda` | off | NVIDIA CUDA GPU backend (delegates to `mlxcel-core/cuda`). Required on NVIDIA hosts; a plain build is CPU-only (see the footgun note below). |
-| `rocm` | off | AMD GPU backend on Linux (delegates to `mlxcel-core/rocm`), built from the ROCm overlay in `src/lib/mlxcelverse/overlays/rocm/`. Cannot be combined with `cuda` or `metal`. Experimental; see [Linux with AMD ROCm](#linux-with-amd-rocm-experimental). |
+| `rocm` | off | AMD GPU backend on Linux and on Windows x86_64 MSVC (delegates to `mlxcel-core/rocm`), built from the ROCm overlay in `src/lib/mlxcelverse/overlays/rocm/`. Cannot be combined with `cuda` or `metal`. Experimental; see [Linux with AMD ROCm](#linux-with-amd-rocm-experimental) and [Windows with AMD ROCm](#windows-with-amd-rocm-experimental). |
 | `experimental-backend` | off | Reserves the non-MLX compute-backend seam slot (issue #338). Ships no kernels and adds no runtime dispatch; it only compiles the plug-in boundary where a future non-MLX engine (e.g. FuriosaAI RNGD) would implement `ComputeBackend`. `select_backend()` still folds to MLX. |
 | `xla-backend` | off | OpenXLA / StableHLO backend seam (issue #449, [ADR 0004](adr/0004-compute-backend-session-seam-and-stablehlo-family.md)). Pulls in `mlxcel-xla` and compiles the `Backend::Xla` / `Session::Xla` arms and the `MLXCEL_BACKEND=xla` selector, but no native execution engine: the crate is pure-Rust stubs plus the StableHLO graph emitter, so CI builds it unchanged. |
 | `xla-iree` | off | `xla-backend` plus real IREE execution (`mlxcel-xla/iree`). Compiles a C shim against a prebuilt IREE runtime and drives the bundled prefill / decode_step graphs. Needs `IREE_DIST` (or the source-build vars below) at build time, so it is a local / opt-in build, not a CI or release default. |
@@ -378,6 +379,325 @@ MLXCEL_CXX_MARCH=x86-64-v3 cargo build --release --features cuda
 # Omit -march entirely (compiler default baseline).
 MLXCEL_CXX_MARCH=none cargo build --release --features cuda
 ```
+
+MSVC has no `-march=native`, so a Windows build defaults to the target's
+baseline ISA, and an explicit value is passed through as `/arch:<value>` (for
+example `MLXCEL_CXX_MARCH=AVX2` on x64 or `armv8.2` on arm64).
+
+## Windows with NVIDIA CUDA (experimental)
+
+A native `mlxcel.exe` / `mlxcel-server.exe` with the `cuda` feature, built with
+MSVC (lablup/mlxcel#58). This is a source build for a single machine:
+tensor parallelism, pipeline parallelism, disaggregated serving and cluster
+bring-up are refused at startup on Windows (see
+[Current limits](#current-limits-on-windows)). WSL2 with the Linux CUDA path
+above remains the supported alternative.
+
+Validated configuration: `aarch64-pc-windows-msvc` on an NVIDIA RTX Spark N1X
+(Blackwell, `sm_121`, driver 616.62), Visual Studio 2026 (MSVC 14.51), CUDA
+13.4.3 and cuDNN 9.27. The build glue resolves `x64` and `arm64` toolkit
+layouts alike, but no `x86_64-pc-windows-msvc` GPU host has run it yet.
+
+### Prerequisites
+
+- Visual Studio 2022 or newer with the "Desktop development with C++" workload.
+  Its bundled CMake and Ninja are enough; nvcc needs MSVC `cl.exe` as its host
+  compiler, so the GNU toolchain does not work.
+- Rust with the MSVC target of the machine (`x86_64-pc-windows-msvc` or
+  `aarch64-pc-windows-msvc`), not a `-gnu` target.
+- CUDA Toolkit 13.x and cuDNN 9 built for CUDA 13. CUDA 12.x is not handled
+  yet: its Windows layout keeps the DLLs in `bin\` rather than `bin\<arch>\`.
+  On x64 the CUDA installer works. cuDNN must use the redistributable archive
+  layout (below); the cuDNN installer's `lib\13.x\x64` layout is not searched.
+  For Windows on Arm NVIDIA ships only the redistributable archives
+  (`windows-arm64` entries under
+  `developer.download.nvidia.com/compute/cuda/redist/` and `.../cudnn/redist/`):
+  unpack the `cuda_cudart`, `cuda_nvcc`, `cuda_crt`, `cuda_nvrtc`, `cccl`,
+  `libcublas`, `libcufft`, `libcusolver`, `libcusparse`, `libnvjitlink` and
+  `libnvvm` archives and the cuDNN archive into one directory. No
+  administrator rights are needed.
+- An NVIDIA display driver that supports the toolkit.
+
+The toolkit layout the build expects is `bin\nvcc.exe`, `include\`,
+`lib\<arch>\` and `bin\<arch>\`, where `<arch>` is `x64` or `arm64`. cuDNN may
+live in the same directory or in its own root with the same layout.
+
+### Build
+
+Run from a Visual Studio developer prompt for the target architecture
+("x64 Native Tools" or "ARM64 Native Tools Command Prompt"), so that `cl.exe`,
+CMake and Ninja are on `PATH`:
+
+```bat
+set CUDA_PATH=C:\path\to\cuda
+rem Only when cuDNN is not unpacked into CUDA_PATH:
+set CUDNN_PATH=C:\path\to\cudnn
+cargo build --release --features cuda
+```
+
+`CUDA_HOME` is honored ahead of `CUDA_PATH`. The build uses the Ninja
+generator for MLX unless `CMAKE_GENERATOR` is set: the Visual Studio generator
+cannot compile `.cu` files without NVIDIA's MSBuild integration installed into
+Visual Studio. The architecture list is detected with `nvidia-smi` as on Linux
+(`MLX_CUDA_ARCHITECTURES` overrides it).
+
+What the Windows build does differently from Linux:
+
+- Links the CUDA import libraries from `lib\<arch>` and delay-loads the CUDA and
+  cuDNN DLLs through MLX's own hook, which resolves them from the toolkit's
+  `bin\<arch>` directory recorded at build time. mlxcel's overlay of that hook
+  (`overlays/cuda/mlx/backend/cuda/delayload.cpp`) also loads each DLL so that
+  its own imports resolve from the same directory, and preloads the DLLs that
+  NVRTC (`nvrtc-builtins`) and cuDNN (`cudnn_engines_*`, `cudnn_ops`, ...)
+  open by plain name on first use. The
+  binary therefore runs, including the first JIT compile, without the toolkit
+  on `PATH` and without `CUDA_PATH`. The display driver's `nvcuda.dll` is not
+  delay-loaded; it comes from the driver.
+- Links the OpenBLAS that MLX's CMake downloads for its CPU backend and copies
+  `openblas.dll` next to the built executables.
+- Compiles the C++ bridge with MSVC options (`/std:c++20`, `MLX_STATIC`,
+  `/fp:fast`) instead of the GCC/Clang spellings.
+- Records the toolkit's `include\` directory for NVRTC, so the runtime kernel
+  compiler finds the CUDA headers without `CUDA_PATH` being set at run time.
+
+The executables depend on the build machine's toolkit directory at run time.
+Shipping them to another machine means bundling `openblas.dll` and the CUDA,
+cuDNN and NVRTC DLLs; that packaging is not done yet.
+
+Long paths: the MLX dependency tree under `target\` is deep. If CMake or nvcc
+reports a path it cannot open, enable Win32 long paths or set a short
+`CARGO_TARGET_DIR`.
+
+### Current limits on Windows
+
+| Area | Status |
+|------|--------|
+| Single-GPU generation and `mlxcel-server` | Works on the validated configuration. |
+| Tensor / pipeline parallelism, disaggregated serving, `--pp-auto` / `--pp-peer` | Refused at startup with an error naming the flag. |
+| Unix domain socket listen (`--host *.sock`) | Refused; listen on TCP. |
+| Router-mode model downloads and cache removal (WebUI model library) | Refused: they depend on directory-fd-anchored filesystem operations, which have no Windows implementation. |
+| CPU device (`MLXCEL_DEVICE=cpu`, or a build without `cuda`) | Builds and loads, but quantized matmul runs MLX's scalar CPU loops: on the validated host a 24-token `generate` with gemma-4-e4b-it-qat-4bit had not finished after 30 minutes. |
+| Prebuilt release archives, CI | None yet. |
+
+## Windows with AMD ROCm (experimental)
+
+A native `mlxcel.exe` / `mlxcel-server.exe` with the `rocm` feature, built with
+MSVC (lablup/mlxcel#2601). It uses the same ROCm overlay as the
+[Linux build](#linux-with-amd-rocm-experimental) and the same single-node
+limits as the [Windows CUDA build](#current-limits-on-windows).
+
+Validated configuration: `x86_64-pc-windows-msvc` on an AMD Ryzen AI MAX+ 395
+(Radeon 8060S, `gfx1151`, with a BIOS UMA carve-out), Windows 11, Adrenalin
+32.0.31041.1004, ROCm Core SDK 10.1.0 (TheRock tarball), Visual Studio 18
+(MSVC 14.51) with its bundled Ninja. `mlx-community/Qwen3-0.6B-4bit` decodes at
+about 115 tok/s and `mlx-community/Qwen3-1.7B-bf16` at about 31 tok/s there.
+The build accepts only `x86_64-pc-windows-msvc`; any other Windows target
+fails the feature check.
+
+### Prerequisites
+
+- A ROCm 10.x SDK for Windows: the TheRock tarball for your GPU family (for
+  `gfx1151`, `therock-dist-windows-gfx1151-10.1.0.tar.gz` from
+  <https://stable.repo.amd.com/rocm/core/tarball/>), extracted to a directory
+  such as `C:\rocm\10.1.0`, or the SDK from AMD's ROCm pip wheels. ROCm 10 has
+  no HIP SDK installer. The build needs `bin\hipcc.exe`, `lib\amdhip64.lib` and
+  the other import libraries in `lib\`, and `amdgpu-arch.exe` for target
+  detection (the ROCm 10.1 tarball keeps it in `lib\llvm\bin\`, other SDKs in
+  `bin\`).
+- An AMD display driver that supports the GPU.
+- Visual Studio 2022 or newer with the "Desktop development with C++" workload,
+  for `cl.exe`, `lib.exe`, CMake and Ninja.
+- Rust with the `x86_64-pc-windows-msvc` target.
+
+### Build
+
+Run from the "x64 Native Tools Command Prompt" for Visual Studio:
+
+```bat
+set ROCM_PATH=C:\rocm\10.1.0
+cargo build --release --features rocm
+```
+
+`HIP_PATH` is read when `ROCM_PATH` is unset. The value must be an absolute
+path: the build panics on a relative one, since CMake would record a relative
+`bin` or `include` directory that resolves against the working directory at
+run time. The build also panics when the SDK `bin` directory holds no
+`amdhip64_*.dll`, because the binary would then import the HIP runtime eagerly
+by name instead of delay-loading it from the SDK. The HIP targets are detected with
+`amdgpu-arch` (Windows SDKs ship no `rocminfo`); set
+`MLX_ROCM_ARCHITECTURES=gfx1151` to skip detection or to build for a GPU that
+is not installed. The build uses the Ninja generator for MLX unless
+`CMAKE_GENERATOR` is set, because the Visual Studio generator cannot run the
+backend's HIP compile commands. If CMake or `hipcc` reports a path it cannot
+open, set a short `CARGO_TARGET_DIR` such as `C:\t`.
+
+What the Windows build does differently from Linux:
+
+- The whole stack is MSVC ABI: ROCm's clang targets `x86_64-pc-windows-msvc`
+  and the ROCm DLLs link the MSVC runtime. The HIP kernels are compiled to
+  `.obj` files with `/MD` runtime semantics and archived by `lib.exe` as
+  `mlx_rocm_kernels.lib`.
+- Links the import libraries from the SDK's `lib\`. hipBLASLt's import library
+  ships as `libhipblaslt.dll.a`; the build copies it to `hipblaslt.lib` under
+  its `OUT_DIR`. No rpath is emitted.
+- Delay-loads the ROCm DLLs from one runtime directory, by default the SDK
+  `bin` directory recorded at build time (lablup/mlxcel#2602; the other
+  candidates are in [Runtime directory and bundle](#runtime-directory-and-bundle)).
+  The executables import `amdhip64_7.dll`, `rocblas.dll`,
+  `libhipblaslt.dll`, `hipfft.dll` and `hiprtc0716.dll` (names from ROCm
+  10.1.0) through `/DELAYLOAD`, and a notify hook compiled into MLX loads each
+  one by full path from the runtime directory, with its own dependencies
+  resolved beside it. `amd_comgr.dll` and `hiprtc-builtins*.dll`, which the HIP runtime
+  and hipRTC load by name at run time, are preloaded from the same directory.
+  Neither the current directory nor `PATH` is searched for any of them, so a
+  same-named DLL in the working directory is never loaded, and the HIP runtime
+  is the SDK's, not the `amdhip64_7.dll` the display driver installs in
+  `System32`. If a DLL is missing there, the binary prints the expected path
+  and stops. The HIP runtime also names `hsa-amd-aqlprofile64.dll`,
+  `hsa-ext-finalize64.dll` and `dtif64a.dll`, which neither the SDK nor the
+  driver ships. Generation and serving do not load them (checked with decoys
+  in the working directory), but an optional path that opens them by name,
+  such as profiling, uses the standard Windows search, which includes the
+  current directory.
+- The runtime kernel compiler (hiprtc) takes its headers from `ROCM_HOME`,
+  `ROCM_PATH` or `HIP_PATH` when one is set, otherwise from the `include\`
+  inside or beside the runtime directory (a bundle's `include\`, or the SDK's
+  for a developer build), and last from the SDK's `include\` recorded at build
+  time, so neither variable is needed at run time.
+  A variable set at run time takes precedence, so it must name a directory
+  with the same protection as the SDK (next item).
+  The AMD HIP SDK installer sets `HIP_PATH` system-wide, so on a machine where
+  it is installed that variable overrides the bundle's `include\` and the kernel
+  compiler uses the SDK's headers, possibly from a different ROCm version than
+  the bundle's runtime. Clear `HIP_PATH` for mlxcel (`set HIP_PATH=`), or point
+  it at the bundle root (the folder holding `bin\` and `include\`).
+- The SDK directory recorded at build time must be writable only by
+  administrators (or only by you). Any account that can write to its `bin\`
+  can run code in every mlxcel process started from these binaries, and any
+  account that can write to its `include\` can change the GPU kernels they
+  compile. A directory created directly under `C:\`, such as `C:\rocm`,
+  inherits Modify access for all authenticated users from the drive root, so
+  on a machine with more than one account remove that inherited access after
+  extracting the SDK:
+
+  ```bat
+  icacls C:\rocm /inheritance:r /grant:r *S-1-5-32-544:(OI)(CI)F *S-1-5-18:(OI)(CI)F *S-1-5-32-545:(OI)(CI)RX
+  ```
+
+  This leaves Administrators and SYSTEM with full control and Users with read
+  and execute, propagated to everything under `C:\rocm`. Afterwards
+  `icacls C:\rocm\10.1.0\bin` lists no `Authenticated Users` entry. The same
+  applies to the directory holding `mlxcel.exe`: Windows loads
+  `libopenblas.dll` from there, and searches it for any dependency of a ROCm
+  DLL that is not in the SDK `bin\`.
+- Uses a host-shadow memory model. Windows does not map GPU allocations into
+  the CPU address space, even on an APU, so every CPU read or write of a GPU
+  buffer goes through a pinned host copy that is flushed back before the next
+  kernel reads the buffer. Device buffers are plain `hipMalloc` memory, which
+  on the validated host reaches the full UMA carve-out (92 GiB allocated),
+  while pinned host memory stops at the RAM Windows sees (about 28 GiB).
+  The allocator limit on an integrated GPU is 80% of the device memory HIP
+  reports: allocating in 1 GiB chunks stopped at 105 GiB of the 107.87 GiB
+  reported, so unlike Linux the system RAM does not raise the limit.
+
+### Runtime directory and bundle
+
+Every ROCm DLL comes from one runtime directory, chosen once per process from
+these candidates (lablup/mlxcel#2606):
+
+1. `MLXCEL_ROCM_RUNTIME_DIR`, which must be an absolute path. When it is set it
+   is the only candidate: a relative path, or a directory without the HIP
+   runtime, stops the binary at its first ROCm call with a message naming the
+   problem.
+2. The directory of `mlxcel.exe` (or `mlxcel-server.exe`), when it holds the
+   HIP runtime the binary imports (`amdhip64_7.dll` for ROCm 10).
+3. The SDK `bin` recorded at build time, when it holds the HIP runtime. A
+   developer build with the SDK at its build path needs no bundle and no
+   variable.
+
+The binaries print the choice once, for example
+`[mlx-rocm] ROCm runtime: C:\mlxcel\bin (executable directory)`. A DLL missing
+from the chosen directory stops the binary with the full path it expected; it
+is never taken from another candidate, because DLLs from two ROCm releases are
+not guaranteed to work together: the SDK's `amdhip64_7.dll` next to the display
+driver's `amd_comgr.dll` finds no device. This includes `amd_comgr*.dll` and
+`hiprtc-builtins*.dll`, which the HIP runtime opens by name: when the chosen
+directory holds no match for either pattern, the binary stops before loading
+any ROCm DLL with a message naming the directory and the missing pattern,
+instead of letting Windows find the driver's copy in `System32`.
+
+`scripts/package_windows_rocm_runtime.py` (Python 3, standard library) builds
+the runtime bundle from an SDK:
+
+```bat
+python scripts\package_windows_rocm_runtime.py --rocm-path C:\rocm\10.1.0 --arch gfx1151 --out dist
+```
+
+This writes `dist\mlxcel-rocm-runtime-10.1.0-win-x64.zip` (76 MiB, 225 MiB
+extracted, for `gfx1151` with ROCm 10.1.0). Pass `--arch` once per GPU target
+the build supports. The bundle keeps the SDK's layout, because rocBLAS,
+hipBLASLt and rocFFT look for their data relative to their own DLL:
+
+- `bin\` holds the ten DLLs `mlxcel` loads (`amdhip64_7`, `amd_comgr`,
+  `rocm_kpack`, `hiprtc0716`, `hiprtc-builtins0716`, `rocblas`, `libhipblaslt`,
+  `origami`, `hipfft`, `rocfft`) and the kernel data in `bin\rocblas\library\`
+  and `bin\hipblaslt\library\`, reduced to the requested targets.
+- `.kpack\` holds the device-code archives the libraries open as
+  `<their directory>\..\.kpack\<library>_<target>.kpack`.
+- `include\hip\` holds the headers the kernel compiler needs.
+- `licenses\` holds the SDK license files of the shipped components. The
+  ROCm 10.1.0 tarball has no license file for the HIP runtime, hipRTC or
+  `rocm_kpack`.
+
+The script fails when the SDK lacks any of these files, so a DLL renamed in a
+later ROCm release is caught when packaging. `bin\` is the runtime directory.
+Either copy `mlxcel.exe`, `mlxcel-server.exe` and `libopenblas.dll` (from the
+build's `target\release\`) into the extracted `bin\`, or set
+`MLXCEL_ROCM_RUNTIME_DIR` to the extracted `bin\` and keep the binaries where
+they are. `--stage-dir <empty dir>` copies the tree instead of zipping it, and
+`--add-binary <file>` (repeatable) copies the binaries into `bin\` in the same
+step:
+
+```bat
+python scripts\package_windows_rocm_runtime.py --rocm-path C:\rocm\10.1.0 --arch gfx1151 --stage-dir dist\mlxcel --add-binary target\release\mlxcel.exe --add-binary target\release\mlxcel-server.exe --add-binary target\release\libopenblas.dll
+```
+
+Install rules:
+
+- Do not extract the bundle into a folder that holds another application's
+  ROCm runtime. llama.cpp's Windows ROCm release, for example, ships ROCm 10.0
+  `amdhip64_7.dll`, `amd_comgr.dll` and `rocm_kpack.dll` beside its
+  executables; extracting both into one folder replaces those files and pairs
+  DLLs from two releases. Give each application its own folder, and point
+  `MLXCEL_ROCM_RUNTIME_DIR` at mlxcel's when the two must sit side by side.
+- The runtime directory, its parent (which holds `.kpack\` and `include\`) and
+  the folder holding `mlxcel.exe` must be writable only by administrators (or
+  only by you), for the reasons given for the SDK above. `C:\Program Files`
+  has that protection; for a folder created directly under `C:\`, remove the
+  inherited access with the `icacls` command above.
+- `ROCM_HOME`, `ROCM_PATH` and `HIP_PATH`, when set, take precedence over the
+  bundle's `include\` for the JIT headers. The HIP SDK installer sets `HIP_PATH`
+  system-wide: on such a machine clear it for mlxcel, or point it at the bundle
+  root, so kernels are not compiled against another ROCm version's headers.
+- Keep the path of the runtime directory at most 130 characters long, for
+  example `C:\mlxcel\bin`. rocBLAS and hipBLASLt open kernel files up to 128
+  characters below it, and with the 260-character Windows path limit a longer
+  location made the first matrix multiply crash with an access violation (a
+  133-character directory, long paths disabled). The binaries print a warning
+  when the chosen directory is longer.
+- Tested with Adrenalin 32.0.31041.1004 on a Radeon 8060S (`gfx1151`). The
+  bundle carries its own HIP runtime, so the driver's ROCm DLLs in `System32`
+  are not used; other driver versions are untested.
+
+### Current limits
+
+- Without a runtime bundle the binaries need the ROCm SDK at the path they were
+  built against. The kernels are compiled ahead of time only for the targets
+  of the build (`gfx1151` in the validated build), so a bundle runs only on
+  those GPUs.
+- Everything in [Current limits on Windows](#current-limits-on-windows) applies:
+  single node, no Unix sockets, no router-mode downloads.
+- No prebuilt archives and no Windows CI job; the bundle is built locally.
 
 ## Linux with AMD ROCm (experimental)
 
