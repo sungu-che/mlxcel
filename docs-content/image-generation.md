@@ -2,14 +2,13 @@
 
 mlxcel generates and edits images through `mlxcel generate-image` and the OpenAI-compatible `POST /v1/images/generations` and `POST /v1/images/edits` server routes. This page covers the model-independent runtime in `src/imagegen/`: the request types, the checkpoint probe, the scheduler, latent packing, the FLUX.2 VAE, the Z-Image DiT blocks, PNG output, the CLI, the server routes, and how a model issue registers a family.
 
-**Current status.** This is the foundation only. No model family is registered, so both surfaces recognize an image checkpoint but cannot run one yet:
+**Current status.** Registered families: `flux2` ([FLUX.2 Klein](#flux2-klein-flux2)), `z_image` ([Z-Image](#z-image)) and `bonsai` ([Prism Bonsai](#prism-bonsai-bonsai)). Each model in the image-generation epic (`lablup/mlxcel#2348`) adds its transformer and text conditioner and one row to the family table. A checkpoint the probe recognizes but `FAMILIES` does not list fails with `image generation family <family> is not supported by this build`, and `mlxcel-server --image-model` fails at startup for it, by design (see [Server](#server)).
 
-```text
-$ mlxcel generate-image -m models/FLUX.2-klein -p "a fox"
-Error: image generation family flux2 is not supported by this build
-```
-
-Each model in the image-generation epic (`lablup/mlxcel#2348`) adds its transformer and text conditioner and one row to the family table. Until the first row lands, `mlxcel-server --image-model` fails at startup for every checkpoint, by design (see [Server](#server)).
+| Family | Checkpoints | Tasks | Default steps / guidance |
+|--------|-------------|-------|--------------------------|
+| `flux2` | FLUX.2 Klein 4B, 9B, base-4B, base-9B, 9b-kv (Diffusers tree) and the mlx-community 4-bit conversions | generate, edit (reference images) | distilled 4 / 1.0; base 50 / 4.0 |
+| `z_image` | Tongyi-MAI Z-Image-Turbo, Z-Image (raw Diffusers tree or an mlx-vlm conversion) | generate, edit (img2img) | Turbo 8 / 0; base 50 / 4 |
+| `bonsai` | Prism Bonsai ternary 2-bit FLUX.2 Klein 4B (`prism-ml/bonsai-image-ternary-4B-mlx-2bit`) | generate | 4 / 1.0 |
 
 ## Probe
 
@@ -39,10 +38,10 @@ mlxcel generate-image -m <dir> --task edit --image fox.png -p "make it night"
 | `--negative-prompt TEXT` | Negative prompt; the model default applies when omitted. |
 | `--task generate\|edit` | Default `generate`. |
 | `--image PATH` | Reference image; repeat for several. Required for `edit`, rejected for `generate`. |
-| `--size WxH` | Default `512x512` for generation and the first reference image's size for editing. Both sides must be multiples of the family's grid (16 for most families). |
+| `--size WxH` | Default `512x512` for generation. For editing, the default is the first reference image's size, or what the family derives from it (FLUX.2 scales it to at most 1 MP and rounds down to 16, as upstream). Both sides must be multiples of the family's grid (16 for most families). |
 | `--steps N`, `--guidance F` | Model defaults apply when omitted. |
 | `--seed N` | Default is a random 32-bit seed; the seed is always printed. |
-| `-n N` | 1 to 10 images. Image `i` uses seed `seed + i`. |
+| `-n N` | 1 to 10 images. Image `i` uses seed `seed + i`, except FLUX.2 generation (see [Batched seeds](#batched-seeds)). |
 | `-o, --output PATH` | Default `outputs/image-<seed>.png`. The extension is forced to `.png`; with `-n` greater than one the names are `<stem>-01.png`, `<stem>-02.png`, and so on. |
 | `--gen-kwargs JSON` | A JSON object of model-specific options, passed to the model as `extra`. |
 
@@ -63,14 +62,14 @@ mlxcel-server -m <chat model> --image-model <image checkpoint>
 | POST | `/v1/images/generations` | Alias `/images/generations`. |
 | POST | `/v1/images/edits` | Alias `/images/edits`. JSON body only. |
 
-Without `--image-model` both routes answer `501`, naming the flag.
+Without `--image-model` both routes answer `501`, naming the flag. A request the family rejects before running (`ImageGenerationModel::check_request`: FLUX.2's size range, an invalid `extra` option) is `400`, and so is an `InvalidImageRequest` a model raises while running (Z-Image's options, strength and reference count); any other failure during generation is `500`.
 
 ### Request
 
 `generations`: `prompt`, `model`, `n` (1 to 10), `size` (`WxH`) or `width` plus `height`, `steps`, `seed`, `guidance`, `negative_prompt`, `response_format`, `output_format`. `edits` adds `image`, one string or a list. Any other field is passed to the model as `extra`.
 
 - `width` and `height` come together or not at all (otherwise `400`) and override `size`.
-- `size` defaults to `512x512` for generation and to the first reference image's size for editing. Width and height must be multiples of the family's grid; the error names the multiple.
+- `size` defaults to `512x512` for generation and, for editing, to the first reference image's size or what the family derives from it (FLUX.2: at most 1 MP, rounded down to 16). Width and height must be multiples of the family's grid; the error names the multiple.
 - `response_format` accepts only `b64_json`; `url` and `path` are `400`. `output_format` accepts only `png`. `output_path` and `output_dir` are `400`. The server never writes files on behalf of a client.
 - `model`, when non-empty, must equal the served model id.
 - Each `image` is a data URL or a URL, read through the same limits as chat images (`file://` URLs stay inside `--media-path`). A raw filesystem path is `400`. Multipart upload, OpenAI's edit wire format, is not served.
@@ -91,6 +90,73 @@ Without `--image-model` both routes answer `501`, naming the flag.
 
 RGB and RGBA images are both encoded as they are; RGBA keeps its alpha channel.
 
+## FLUX.2 Klein (`flux2`)
+
+A port of `mlx_vlm/models/flux2` (`Blaizzy/mlx-vlm` at git 73d366ec), in `src/imagegen/flux2/`. Both tasks are supported.
+
+| Checkpoint | Variant | Steps | Guidance | Notes |
+|------------|---------|-------|----------|-------|
+| `black-forest-labs/FLUX.2-klein-4B` | `flux2-klein-4b` | 4 | 1.0 | Diffusers tree, bf16. Qwen3-4B text encoder. |
+| `black-forest-labs/FLUX.2-klein-9B` | `flux2-klein-9b` | 4 | 1.0 | Qwen3-8B text encoder. |
+| `black-forest-labs/FLUX.2-klein-base-4B`, `-base-9B` | `flux2-klein-base-*` | 50 | 4.0 | Undistilled; guidance above 1 runs a second pass on the negative prompt (`" "` unless `--negative-prompt` is given). |
+| `black-forest-labs/FLUX.2-klein-9b-kv` | `flux2-klein-9b-kv` | 4 | 1.0 | Edits cache the reference tokens' K/V on the first step; generation is the plain 9B path. |
+| `mlx-community/flux2-klein-4b-4bit`, `-9b-4bit` | as the dense model | 4 | 1.0 | MLX affine 4-bit, group 64. No component `config.json`: the text-encoder config is synthesized from the variant, and the VAE's quantized mid-block attention projections are dequantized at load. |
+
+The variant comes from the directory name, as upstream's `variant_from_local_path` (snapshot paths included), then `model_index.json`'s `is_distilled` and the transformer width. A missing `transformer/`, `vae/`, `text_encoder/` or `tokenizer/tokenizer.json` fails at load naming the path.
+
+- **Sizes.** Width and height in `256..=2048`, multiples of 16. An edit that names no size (CLI and server) follows upstream `_resolve_edit_dimensions`: the first reference is scaled to at most 1024x1024 pixels of area (never up) and each side rounded down to a multiple of 16 within `256..=2048`, so a 4000x3000 photo edits at 1168x880 and a 1000x667 one at 992x656. Other families use the first reference's own size.
+- **Prompt.** The Qwen chat template with `enable_thinking=false`, right-padded with id 151643, truncated to `max_sequence_length`; generation pads to the smallest bucket of 32, 64, 128, 256 or 512 that fits, edits pad to `max_sequence_length`. The embeddings stack Qwen3 layers 9, 18 and 27. The text encoder is evicted after each encode and prompts are cached (32 entries); the transformer and VAE load on the first request and stay resident.
+- **Tiling.** Generation decodes in tiles of 128 pixels (16 latent cells) blended with a raised-cosine ramp over an 8-cell (64-pixel) overlap once either side reaches 256 pixels, as upstream's `auto` mode does, so every size this family accepts is tiled; edits decode untiled. Tiled and untiled decodes of the same 512x512 latents differ by 25.05 dB PSNR, in upstream and here alike.
+- **`--gen-kwargs` / `extra`.** `max_sequence_length` (1 to 512, default 512) and `tiled_vae` (`true` or `false`; default as above).
+
+### Batched seeds
+
+FLUX.2 generation follows `Blaizzy/mlx-vlm#2355`: the `n` images share the prompt embeddings and come from one noise tensor of batch `n` drawn from `seed`, so every image reports `seed`, and image `i` is not the image `seed + i` gives alone. Edits run once per image with seed `seed + i`. The VAE then decodes each image of the batch on its own, with the tiling a single image gets; upstream decodes the batch whole and untiled, which at 2048x2048 needs about 15 GiB per image.
+
+### Parity
+
+Against upstream mlx-vlm 0.7.8 (git 73d366ec) on mlx 0.32.4, CUDA, NVIDIA GB10, `MLX_ENABLE_TF32=0`. The `#[ignore]` tests in `src/imagegen/flux2/parity_tests.rs` read the fixtures in `tests/fixtures/flux2/`, which `tests/fixtures/flux2/generate_flux2_fixtures.py` reproduces. `edit_reference.png` is an upstream FLUX.2-klein-4B generation (prompt "A studio photo portrait of a smiling man with short brown hair, plain grey background", seed 7, 512x512, 4 steps) written by that script, not a photo of a real person; the 4B checkpoint is Apache-2.0.
+
+| Check | Result |
+|-------|--------|
+| Initial noise (generate seed 9909, edit seed 123) | bit-identical |
+| Transformer in f32 against upstream in f32, same inputs | bit-identical |
+| VAE decoding upstream's final latents, tiled / untiled | 57.59 / 58.45 dB |
+| 4B generate 512x512, 4 steps, seed 9909 | 32.27 dB |
+| 4B edit "Add black sunglasses", seed 123 | 40.54 dB |
+
+The bf16 final latents differ from upstream's by 1.03e-1 (generate) and 4.11e-2 (edit) relative RMS. bf16 matmuls with long reductions (the 7680-wide context embedder first) round differently in this build's MLX and in mlx 0.32.4 on identical inputs and weights, and four Euler steps amplify that; upstream's own f32 run differs from its bf16 run by 7.1e-2 on the same case. Generation sits about 2 dB above the 30 dB gate, so an MLX pin change can move it.
+
+Other checkpoints, PSNR against upstream on the same request: 9B edit 44.39 dB, 9b-kv edit 42.94 dB, 4B 4-bit generate 35.47 dB, base-4B generate at 12 steps 32.80 dB, 9B generate 25.78 dB and 9B 4-bit generate 20.70 dB (same composition, bf16 drift in fine detail). The 9b-kv checkpoint has its own weights, so its edit is not the 9B edit: upstream's two differ by 25.15 dB, this build's by 25.09 dB.
+
+**Edit fixtures and upstream's encoder.** The edit fixture is generated with the VAE encoder's `conv_in` transposed, because upstream leaves that one tensor in PyTorch order (see [Verification](#verification)). Upstream as published therefore edits differently from this build.
+
+## Prism Bonsai (`bonsai`)
+
+A port of `mlx_vlm/models/bonsai` (`Blaizzy/mlx-vlm` at git 73d366ec), in `src/imagegen/bonsai/`, for `prism-ml/bonsai-image-ternary-4B-mlx-2bit` (Apache-2.0): FLUX.2 Klein 4B with ternary transformer linears packed as 2-bit MLX affine weights. Generation only; an edit request is rejected as unsupported. Defaults: 4 steps, guidance 1.0. `--gen-kwargs` takes FLUX.2's `max_sequence_length` and `tiled_vae`.
+
+The generate loop is FLUX.2's (`Flux2Pipeline`); Bonsai supplies the components:
+
+- **Transformer.** `transformer-packed-mflux/` with its `config.json`. `quantization_config.json` must say `format: mlx-packed-affine`, and its `bits` and `group_size` must be widths mlxcel-core's affine path implements (2 and 128 in the published checkpoint; the 1-bit binary variant is rejected naming the value). Every module in `quantized_modules` loads as an affine `UnifiedLinear` (`uint32` packed weight, bf16 scales and biases kept as stored); every other tensor is dense bf16. A listed module without `.scales` or `.biases`, or an unlisted one with `.scales`, fails the load naming it. Upstream's `klein_fast` megakernel and fused norm-RoPE Metal kernels are speed work over the same `quantized_matmul` arithmetic and are not ported.
+- **Text encoder.** `text_encoder-mlx-4bit/` through the shared Qwen3 conditioner (MLX 4-bit, group 64, tied embeddings); tokenizer from `tokenizer/`. It is evicted after each encode.
+- **Prompt.** Padded to `max_sequence_length` (upstream `bucketed_seq_len=False`), where FLUX.2 generation buckets.
+- **VAE.** The checkpoint's `vae/` (the full FLUX.2 VAE). Upstream instead downloads `black-forest-labs/FLUX.2-small-decoder` (decoder channels 96/192/384/384) at load time, ignoring `vae/`; this port does not fetch a second repository at load. The two decoders give 34.96 dB against each other on the parity case, and this build's output is 29.82 dB against upstream as shipped.
+- **Batches.** `n` images run one at a time with seed `seed + i`, as upstream's server loops, and each reports its own seed.
+
+### Parity
+
+Against upstream mlx-vlm 0.7.8 (git 73d366ec) on mlx 0.32.4, CUDA, NVIDIA GB10, `MLX_ENABLE_TF32=0`, "A tiny glass bonsai tree on a moonlit desk", 512x512, 4 steps, seed 9909. `tests/fixtures/bonsai/generate_bonsai_fixtures.py` runs upstream's own Bonsai pipeline with the Metal-only fused kernels replaced by their arithmetic in MLX ops and the checkpoint's `vae/` as the decoder; the `#[ignore]` tests are in `src/imagegen/bonsai/parity_tests.rs`.
+
+| Check | Result |
+|-------|--------|
+| Initial noise | bit-identical |
+| Transformer in f32 against upstream's FLUX.2 transformer in f32 with Bonsai's weights, same inputs | rel RMS 1.19e-6 |
+| One bf16 transformer step on upstream's exact step-0 inputs | rel RMS 8.1e-3 |
+| VAE decoding upstream's final latents | 57.61 dB |
+| End-to-end PNG | 31.18 dB |
+
+The bf16 final latents differ from upstream's by 1.0e-1 relative RMS, and the prompt embeddings by 2.3e-2 (1.7e-1 on the padding rows). Neither is a port error: upstream's 4-bit conditioner in bf16 is itself 1.95e-2 from the same conditioner in f32 (this port: 1.74e-2), with the same growth along the padding, and upstream disagrees with itself by 3.5e-2 in the final latents when its FLUX.2 transformer replaces `klein_fast` on the same weights. Under the epic-wide criterion the relative RMS figures above are reported as non-blocking drift, not gated. The tests gate on PSNR >= 30 dB, bit-identical noise and a 0.2 latent sanity bound that a wrong port (about 1.4) cannot pass. The megakernel itself cannot run off Metal, so its agreement with `quantized_matmul` is by reading `klein_fast/blocks.py`: `QuantizedLinearKernel` calls `mx.quantized_matmul`, and the fused kernels compute f32 RMSNorm times the gain and an interleaved-pair RoPE, cast to bf16.
+
 ## Shared building blocks
 
 | Module | Contents | Used by |
@@ -101,16 +167,16 @@ RGB and RGBA images are both encoded as they are; RGBA keeps its alpha channel.
 | `output` | `encode_png`, `to_b64_png`, `indexed_output_path`. | CLI, server |
 | `run` | `validate_request`, `run_request`, `generate_to_files`, `parse_size`, `random_seed`. | CLI, server |
 | `scheduler` | `FlowMatchEulerDiscrete::dynamic` (exponential shift, optional `shift_terminal`) and `::static_shift`. | QwenImage, MingImage; Z-Image, Mage-Flow |
-| `latent` | `patchify_latents`, `unpatchify_latents`, `pack_latents`, `unpack_latents`. | ErnieImage, LLaDAImage |
-| `vae` | `Flux2Vae`, `Flux2VaeConfig`: decode, packed-latent decode, optional encode. | ErnieImage, LLaDAImage |
+| `latent` | `patchify_latents`, `unpatchify_latents`, `pack_latents`, `unpack_latents`, `prepare_packed_latents` (seeded noise, packed, with grid ids), `prepare_grid_ids`. | FLUX.2, Bonsai, ErnieImage, LLaDAImage |
+| `vae` | `Flux2Vae`, `Flux2VaeConfig`: decode, packed-latent decode, optional encode (the `quant_conv` is optional, absent in a FLUX.1 `AutoencoderKL` with `use_quant_conv: false`), `bn_normalize` and `denormalize_packed_latents`. | FLUX.2, ErnieImage, LLaDAImage, Z-Image |
 | `qwen3_text_encoder` | `Qwen3TextEncoder`: hidden states of every layer (`num_layers + 1`, index 0 the embeddings, before the final norm) and `stacked_prompt_embeds` (`[B, T, n * H]`, FLUX.2 order). Built on `Qwen3Model::forward_all_hidden`. | FLUX.2, Z-Image, Ideogram 4, Bonsai |
-| `dit_blocks` | `TimestepEmbedder`, `FeedForward`, `MRoPE`, `apply_rotary`, `Attention`, `ZImageTransformerBlock`, `FinalLayer`, `sanitize_transformer_weights`. | LLaDAImage, MingImage |
+| `dit_blocks` | `TimestepEmbedder`, `FeedForward`, `MRoPE`, `apply_rotary`, `Attention`, `ZImageTransformerBlock`, `FinalLayer`, `sanitize_transformer_weights`. | ZImage, LLaDAImage, MingImage |
 
-Not in this foundation: every model transformer and text conditioner, the Qwen-Image VAE, the FLUX.2 tiled VAE decode, multipart uploads, streaming partial images, video generation. The FLUX.2 empirical-`mu` scheduler belongs to the FLUX.2 issue.
+Not shared: the FLUX.2 transformer, its empirical-`mu` scheduler and its tiled VAE decode live in `src/imagegen/flux2/`. Not served at all: the Qwen-Image VAE, multipart uploads, streaming partial images, video generation.
 
 ### Conventions a model must follow
 
-- **Seeds.** Image `i` of `n` uses `seed + i`. mlxcel links the same MLX C++ RNG as upstream, so the same seeding call (`mx.random.seed(seed)` in Qwen-Image and LLaDA-Image, `mx.random.key(seed)` in ERNIE-Image and Ming-Image) followed by the same `normal` shape and dtype gives the same initial noise; keep upstream's draw order so whole-run parity tests can compare.
+- **Seeds.** Image `i` of `n` uses `seed + i` (FLUX.2 generation is the exception, see [Batched seeds](#batched-seeds)). mlxcel links the same MLX C++ RNG as upstream, so the same seeding call (`mx.random.seed(seed)` in Qwen-Image and LLaDA-Image, `mx.random.key(seed)` in ERNIE-Image and Ming-Image) followed by the same `normal` shape and dtype gives the same initial noise; keep upstream's draw order so whole-run parity tests can compare.
 - **Threads.** MLX work is thread-affine. The server builds the model on the worker thread; `ImageGenerationModel` carries no `Send` bound.
 - **Convolution weights.** Diffusers stores 4-D conv weights `(out, in, kH, kW)`; MLX expects `(out, kH, kW, in)`. Decide the layout once per checkpoint from a tensor whose two layouts differ in shape (`vae::model::detect_conv_layout`), and never permute an already-converted checkpoint twice. Deciding per tensor from its shape is wrong for any conv whose input channel count equals its kernel size; see the note under [Verification](#verification).
 - **Half precision.** Norms run in f32 and cast back to the activation dtype. Use `fast_scaled_dot_product_attention`, not `scaled_dot_product_attention`: the latter multiplies by an f32 scalar and promotes half-precision scores to f32.
@@ -130,7 +196,13 @@ Upstream runs the DiT, the VAE and the conditioning in bf16. The project rule co
 | Component | Default dtype | Evidence |
 |-----------|---------------|----------|
 | FLUX.2 VAE | f16 (`Flux2Vae::default_dtype`, from `bf16_to_f16_at_load`) | Real ERNIE-Image-Turbo VAE, 64x64 decode of a fixed latent: finite, rel-RMS 1.2e-3 against upstream f32. Upstream's own bf16 run differs from upstream f32 by 2.0e-2, so f16 is closer to f32 than the bf16 upstream default. |
-| Z-Image DiT blocks | follows the checkpoint dtype | The blocks are dtype-agnostic; a model issue records its own comparison. |
+| Z-Image DiT blocks | follows the checkpoint dtype | The blocks are dtype-agnostic. Rotation, SDPA inputs and residual adds cast to upstream MLX's promotion (bf16 or f16 with f32 is f32), because the CUDA build of mlxcel's MLX promotes bf16 with f32 to bf16. |
+| Z-Image transformer and VAE | f16 weights, f32 latent stream | See [Z-Image precision](#z-image-precision). |
+| FLUX.2 transformer | bf16 on every backend | With f16 weights (`MLXCEL_CUDA_F16_NORMALIZE=1` on GB10) the 4B generate case decodes NaN latents (10.2 dB). Edits run the transformer in f32 by promotion from the f32 reference latents, as upstream does. |
+| FLUX.2 VAE (in FLUX.2) | `Flux2Vae::default_dtype` | bf16 on CUDA; under the f16 policy, VAE-only parity is 54.76 dB tiled and 52.37 dB untiled. |
+| FLUX.2 Qwen3 text encoder | the Qwen3 loader's policy | f16 holds: with the f16 policy and a bf16 transformer, 4B generate is 34.47 dB and edit 38.54 dB. |
+| Bonsai transformer | bf16 compute, 2-bit packed linears with bf16 scales and biases as stored | Upstream builds every linear input in bf16. |
+| Bonsai VAE and 4-bit text encoder | as FLUX.2 | Under the f16 policy (`MLXCEL_CUDA_F16_NORMALIZE=1` on GB10) the parity case is 31.21 dB, against 31.18 dB in bf16. |
 
 The measurement used the CPU MLX backend (see [Verification](#verification)).
 
@@ -145,6 +217,39 @@ A model issue does the following; the runtime issue ships none of it.
 5. Extend this page and `docs/supported-models.md`.
 
 A family the probe recognizes but `FAMILIES` does not list is reported as `image generation family <family> is not supported by this build`.
+
+## Z-Image
+
+`src/imagegen/z_image/` ports `mlx_vlm/models/z_image` (mlx-vlm `73d366ec`). It loads the raw Diffusers tree (`Tongyi-MAI/Z-Image-Turbo`, `Tongyi-MAI/Z-Image`) directly, and an mlx-vlm converted tree whose index metadata carries `mlx_vlm_format: "z_image"`. A converted tree's quantized transformer and VAE layers are dequantized at load with the metadata's mode: `affine` at 2, 3, 4, 5, 6 or 8 bits and group size 32, 64 or 128, `mxfp4` (4, 32), `mxfp8` (8, 32) and `nvfp4` (4, 16); any other combination is an error. Each packed tensor is also checked before MLX sees it (uint32 weight, `.scales` shaped `[..., in / group_size]`, `.biases` for `affine` only, uint8 scales for the `mx` and `nvfp4` modes), and a malformed one fails the load with the tensor's key. The text encoder's quantization comes from its own `config.json`.
+
+- **Variant.** `scheduler/scheduler_config.json` `shift <= 3` is Turbo (8 steps, guidance 0; guidance must stay in `[0, 1]`), otherwise base (50 steps, guidance 4). Upstream's own generation default for Turbo is 9 steps; this port follows the issue's 8, which is also upstream's img2img default.
+- **Prompt.** The chat template with `enable_thinking=True`, padded to 512 tokens with `<|endoftext|>`; the condition is the penultimate hidden state of the Qwen3 encoder, trimmed to the real tokens. The negative prompt (the request field, else the `negative_prompt` option, else empty) is encoded only when guidance is above 1.
+- **Sampling.** `normal([1, 16, 1, H/8, W/8], f32, key(seed))`, `FlowMatchEulerDiscrete::static_shift(steps - 1, shift)`, the transformer fed `t = 1 - sigma`, and an Euler step on the negated prediction. CFG `pred + g * (pred - neg)` runs while `t <= cfg_truncation`.
+- **img2img** (`--task edit`, exactly one `--image`). The image is resized with Lanczos only when its size differs from `--size`, encoded to the posterior mean, and noised to `(1 - sigma) * latents + sigma * noise` at `start = int(max(steps - min(steps * strength, steps), 0))` of `static_shift(steps, shift)`. A strength that leaves no step is rejected.
+- **Options** (`--gen-kwargs` or extra JSON fields): `cfg_truncation` (default 1.0, in `[0, 1]`), `strength` (edit only, default 0.6, in `(0, 1]`), `negative_prompt`.
+- **Memory.** The text encoder, transformer and VAE stay resident (about 20 GB for the bf16 checkpoints). Upstream drops the text encoder before loading the transformer; keeping it lets a server answer the next request without reloading 8 GB.
+
+### Z-Image precision
+
+Upstream keeps the transformer and VAE weights bf16 and feeds them f32 noise and timesteps, so MLX promotes the latent stream to f32. The CUDA build of mlxcel's MLX promotes bf16 with f32 to bf16, which would run that stream in bf16 (2.1e-2 relative RMS on one Turbo transformer forward, 1.1e-1 on the final latents). The port stores those weights as f16, which promotes with f32 to f32 on every backend. The bf16 to f16 cast is range-safe but not bit-exact on these checkpoints: the largest magnitude is 47.75 (f16 stops at 65504), and bf16 values below f16's normal range (6.1e-5) lose low bits, so about two thirds of the tensors change in some element, with a worst per-tensor error of 2.0e-7 relative RMS. The loader measures every tensor's f16 round trip and keeps any tensor above 1e-5 relative RMS (or one the cast overflows) in f32, which is exact and promotes the same way; for the VAE, any such tensor puts the whole VAE in f32. An f32 checkpoint therefore stays f32. Two islands keep the checkpoint's bf16 because upstream computes them in bf16 before the caption stream first meets f32: the caption embedder (RMSNorm and `addmm`) and the pre-attention path of the first context-refiner block. The text encoder runs in bf16, as upstream. Self-attention in the transformer and the VAE mid-block query-chunks its score matrix to the `MLXCEL_ATTENTION_CHUNK_BUDGET_MB` budget (default 1024 MiB, `0` disables; see [Environment variables](environment-variables.md)), so large sizes do not materialize the full `[heads, L, L]` scores.
+
+### Z-Image parity
+
+Seed-fixed runs at 512x512, seed 42, against upstream mlx-vlm `73d366ec` on mlx 0.32.4 with the CUDA backend (GB10), `MLX_ENABLE_TF32=0` on both sides. The initial noise is bit-identical in every case.
+
+| Case | Final latents rel-RMS | PNG PSNR |
+|------|-----------------------|----------|
+| Turbo, 8 steps, guidance 0 | 8.6e-2 | 32.9 dB |
+| Base, 50 steps, guidance 4, negative prompt `blurry, low quality`, `cfg_truncation` 1.0 | 6.2e-2 | 34.7 dB |
+| Turbo img2img, strength 0.6 | 1.7e-2 | 46.1 dB |
+
+The final-latents drift is the size of upstream's own sensitivity to how the bf16 caption stream is rounded. On the Turbo case, upstream against itself moves by 2.7e-2 (41.3 dB) when only its caption embedder's linear runs in f32, by 1.0e-1 (32.1 dB) when only its text encoder's attention runs in bf16 instead of f32, and by 9.5e-2 (31.6 dB) with TF32 on. The shared Qwen3 conditioner runs attention in bf16 where upstream's encoder casts q, k and v to f32; its caption features differ from upstream's by 9.3e-3, and feeding upstream's caption features to this port's denoiser lowers the Turbo drift to 3.4e-2. The committed summary `tests/fixtures/imagegen/z_image_parity.safetensors` (noise checksums, 4x4-pooled final latents and images, regenerated by `tests/fixtures/generate_z_image_fixtures.py`) backs the `#[ignore]` tests:
+
+```bash
+MLX_ENABLE_TF32=0 <lib test binary> --ignored --test-threads=1 imagegen::z_image::tests::
+```
+
+`MLXCEL_Z_IMAGE_TURBO` and `MLXCEL_Z_IMAGE_BASE` point at the checkpoints (default `models/mlx/z-image-turbo-bf16`, `models/mlx/z-image-bf16`); `MLXCEL_Z_IMAGE_ORACLE_DIR` adds the full-resolution comparison and the img2img case.
 
 ## Verification
 

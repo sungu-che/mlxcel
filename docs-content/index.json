@@ -3,8 +3,8 @@
     "repo": "lablup/mlxcel",
     "ref": "main",
     "dir": "docs",
-    "commit": "1cb18ccca8e0b531dea0ce1bd700421de61b3f27",
-    "commitDate": "2026-10-26T07:45:10Z"
+    "commit": "ffea91111977751e409a8cb03ae1945ef372b327",
+    "commitDate": "2026-10-27T08:15:46Z"
   },
   "files": [
     {
@@ -53,7 +53,7 @@
       "name": "CONTINUOUS_BATCHING.md",
       "slug": "CONTINUOUS_BATCHING",
       "title": "Continuous batching and disaggregated serving",
-      "size": 69372
+      "size": 72543
     },
     {
       "name": "dense-prediction.md",
@@ -65,7 +65,7 @@
       "name": "distributed.md",
       "slug": "distributed",
       "title": "Distributed inference",
-      "size": 12521
+      "size": 21608
     },
     {
       "name": "embeddings.md",
@@ -77,7 +77,7 @@
       "name": "environment-variables.md",
       "slug": "environment-variables",
       "title": "Environment variables",
-      "size": 240185
+      "size": 247894
     },
     {
       "name": "sparse-paged-decode.md",
@@ -95,19 +95,19 @@
       "name": "image-generation.md",
       "slug": "image-generation",
       "title": "Image generation",
-      "size": 16300
+      "size": 33850
     },
     {
       "name": "installation.md",
       "slug": "installation",
       "title": "Installation",
-      "size": 84866
+      "size": 97672
     },
     {
       "name": "llama-server-compat.md",
       "slug": "llama-server-compat",
       "title": "llama-server compatibility boundary (b10621)",
-      "size": 145086
+      "size": 146218
     },
     {
       "name": "mla-absorbed-decode.md",
@@ -185,7 +185,7 @@
       "name": "supported-models.md",
       "slug": "supported-models",
       "title": "Supported models",
-      "size": 274319
+      "size": 276057
     },
     {
       "name": "f32-attention-widen-audit.md",
@@ -215,7 +215,7 @@
       "name": "vision-model-scope.md",
       "slug": "vision-model-scope",
       "title": "Vision model scope",
-      "size": 12935
+      "size": 13030
     },
     {
       "name": "webui-integration-matrix.md",
