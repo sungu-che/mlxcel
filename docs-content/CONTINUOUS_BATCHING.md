@@ -55,10 +55,12 @@ roofline, while per-request decode rate falls proportionally. The defaults:
   `/v1/models`.
   `supports_batching()` being true does not by itself mean a family runs one
   forward per tick: families with a native decode path include Llama 3,
-  Llama 4, Qwen 3, Gemma 3, Gemma 4 text/VLM/Unified, Helium, Qwen3-MoE,
+  Llama 4, Qwen 3, Gemma 3, Gemma 3n text/VLM, Gemma 4 text/VLM/Unified,
+  Helium, Qwen3-MoE, Ministral 3, ExaOne 4, Mellum, Laguna, Step 3.5,
+  and Step 3.7 VLM text decode,
   Apertus, Cohere, Cohere 2,
   Ernie 4.5 dense, ExaOne, Gemma, Gemma 2, GLM-4, Granite, Hunyuan v1 dense,
-  GPT-2, GPT-BigCode, GPT-NeoX, InternLM 2/3, MiMo, MiniCPM, MiniMax-M3,
+  GPT-2, GPT-BigCode, GPT-NeoX, GPT-OSS, InternLM 2/3, MiMo, MiniCPM, MiniMax-M3,
   NanoChat, Nemotron, OLMo, OLMo 2/3, OpenELM, Phi, Phi-3, Phi-3-small,
   StableLM, BitNet, Seed-OSS, SmolLM3, StarCoder2, and
   TeleChat3, Mixtral, PhiMoE, Phixtral, Qwen2-MoE, OLMoE, DBRX, DeepSeek v1,
@@ -68,16 +70,17 @@ roofline, while per-request decode rate falls proportionally. The defaults:
   GLM-4 MoE Lite, Youtu, and the Qwen2-VL/Qwen2.5-VL/Qwen3-VL/
   Qwen3-VL-MoE/Qwen3-Omni text-decode paths. Qwen VL partitions identified
   single-token rows into plain-RoPE and MRoPE groups while preserving row
-  order; prefill, missing sequence ids, stored-position rows, and Qwen3
-  model-global DeepStack state retain exact per-row dispatch. DeepStack state
-  remains model-global pending #2567. GLM-4V (also used by GLM-OCR), GLM-4V
+  order; prefill, missing sequence ids and stored-position rows retain exact
+  per-row dispatch. Qwen3 DeepStack state is keyed by sequence id (#2567): a
+  row that carries image features leaves the plain group, and decode never
+  injects, so no whole-batch fallback remains. GLM-4V (also used by GLM-OCR), GLM-4V
   MoE, Hunyuan-VL, ERNIE-4.5-MoE-VL, PaddleOCR-VL, and Cohere Compass likewise
   group identified decode rows by their plain/MRoPE position mode, execute one
   decoder graph per group, and scatter logits back to scheduler order.
   Distinct per-sequence deltas stay native; stored-position rows, prefill, and
   missing sequence ids retain exact per-row dispatch. Compass preserves its
-  sliding/full attention split and falls back for the whole call while its
-  model-global DeepStack state is present, pending #2567. ERNIE decode always
+  sliding/full attention split, and its DeepStack state is keyed by sequence
+  id as well (#2567). ERNIE decode always
   uses the text expert bank; its image-token expert dispatch remains prefill
   only. The tensor-parallel Llama, Qwen 3, Qwen 3.5,
   Gemma 3, ERNIE 4.5, and
@@ -89,10 +92,31 @@ roofline, while per-request decode rate falls proportionally. The defaults:
   towers natively across active decode rows; their VLM wrappers delegate that
   token-only path without entering the vision tower. DotsOCR and MiniCPM-o
   likewise delegate to their already-native Qwen 2 and Qwen 3 towers. Mllama
-  batches the text-only path while cross-attention layers are identities. If
-  its model-global image state is present, the whole decode call preserves the
-  historical per-row graph; per-sequence image-state isolation remains tracked
-  by #2567.
+  keeps each request's image state (the cross-attention states and the
+  per-layer image K/V derived from them) under its sequence id (#2567): rows
+  without an image batch natively while their cross-attention layers are
+  identities, and rows with an image run one at a time over their own entry,
+  scattered back to scheduler order. Baichuan-M1 keys its per-layer K/V
+  convolution state by sequence id as well (#2567) and decodes per row through
+  the sequence-aware dispatch, so rows never share state, but it does not run
+  one fused graph over the batch. The conv state keeps a bounded history of
+  its recent appends (prefill tokens included, so the history stays
+  contiguous), which lets a pipelined decode lookahead be unwound exactly:
+  Baichuan-M1 keeps the pipelined lookahead and rewinds the conv state through
+  `rewind_decode_appends` alongside the KV trim. It has no padded prefill,
+  because a padding token would become the conv state's "last token" and the
+  scheduler's KV trim does not reach that state. Its conv state is not part of
+  the scheduler's KV slice
+  (`LanguageModel::kv_cache_captures_sequence_state()` is `false`), so it is
+  excluded from prompt-cache adopt and donate, from Automatic Prefix Caching,
+  and from the disaggregated KV handoff: a restored KV prefix would arrive
+  without the conv state of its last token.
+  GPT-OSS keeps its mixed full/sliding KV caches under each sequence id.
+  Its native decode batches projections, norms, experts, and the output head,
+  while attention runs per row to preserve learned sinks and independent
+  sliding-window offsets. It disables padded prefill because its rotating
+  state cannot trim padding. Prompt-cache reuse and decode lookahead remain
+  disabled for this model-owned state.
   Every other batching
   family runs the
   `LanguageModel` default, which calls the single-sequence `forward()` once per
@@ -580,7 +604,10 @@ Two knobs, neither normally needed:
   small. `0` pins the historical 32-block default.
 
 Recurrent and hybrid SSM / linear-attention families cannot safely reuse
-arbitrary KV blocks, so they keep the hybrid-SSM/APC exclusion. Families that
+arbitrary KV blocks, so they keep the hybrid-SSM/APC exclusion. Baichuan-M1 is
+a dense family that joins this exclusion (#2567): its K/V convolution state is
+model-owned per sequence and a restored KV prefix would not carry it, so the
+whole-prefix store, APC and the KV handoff all decline it. Families that
 opt into `supports_snapshot_reuse()` instead use a separate exact-prefix
 snapshot bucket: on a healthy finish the scheduler copies the model-owned
 state, and on the next turn it restores that state only when the stored token
@@ -878,22 +905,35 @@ serving-role entries).
 
 ### Example: three processes on localhost
 
+Every role process needs the shared cluster secret (issue #2655; see
+[cluster authentication](distributed.md#cluster-authentication) for the
+precedence of `--cluster-secret-file`, `MLXCEL_CLUSTER_SECRET_FILE`,
+`MLXCEL_CLUSTER_SECRET`, and the cluster TOML). A role started without one
+exits at startup naming every source.
+
 ```bash
+# One secret, shared by all three processes (copy it to every host in a
+# multi-host deployment).
+openssl rand -hex 32 > cluster.secret && chmod 600 cluster.secret
+
 # Decode node: receives KV handoffs on :8304.
 mlxcel-server -m models/<ckpt> --port 8302 \
     --parallel 2 --max-batch-size 2 --decode-storage-backend paged \
-    --node-role decode --serving-bind 127.0.0.1:8304
+    --node-role decode --serving-bind 127.0.0.1:8304 \
+    --cluster-secret-file cluster.secret
 
 # Prefill node: prefills, hands off to the decode node.
 mlxcel-server -m models/<ckpt> --port 8301 \
     --parallel 2 --max-batch-size 2 --decode-storage-backend paged \
     --node-role prefill --serving-bind 127.0.0.1:8305 \
-    --decode-peers 127.0.0.1:8304
+    --decode-peers 127.0.0.1:8304 \
+    --cluster-secret-file cluster.secret
 
 # Router: model-free HTTP front on :8300.
 mlxcel-server -m models/<ckpt> --port 8300 \
     --node-role router --serving-bind 127.0.0.1:8306 \
-    --prefill-peers 127.0.0.1:8305 --decode-peers 127.0.0.1:8304
+    --prefill-peers 127.0.0.1:8305 --decode-peers 127.0.0.1:8304 \
+    --cluster-secret-file cluster.secret
 
 # Client talks only to the router.
 curl http://127.0.0.1:8300/v1/chat/completions \
@@ -904,7 +944,8 @@ curl http://127.0.0.1:8300/v1/chat/completions \
 ### Scope and limitations
 
 - Pool-backed Fp16 families only (the dense-natural backends such as qwen3 and
-  llama3). Model-owned-state families and recurrent/hybrid SSM models are
+  llama3). Model-owned-state families, recurrent/hybrid SSM models and
+  Baichuan-M1 (conv state outside the KV slice, #2567) are
   excluded from the paged handoff; the exact-prefix snapshot cache described
   above is a single-node prompt-cache optimization and is not serialized across
   disaggregated prefill/decode roles.
@@ -919,3 +960,13 @@ curl http://127.0.0.1:8300/v1/chat/completions \
   benefit of separate prefill and decode hardware, so a single-machine setup is
   for validation. The throughput case for disaggregation is separate prefill and
   decode pools under load.
+
+### Mixed full/sliding cache families
+
+Ministral 3, ExaOne 4, Mellum, Laguna, and Step 3.5 keep separate model-owned
+caches for each sequence. Their single-token decode shares projections, norms,
+feed-forward blocks and the LM head across rows; attention uses each row's own
+KV history and position. Step 3.7 VLM delegates text decode and embedding-prefill
+sequence ownership to Step 3.5. These families no longer clamp `--parallel` to 1.
+They disable padded prefill because their rotating caches do not implement pad
+trimming. Laguna's independent DFlash caches are unchanged.

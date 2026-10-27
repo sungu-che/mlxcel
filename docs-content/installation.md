@@ -313,6 +313,8 @@ MLX_ROCM_ARCHITECTURES=gfx1151 cargo build --release --features rocm
 MLX_ROCM_ARCHITECTURES="gfx1100;gfx1151" cargo build --release --features rocm
 ```
 
+Every entry must be a HIP target ID: `gfx` followed by lowercase hex digits (`gfx1151`), a generic target (`gfx11-generic`), or a target with feature suffixes (`gfx90a:xnack+`). Anything else, such as `native`, an uppercase name or an option string, stops the CMake configure step with `Not a HIP target ID`, because each entry becomes an `--offload-arch` compiler argument.
+
 HIP coverage is not the ordering CUDA coverage is. A CUDA cubin runs on a higher minor revision and its PTX JITs forward across majors, so a list can cover a device it does not name. A HIP code object is built for one `gfx` target and runs on that target only, with no JIT fallback, so `gfx1151` and `gfx1150` are unrelated despite the adjacent numbers and a list covers exactly the targets it names. Target-feature suffixes (`gfx90a:xnack+`) select code-object features on one target rather than naming another, so they are ignored when the list is compared against the device.
 
 A binary whose compiled `gfx` list does not contain the device it is started on refuses to start and names both, rather than failing later with an opaque HIP error at the first kernel launch (issue #1805). Set `MLXCEL_TRACE_ARCH` (see [Environment variables](environment-variables.md)) to print the running target, the compiled list and whether it is covered; the same summary appears next to the `Detected N GPU(s)` line at startup, alongside the device name and its memory. `MLXCEL_DEVICE=cpu` bypasses the refusal, so a binary built for the wrong target can still run on the CPU while a correct one is built.
@@ -396,7 +398,9 @@ above remains the supported alternative.
 Validated configuration: `aarch64-pc-windows-msvc` on an NVIDIA RTX Spark N1X
 (Blackwell, `sm_121`, driver 616.62), Visual Studio 2026 (MSVC 14.51), CUDA
 13.4.3 and cuDNN 9.27. The build glue resolves `x64` and `arm64` toolkit
-layouts alike, but no `x86_64-pc-windows-msvc` GPU host has run it yet.
+layouts alike. An `x86_64-pc-windows-msvc` build with CUDA 13.4.3 and cuDNN
+9.27 compiles and links (lablup/mlxcel#2640), but no x64 NVIDIA host has run
+it yet.
 
 ### Prerequisites
 
@@ -444,8 +448,10 @@ Visual Studio. The architecture list is detected with `nvidia-smi` as on Linux
 What the Windows build does differently from Linux:
 
 - Links the CUDA import libraries from `lib\<arch>` and delay-loads the CUDA and
-  cuDNN DLLs through MLX's own hook, which resolves them from the toolkit's
-  `bin\<arch>` directory recorded at build time. mlxcel's overlay of that hook
+  cuDNN DLLs through MLX's own hook, which resolves them from one runtime
+  directory (see [below](#cuda-runtime-directory-and-bundle)); without a
+  bundle that is the toolkit's `bin\<arch>` directory recorded at build time.
+  mlxcel's overlay of that hook
   (`overlays/cuda/mlx/backend/cuda/delayload.cpp`) also loads each DLL so that
   its own imports resolve from the same directory, and preloads the DLLs that
   NVRTC (`nvrtc-builtins`) and cuDNN (`cudnn_engines_*`, `cudnn_ops`, ...)
@@ -460,9 +466,122 @@ What the Windows build does differently from Linux:
 - Records the toolkit's `include\` directory for NVRTC, so the runtime kernel
   compiler finds the CUDA headers without `CUDA_PATH` being set at run time.
 
-The executables depend on the build machine's toolkit directory at run time.
-Shipping them to another machine means bundling `openblas.dll` and the CUDA,
-cuDNN and NVRTC DLLs; that packaging is not done yet.
+Without a runtime bundle the executables depend on the build machine's
+toolkit directory at run time. To run them on another machine, build the
+bundle described next.
+
+### CUDA runtime directory and bundle
+
+Every CUDA, cuDNN and NVRTC DLL comes from one runtime directory, chosen once
+per process from these candidates (lablup/mlxcel#2640, the same design as the
+[ROCm bundle](#runtime-directory-and-bundle)):
+
+1. `MLXCEL_CUDA_RUNTIME_DIR`, which must be an absolute path. When it is set it
+   is the only candidate: a relative path, or a directory without the CUDA
+   runtime DLL, stops the binary at its first CUDA call with a message naming
+   the problem.
+2. The directory of `mlxcel.exe` (or `mlxcel-server.exe`), when it holds the
+   CUDA runtime DLL the binary imports. nvcc links the CUDA runtime
+   statically, so this is the cuBLASLt DLL (`cublasLt64_13.dll` for CUDA 13),
+   read from the binary's own delay-import table.
+3. The toolkit and cuDNN `bin\<arch>` directories recorded at build time. A
+   developer build with the toolkit at its build path needs no bundle and no
+   variable, and loads as before.
+
+The binaries print the choice once, for example
+`[mlx-cuda] CUDA runtime: C:\mlxcel\bin (executable directory)`. In a bundle
+(the first two cases) a DLL missing from the directory stops the binary with
+the full path it expected; it is never taken from another CUDA installation,
+the current directory or `PATH`. That includes the DLLs the libraries open by
+name rather than import (`nvrtc64_*`, `nvrtc-builtins*`, `cublas64_*`,
+`cublasLt64_*`, `nvJitLink_*` and the `cudnn_*` sub-libraries): the binary
+checks for all of them before it loads any CUDA DLL and preloads them from the
+bundle. It checks for `cusparse64_*` too, which only cuSOLVER imports, so a
+missing cuSPARSE is named rather than reported as a failed cuSOLVER load. A
+bundle that lacks the cuBLASLt DLL itself does not qualify as a
+bundle; when the build-time toolkit is then missing too, the binary names
+the cuBLASLt path it expected in the executable's directory. The display
+driver's `nvcuda.dll` is not part of the bundle.
+
+The CUDA libraries also name DLLs outside the bundle, which they open
+themselves: the driver's `nvcuda.dll` and `nvcudart_hybrid64.dll`,
+`zlibwapi.dll` (cuDNN), `cask_profile_interface.dll` (a cuDNN profiling
+hook) and `nvtileiras64.dll` (nvJitLink). The binary does not load or check
+these, so Windows' standard search order applies to them: the executable's
+directory, System32, and then the current directory and `PATH`. The same
+holds for `cudnn_ext64_9.dll` and `cudnn_engines_tensor_ir64_9.dll` when a
+bundle lacks them, because the check does not require them (earlier cuDNN 9
+releases do not ship them; the packaging script does). With the driver
+installed, `nvcuda.dll` is found in System32 before the current directory.
+For the others, start `mlxcel` from a directory other users cannot write to.
+Which of them a generate run opens has not been checked on an NVIDIA host.
+
+`scripts/package_windows_cuda_runtime.py` (Python 3, standard library) builds
+the bundle from the toolkit, cuDNN and the CUDA build tree:
+
+```bat
+python scripts\package_windows_cuda_runtime.py --cuda-path C:\path\to\cuda --out dist
+```
+
+This writes `dist\mlxcel-cuda-runtime-<version>-win-<x64|arm64>.zip`:
+
+- `bin\` holds the DLLs `mlxcel` loads: cuBLAS, cuBLASLt, cuFFT, cuSOLVER,
+  cuSPARSE, nvJitLink, NVRTC and its builtins, cuDNN and its nine
+  sub-libraries (for CUDA 13.4 and cuDNN 9.27), and the build's OpenBLAS DLL.
+  `bin\` is the runtime directory.
+- `include\` holds the headers the NVRTC kernel compiler needs: the CUDA
+  headers the JIT kernels reach (`cuda_fp16.h`, `cooperative_groups.h`, ...),
+  CCCL (`include\cccl`, the release the build fetched) and CUTLASS (`cute\`,
+  `cutlass\`). The binaries use it when it sits in or beside the runtime
+  directory.
+- `licenses\` holds the CUDA EULA, the cuDNN license, and the CCCL and
+  CUTLASS licenses.
+
+The DLL list was derived from the import tables and embedded DLL names of the
+CUDA 13.4.3 and cuDNN 9.27 `windows-x86_64` DLLs; it has not yet been checked
+against the loaded-module list of a run on an NVIDIA host. The script reads
+CCCL, CUTLASS and OpenBLAS from the build's `out\build\_deps` directory,
+found under `CARGO_TARGET_DIR` (or `target`); `--deps-dir` names it when there
+is more than one CUDA build. It fails naming every DLL, header or license file
+the inputs lack, so a DLL renamed in a later CUDA or cuDNN release is caught
+when packaging. Copy `mlxcel.exe` and `mlxcel-server.exe` into the extracted
+`bin\`, or set `MLXCEL_CUDA_RUNTIME_DIR` to it; `--stage-dir <empty dir>`
+copies the tree instead of zipping it, and `--add-binary <file>` (repeatable)
+copies the binaries in the same step:
+
+```bat
+python scripts\package_windows_cuda_runtime.py --cuda-path C:\path\to\cuda --stage-dir dist\mlxcel --add-binary target\release\mlxcel.exe --add-binary target\release\mlxcel-server.exe
+```
+
+Notes:
+
+- License files. The script takes the CUDA EULA from `EULA.txt` (installer
+  layout) or `LICENSE` in the toolkit root, the cuDNN license from `LICENSE`
+  in the cuDNN root, and checks each file's text, because the redistributable
+  archives all carry a file named `LICENSE`: unpacked into one directory, the
+  last archive's copy replaces the others. In that case extract the `LICENSE`
+  of the `cuda_cudart`, `cudnn` and `cccl` archives and pass them with
+  `--cuda-license`, `--cudnn-license` and `--cccl-license` (the CCCL release
+  the build downloads has no license file either).
+- Headers and redistribution. The CUDA EULA (Attachment A) lists the CUDA
+  DLLs above and some headers (`cuda_fp16.h`, `cuda_bf16.h`, `cuda_fp8.h`,
+  `cuda_runtime_api.h`, `vector_types.h`, ...) as redistributable, but not
+  every header the JIT kernels include (`cooperative_groups.h`,
+  `math_constants.h`, `cuda_runtime.h`, `mma.h`, `driver_types.h`, ...). The bundle is meant for your own
+  machines; confirm the terms with NVIDIA before publishing one.
+- `CUDA_HOME` outranks the bundle's headers; `CUDA_PATH`, which the CUDA
+  installer sets machine-wide, does not.
+- The runtime directory, the bundle's `include\` and the folder holding
+  `mlxcel.exe` must be writable only by administrators (or only by you): the
+  DLLs run in the mlxcel process, and the headers are compiled into GPU
+  kernels. `C:\Program Files` has that protection; for a folder created
+  directly under `C:\`, remove the inherited access as described for the
+  [ROCm SDK](#windows-with-amd-rocm-experimental).
+- Keep the bundle path short (for example `C:\mlxcel`): DLL paths past 260
+  characters need Win32 long paths enabled.
+- Do not extract the bundle into a folder that holds another application's
+  CUDA DLLs; give each application its own folder and point
+  `MLXCEL_CUDA_RUNTIME_DIR` at mlxcel's.
 
 Long paths: the MLX dependency tree under `target\` is deep. If CMake or nvcc
 reports a path it cannot open, enable Win32 long paths or set a short
@@ -477,7 +596,9 @@ reports a path it cannot open, enable Win32 long paths or set a short
 | Unix domain socket listen (`--host *.sock`) | Refused; listen on TCP. |
 | Router-mode model downloads and cache removal (WebUI model library) | Refused: they depend on directory-fd-anchored filesystem operations, which have no Windows implementation. |
 | CPU device (`MLXCEL_DEVICE=cpu`, or a build without `cuda`) | Builds and loads, but quantized matmul runs MLX's scalar CPU loops: on the validated host a 24-token `generate` with gemma-4-e4b-it-qat-4bit had not finished after 30 minutes. |
-| Prebuilt release archives, CI | None yet. |
+| CUDA runtime directory and bundle | Verified by building only: the x64 CUDA release build, the delay-import tables, the host test of the directory choice and the packaging tests. Not run on an NVIDIA host: the DLL list (derived statically), which DLLs a generate run loads from the bundle, and everything after device initialization. |
+| Prebuilt release archives | None yet. |
+| CI | Compile-only, no GPU. The hosted `Windows build (compile-only)` job in `ci.yml` runs on `windows-latest` when the Windows build scripts, `build_support/`, the overlays' runtime-directory sources, the bundle packagers or the MLX pin change (or the PR carries `ci:full`, a label the repository does not define yet): the `mlxcel-mlx-pin` unit tests, the `tests/` Python suites, and `cargo check -p mlxcel-core --features rocm` against the ROCm 10.1.0 `gfx1151` TheRock SDK, which builds MLX and its HIP kernels. No CI job builds the `cuda` feature on Windows. The host tests of both overlays' runtime-directory choice run on Linux in `overlay-host-tests`. |
 
 ## Windows with AMD ROCm (experimental)
 
@@ -559,18 +680,27 @@ What the Windows build does differently from Linux:
   in the working directory), but an optional path that opens them by name,
   such as profiling, uses the standard Windows search, which includes the
   current directory.
-- The runtime kernel compiler (hiprtc) takes its headers from `ROCM_HOME`,
-  `ROCM_PATH` or `HIP_PATH` when one is set, otherwise from the `include\`
-  inside or beside the runtime directory (a bundle's `include\`, or the SDK's
-  for a developer build), and last from the SDK's `include\` recorded at build
-  time, so neither variable is needed at run time.
-  A variable set at run time takes precedence, so it must name a directory
+- The runtime kernel compiler (hiprtc) takes its headers from the first of
+  these that applies (lablup/mlxcel#2639):
+  1. `ROCM_HOME`, then `ROCM_PATH` (`<root>\include`), explicit overrides.
+  2. The `include\` inside or beside the runtime directory, when that
+     directory is a runtime bundle (it came from `MLXCEL_ROCM_RUNTIME_DIR` or
+     is the executable's directory) and holds `hip\hip_runtime.h`.
+  3. `HIP_PATH` (`<root>\include`).
+  4. The `include\` beside the runtime directory when that directory is the
+     SDK `bin` recorded at build time (a developer build).
+  5. The SDK's `include\` recorded at build time.
+
+  No variable is needed at run time. A bundle's headers outrank `HIP_PATH`
+  because the AMD HIP SDK installer sets `HIP_PATH` system-wide, and a bundle
+  compiled against another ROCm version's headers mixes two releases. When an
+  environment variable and a bundle offer different directories, the binary
+  prints one line naming both, for example
+  `[mlx-rocm] hiprtc headers: C:\mlxcel\include (executable directory); ignoring C:\Program Files\AMD\ROCm\6.4\include from HIP_PATH`,
+  or, when `ROCM_PATH` overrides the bundle,
+  `[mlx-rocm] hiprtc headers: C:\rocm\10.1.0/include (ROCM_PATH); ignoring C:\mlxcel\include from executable directory`.
+  A variable set at run time can take precedence, so it must name a directory
   with the same protection as the SDK (next item).
-  The AMD HIP SDK installer sets `HIP_PATH` system-wide, so on a machine where
-  it is installed that variable overrides the bundle's `include\` and the kernel
-  compiler uses the SDK's headers, possibly from a different ROCm version than
-  the bundle's runtime. Clear `HIP_PATH` for mlxcel (`set HIP_PATH=`), or point
-  it at the bundle root (the folder holding `bin\` and `include\`).
 - The SDK directory recorded at build time must be writable only by
   administrators (or only by you). Any account that can write to its `bin\`
   can run code in every mlxcel process started from these binaries, and any
@@ -592,13 +722,21 @@ What the Windows build does differently from Linux:
   DLL that is not in the SDK `bin\`.
 - Uses a host-shadow memory model. Windows does not map GPU allocations into
   the CPU address space, even on an APU, so every CPU read or write of a GPU
-  buffer goes through a pinned host copy that is flushed back before the next
-  kernel reads the buffer. Device buffers are plain `hipMalloc` memory, which
+  buffer goes through a pinned host copy, the buffer's shadow. A CPU write
+  marks the shadow dirty and it is flushed back before the next kernel reads
+  the buffer; mlxcel's own reads (the sampled token, byte readbacks) take a
+  read-only path that leaves the shadow clean, so they are not flushed
+  (lablup/mlxcel#2643). Device buffers are plain `hipMalloc` memory, which
   on the validated host reaches the full UMA carve-out (92 GiB allocated),
   while pinned host memory stops at the RAM Windows sees (about 28 GiB).
   The allocator limit on an integrated GPU is 80% of the device memory HIP
   reports: allocating in 1 GiB chunks stopped at 105 GiB of the 107.87 GiB
-  reported, so unlike Linux the system RAM does not raise the limit.
+  reported, so unlike Linux the system RAM does not raise the limit. The
+  bytes the shadows hold are printed in the `Model loaded` line (`host
+  shadows`), carried in `host_shadow_bytes` log fields, and reserved by
+  `mlxcel inspect` and the `--estimate-memory` preflight as a `Host shadows`
+  term compared against the host RAM rather than the device limit;
+  `MLX_ROCM_HOST_SHADOW_STATS=1` prints the counters at exit.
 
 ### Runtime directory and bundle
 
@@ -675,10 +813,12 @@ Install rules:
   only by you), for the reasons given for the SDK above. `C:\Program Files`
   has that protection; for a folder created directly under `C:\`, remove the
   inherited access with the `icacls` command above.
-- `ROCM_HOME`, `ROCM_PATH` and `HIP_PATH`, when set, take precedence over the
-  bundle's `include\` for the JIT headers. The HIP SDK installer sets `HIP_PATH`
-  system-wide: on such a machine clear it for mlxcel, or point it at the bundle
-  root, so kernels are not compiled against another ROCm version's headers.
+- The bundle's `include\` outranks `HIP_PATH` for the JIT headers, so a HIP
+  SDK installed on the same machine needs no change. `ROCM_HOME` and
+  `ROCM_PATH` still take precedence over the bundle; leave them unset for
+  mlxcel unless they name the same ROCm version, and check for the
+  `[mlx-rocm] hiprtc headers:` line, which names both directories when they
+  differ.
 - Keep the path of the runtime directory at most 130 characters long, for
   example `C:\mlxcel\bin`. rocBLAS and hipBLASLt open kernel files up to 128
   characters below it, and with the 260-character Windows path limit a longer
@@ -689,15 +829,72 @@ Install rules:
   bundle carries its own HIP runtime, so the driver's ROCm DLLs in `System32`
   are not used; other driver versions are untested.
 
+### GPU targets for distributable builds
+
+The HIP kernels are compiled ahead of time for the targets of the build, and a
+binary refuses to start on a GPU outside them. A build meant for other machines
+sets this list (lablup/mlxcel#2639):
+
+```bat
+set MLX_ROCM_ARCHITECTURES=gfx1100;gfx1101;gfx1102;gfx1150;gfx1151;gfx1200;gfx1201
+cargo build --release --features rocm -j 8
+```
+
+On a host with about 32 GB of RAM, link with lower parallelism: the
+seven-target binaries are large enough that linking `mlxcel` and
+`mlxcel-server` side by side at `-j 8` failed with `link.exe` `0xC0000142`
+when memory ran short. Rerunning the same command with `-j 2` after the HIP
+objects are compiled completes the link.
+
+That is RDNA3 (`gfx1100`, `gfx1101`, `gfx1102`), RDNA3.5 (`gfx1150`,
+`gfx1151`) and RDNA4 (`gfx1200`, `gfx1201`). The binaries print the list once,
+after the bound-device line, as
+`[mlx-rocm] compiled HIP targets: gfx1100,gfx1101,gfx1102,gfx1150,gfx1151,gfx1200,gfx1201`,
+and `mlxcel generate` also prints `HIP architecture <gfx>; compiled for [...]`.
+Only `gfx1151` has been run (the seven-target binaries generate on it); the
+other six targets were compiled with the ROCm 10.1.0 `gfx1151` tarball's
+`hipcc` but not run on hardware. Device code grows with the list. Measured on
+the 32 GB validation host with ROCm 10.1.0:
+
+| | seven targets | `gfx1151` alone |
+|---|---|---|
+| `mlxcel.exe` | 745,592,320 bytes (711.1 MiB) | 193,465,856 bytes (184.5 MiB) |
+| `mlxcel-server.exe` | 735,546,880 bytes (701.5 MiB) | 183,420,416 bytes (174.9 MiB) |
+| HIP kernel archive `mlx_rocm_kernels.lib` | 716.6 MiB | 190.1 MiB |
+| HIP kernel step, CMake configure to archive (`-j 8`, `CMAKE_BUILD_PARALLEL_LEVEL=8`) | 5 min 8 s (cold tree) | 3 min 6 s |
+
+The final link of both seven-target binaries, run with `-j 2` once every HIP
+object was compiled, took 7 min 1 s.
+
+The per-family TheRock tarball compiles for every target (its compiler and
+device libraries cover them all), but it carries rocBLAS and hipBLASLt kernel
+data and `.kpack` archives only for its own family: the ROCm 10.1.0 `gfx1151`
+tarball has them for `gfx1151` alone. Build the bundle for the full list from
+`therock-dist-windows-multiarch-10.1.0.tar.gz` (4.9 GB, same index), whose
+`bin\rocblas\library\`, `bin\hipblaslt\library\` and `.kpack\` cover all seven
+targets; the per-family tarballs (`gfx110X-all`, `gfx1150`, `gfx1151`,
+`gfx120X-all`) each cover only their own. Pass one `--arch` per target:
+
+```bat
+python scripts\package_windows_rocm_runtime.py --rocm-path C:\rocm\10.1.0-multiarch --arch gfx1100 --arch gfx1101 --arch gfx1102 --arch gfx1150 --arch gfx1151 --arch gfx1200 --arch gfx1201 --out dist
+```
+
+When the SDK lacks kernel data for any `--arch`, the script exits with status 1
+and names each such target and the files it lacks, instead of writing a bundle
+that would fail at the first matrix multiply on that GPU.
+
 ### Current limits
 
 - Without a runtime bundle the binaries need the ROCm SDK at the path they were
   built against. The kernels are compiled ahead of time only for the targets
-  of the build (`gfx1151` in the validated build), so a bundle runs only on
-  those GPUs.
+  of the build, so a bundle runs only on those GPUs; see
+  [GPU targets for distributable builds](#gpu-targets-for-distributable-builds).
+  Only `gfx1151` has been tested on hardware.
 - Everything in [Current limits on Windows](#current-limits-on-windows) applies:
   single node, no Unix sockets, no router-mode downloads.
-- No prebuilt archives and no Windows CI job; the bundle is built locally.
+- No prebuilt archives; the bundle is built locally. CI compiles the `rocm`
+  feature on Windows without a GPU and runs nothing on AMD hardware; see the
+  CI row in [Current limits on Windows](#current-limits-on-windows).
 
 ## Linux with AMD ROCm (experimental)
 
@@ -797,6 +994,9 @@ targets:
 MLX_ROCM_ARCHITECTURES=gfx1151 cargo build --release --features rocm
 MLX_ROCM_ARCHITECTURES="gfx1100;gfx1151" cargo build --release --features rocm
 ```
+
+Each entry must be a HIP target ID (`gfx1151`, `gfx11-generic`,
+`gfx90a:xnack+`); anything else fails the configure step.
 
 If neither the variable nor `rocminfo` yields a target, the build fails and
 names the variable. The chosen list is recorded in the binary as
@@ -914,8 +1114,8 @@ the 1.20 headroom factor alone fell short for the dense models.
 | Area | Status on ROCm |
 |------|----------------|
 | Affine 4-bit / 8-bit checkpoints | Run natively. |
-| mxfp8 and mxfp4 checkpoints | Run natively, including MoE experts through `gather_qmm` (for example gpt-oss-20b-MXFP4-Q4). The load log says so once per mode (`Quantization mode mxfp4: running on native ROCm kernels, no load-time conversion ...`). mxfp4 `quantize`, `quantized_matmul` and `gather_qmm` are checked against CPU references by `tests/rocm_mxfp4_quant.rs` (lablup/mlxcel#1808). Vendor FP8 block checkpoints (`quant_method: fp8`, 128x128 blocks) are requantized to mxfp8 at load and run natively; verified end to end on a dense 0.8B Qwen3.5 FP8 checkpoint, with mxfp8 `gather_qmm` and `quantized_matmul` checked by `models::switch_layers::mxfp_tests`. The official Qwen3.5 FP8 MoE releases have not been run on ROCm (lablup/mlxcel#1807). |
-| NVFP4 checkpoints | No native kernel. ModelOpt NVFP4 checkpoints (for example the Gemma 4 NVFP4 exports) are converted to affine 4-bit at load with no environment variables, and the load log names the route and the reason. A layer that cannot be converted fails the load with its name and the reason. MLX-native NVFP4 exports (`"mode": "nvfp4"` in `config.json`, such as `mlx-community/*-nvfp4`) have no load-time conversion and are refused at load; use an affine export instead (lablup/mlxcel#1806). |
+| mxfp8 and mxfp4 checkpoints | Run natively, including MoE experts through `gather_qmm` (for example gpt-oss-20b-MXFP4-Q4). mxfp4 `quantize`, `quantized_matmul` and `gather_qmm` are checked against CPU references by `tests/rocm_mxfp4_quant.rs` (lablup/mlxcel#1808). Vendor FP8 block checkpoints (`quant_method: fp8`, 128x128 blocks) are requantized to mxfp8 at load and run natively; verified end to end on a dense 0.8B Qwen3.5 FP8 checkpoint, with mxfp8 `gather_qmm` and `quantized_matmul` checked by `models::switch_layers::mxfp_tests`. The official Qwen3.5 FP8 MoE releases have not been run on ROCm (lablup/mlxcel#1807). |
+| NVFP4 checkpoints | Run natively (lablup/mlxcel#2617), dense layers and MoE experts alike, with the per-expert global scale applied inside `gather_qmm`. ModelOpt NVFP4 checkpoints are transcoded to MLX-native NVFP4 at load, as on Metal and CUDA, and MLX-native NVFP4 exports (`"mode": "nvfp4"`, such as `mlx-community/*-nvfp4`) load as-is. Decode and short row counts run a dedicated NVFP4 matrix-vector kernel (eight rows share each weight load); prefill-sized dense GEMMs dequantize the weight and run hipBLASLt or rocBLAS. `quantized_matmul` and `gather_qmm` are checked against CPU references by `tests/rocm_nvfp4_quant.rs`. No real NVFP4 checkpoint has been run on ROCm yet. Until #2617, ModelOpt NVFP4 was converted to affine 4-bit at load and MLX-native NVFP4 was refused (lablup/mlxcel#1806). |
 | Affine MoE models (for example Qwen3-30B-A3B) | Run natively. Single-token decode takes the fused two-kernel MoE path (gate-up, then down) through its HIP port (lablup/mlxcel#2065), as on Metal and CUDA: Qwen3-30B-A3B-4bit decode on `gfx1151` went from 61.3 to 62.5 tok/s, with logits matching Metal's fused kernel at every decided position ([results](benchmark_results/rocm-fused-moe-gfx1151-2026-10-05.md)); `MLXCEL_FUSED_MOE=0` selects the `gather_qmm` graph path instead. Experts wider than `MLXCEL_FUSED_MOE_MAX_DFF` (8192 by default, as on CUDA; Mixtral-8x7B's 14336) stay on `gather_qmm`. |
 | Model-specific fused kernels (Apertus xIELU, Cohere2 add3 + LayerNorm, Mamba1 selective scan, Nemotron-H's opt-in `MLXCEL_FUSED_MOE_RELU2`) | Run as HIP ports (lablup/mlxcel#2069). xIELU and the add3 LayerNorm are byte-identical to ROCm's own unfused graph; the Mamba1 scan keeps its state in f32 as on Metal; the relu2 path is performance-neutral on Nemotron-H and stays opt-in. Apertus, Cohere2 and the Mamba1 families have no checkpoint on the tested host, so they are covered by kernel tests only ([results](benchmark_results/rocm-metal-only-ports-gfx1151-2026-10-05.md)). |
 | Fused residual-add RMSNorm and RoPE + KV append (`MLXCEL_FUSED_ADD_RMSNORM`, `MLXCEL_FUSED_ROPE_APPEND`) | On by default on ROCm (lablup/mlxcel#2145), off on Metal and CUDA. Both run as HIP ports (lablup/mlxcel#2063) whose output is byte-identical to the graph they replace, so they change no logits; decode on `gfx1151` was never slower with them (+0.3% on Llama 3.1 8B, +1.7% on Qwen2.5 7B, inside run-to-run drift). Set either variable to `0` to fall back to the graph. Llama 3.1 keeps the graph RoPE because of its `rope_scaling` table; Gemma and IQuest Loop Coder also take the norm port but have no checkpoint measured on ROCm ([results](benchmark_results/rocm-fused-norm-rope-gfx1151-2026-10-05.md)). |
