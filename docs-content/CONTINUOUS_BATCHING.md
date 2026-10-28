@@ -47,17 +47,24 @@ aggregate throughput scales with concurrency until the batch hits the compute
 roofline, while per-request decode rate falls proportionally. The defaults:
 
 - `--parallel 4`: admit a decode batch of up to 4. The worker clamps this to 1
-  for families that cannot batch (SSM / hybrid / mixed-cache, i.e. any model
-  where `supports_batching()` is false), so the default is safe for every
+  for families where `supports_batching()` is false, so the default is safe for every
   architecture. When an explicit split configuration is clamped this way, the
   worker restores the whole configured context as the one effective request
   window and publishes that post-load value to `/props`, `/slots`, and
   `/v1/models`.
+  The remaining clamps are the epic's class D exclusions: diffusion generation (`diffusion_gemma`, `llada2_moe`); document/encoder-decoder runtimes (`florence2`, `nemotron_parse`, Falcon OCR text/VLM and `unlimited_ocr`); the session-owned `nemotron_voicechat` speech pipeline; Phi4MM-VL's per-request LoRA selection; NemotronNAS and LongCat Flash/Flash Ngram pending the single-sequence cache corrections in #2544; and the loaded-model fallback of `TensorParallelGemma4Model`. The rank-sharded Gemma 4 path and `Gemma4UnifiedModel` already support batching and are not clamped. These exclusions have no batched-decode throughput claim in #2574.
   `supports_batching()` being true does not by itself mean a family runs one
   forward per tick: families with a native decode path include Llama 3,
   Llama 4, Qwen 3, Gemma 3, Gemma 3n text/VLM, Gemma 4 text/VLM/Unified,
   Helium, Qwen3-MoE, Ministral 3, ExaOne 4, Mellum, Laguna, Step 3.5,
-  and Step 3.7 VLM text decode,
+  Step 3.7 VLM text decode, AFMoE (Trinity), DeepSeek V4, IQuestLoopCoder,
+  and Inkling text/VLM. The latter four model-owned families batch projections and
+  feed-forward operations while retaining sequence-local attention caches;
+  Inkling stacks convolution tails and DeepSeek V4 updates pooling per row.
+  AFMoE keeps its full-fused B=1 expert implementation per row when that
+  kernel is active, while unsupported or disabled configurations retain the
+  native whole-batch expert graph.
+  Other native families include
   Apertus, Cohere, Cohere 2,
   Ernie 4.5 dense, ExaOne, Gemma, Gemma 2, GLM-4, Granite, Hunyuan v1 dense,
   GPT-2, GPT-BigCode, GPT-NeoX, GPT-OSS, InternLM 2/3, MiMo, MiniCPM, MiniMax-M3,
@@ -117,6 +124,8 @@ roofline, while per-request decode rate falls proportionally. The defaults:
   sliding-window offsets. It disables padded prefill because its rotating
   state cannot trim padding. Prompt-cache reuse and decode lookahead remain
   disabled for this model-owned state.
+  Mamba2, Mamba1/Falcon-Mamba, Jamba, LFM2/LFM2-MoE, RecurrentGemma, RWKV7, Nemotron-H, GraniteMoeHybrid, Falcon-H1, and PLaMo2 keep recurrent state under each sequence id and run native width-one decode across active rows (#2571, #2573). The existing recurrence runs once over stacked state, then each row receives an independent state copy; attention KV stays row-local, including RecurrentGemma's independently wrapped rotating windows. A batch mixing initialized and absent recurrent state falls back to identified per-row forwarding for that step, as do multi-token or masked calls. LFM2-VL and Nemotron-H Nano Omni delegate text decode and model-owned storage accounting to their towers. Granite 4 Vision keeps `supports_batching()` enabled but deliberately executes identified rows separately: on an Apple M3 Ultra, `mlx-community/granite-4.0-3b-vision-4bit` changed two of three free-form greedy outputs under native B=3 quantized decode, despite a 3/3 exact constrained smoke and an image-conditioned B=1 versus B=4 trace whose 4/64 top-1 changes were all low-margin (largest reference gap 0.125, zero decided-position changes). The per-row wrapper preserves the issue's exact solo-output requirement without disabling concurrent admission; the Granite text tower remains native. Padded-prefill, snapshot-reuse, and paged-attention eligibility are unchanged; growing attention KV lengths are synchronized into server paged accounting, while recurrent and stateless layers reserve no fictitious KV blocks.
+  Qwen3-Next, Qwen 3.5, Bailing MoE Linear, Kimi Linear, and Kimi K3 likewise run native single-token decode over stacked gated-delta, GLA, or KDA state while retaining sequence-local full-attention or MLA caches (#2572). Fresh/initialized mixtures and unsupported multi-token or masked calls keep the identified per-row path. Qwen 3.5 preserves its existing batched-prefill policy and resolves MRoPE positions per sequence; batches containing stored or multimodal positions keep full attention per row while the recurrent and feed-forward work remains batched. Qwen 3.5 VLM already delegates identified decode to its text tower, and Kimi K3 VLM now does the same.
   Every other batching
   family runs the
   `LanguageModel` default, which calls the single-sequence `forward()` once per
@@ -131,7 +140,7 @@ roofline, while per-request decode rate falls proportionally. The defaults:
   index-augmented key-head count and could produce a K/V head-shape failure.
   Batched decode projects index keys and queries once for the full batch, then
   slices them by row after each row's cached prefill.
-  At startup the worker reports either `decode path: native batched forward` or `decode path: per-row fallback (aggregate decode throughput will not scale with --parallel)` for every batching-capable model. Single-device Qwen 3.5, Qwen 4 Exp, and Muse Glimmer currently report the fallback because their serving decode-width paths still dispatch identified rows sequentially; an anonymous-batch or batched-prefill override does not make serving decode native.
+  At startup the worker reports either `decode path: native batched forward` or `decode path: per-row fallback (aggregate decode throughput will not scale with --parallel)` for every batching-capable model. Qwen 4 Exp and Muse Glimmer currently report the fallback because their serving decode-width paths still dispatch identified rows sequentially; an anonymous-batch or batched-prefill override does not make serving decode native.
 - `--max-batch-prefill 4`: batch up to 4 pending prompts into one prefill pass.
   Only families that opt into `supports_batched_prefill()` (Llama 3, Qwen 3,
   Qwen 3.5, and aliases such as Qwen 2.5) use it; others fall back to sequential
@@ -848,8 +857,10 @@ Networking flags:
 | Flag | Role | Purpose |
 |------|------|---------|
 | `--serving-bind <addr>` | prefill, decode, router | This node's own role-transport listener (`host:port`). |
-| `--decode-peers <addr,...>` | prefill, router | On a router, the decode pool it balances; on a prefill node, the static fallback used only when the router does not pick a decode target for a request. |
-| `--prefill-peers <addr,...>` | decode, router | On a router, the prefill pool it balances; on a decode node, the prefill node(s) it accepts handoffs from. |
+| `--decode-peers <addr,...>` | prefill, router | On a router, the decode pool it balances and the only decode addresses it accepts result frames from; on a prefill node, the static fallback used only when the router does not pick a decode target for a request. |
+| `--prefill-peers <addr,...>` | decode, router | On a router, the prefill pool it balances and the only prefill addresses it accepts result frames from; on a decode node, the prefill node(s) it accepts handoffs from. |
+
+On a router, each peer entry must be the address the node connects from: its `--serving-bind` address, with an unspecified bind IP (`0.0.0.0`, `::`) replaced by the IP the router sees the connection come from. A result frame from any other authenticated address is dropped with a `router: dropping result frame` warning and the request fails with the handoff timeout (see `docs/distributed.md`).
 
 ### Multi-node routing, load balancing, and failover
 
@@ -879,7 +890,12 @@ The router tracks node health and fails over without wedging:
 - A transport error when sending a request to a prefill node marks that node
   unreachable, re-routes its in-flight requests, and retries the request on a
   healthy node. When no prefill node is left, the request fails cleanly with an
-  error rather than hanging.
+  error rather than hanging. A pooled connection to a node that has since exited
+  counts as such an error: before reusing an idle connection the transport
+  checks, without consuming any bytes, whether the peer closed it, and opens a
+  fresh connection instead, so the refused connect drives the failover rather
+  than a frame written into a dead socket (issue #2695). A node that dies after
+  accepting a request still costs that request the full handoff timeout.
 - A background health monitor TCP-probes every peer's serving address on an
   interval. A node that stops accepting connections is marked unreachable (so
   routing skips it, including a dead decode node the router never sends to
@@ -955,6 +971,8 @@ curl http://127.0.0.1:8300/v1/chat/completions \
 - `stop` sequences are not forwarded to the worker nodes by the router. This is a pre-existing limitation shared with the chat path.
 - `completion_tokens` in the usage block uses the worker's authoritative generated-token count carried over the disaggregated wire protocol (issue #387), so it is exact for both byte-level BPE tokenizers (Qwen, Llama) and byte-fallback tokenizers (Gemma `<0xXX>` byte sequences), and `finish_reason` matches single-node. A node that predates the wire field (a mixed-version cluster) falls back to counting emitted detokenized text pieces, which can under-count for byte-fallback tokenizers and flip `finish_reason` between `"length"` and `"stop"`.
 - `/v1/chat/completions` reports the same `usage` shape as `/v1/completions` (`prompt_tokens`, `completion_tokens`, `total_tokens`): the non-streaming response always carries it, and the streaming response sends it as a trailing chunk with empty `choices` when the request sets `stream_options.include_usage`, matching single-node (issue #398).
+- On both routes, `usage.prompt_tokens_details` follows the single-node rule: present when the prompt cache is enabled on the router (the default) and absent when it is disabled. Its `cached_tokens` is always `0`, which is exact: the handoff prefill does not use a prompt cache (issue #2695).
+- Decode nodes stop on the checkpoint's configured EOS (`config.json`) as well as the model's built-in EOS ids, like single node, so a checkpoint whose EOS only `config.json` declares (MiniCPM-2B in llama format) stops at `</s>` instead of running to `max_tokens` (issue #2695).
 - The router stream filter suppresses model-specific structural markers (`<think>`, tool-call delimiters) and routes thinking content to `reasoning_content` plus the default identical `reasoning` alias, matching the single-node Chat Completions path; `--reasoning-alias-field none` suppresses the duplicate. Tool-call parsing is not yet supported on the router path: only `content` and the configured reasoning fields are emitted.
 - Co-locating the roles on one machine adds transport hops without the scaling
   benefit of separate prefill and decode hardware, so a single-machine setup is

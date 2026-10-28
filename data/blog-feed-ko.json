@@ -5,8 +5,16 @@
     "feed_url": "https://www.backend.ai/ko/rss/blog-feed.json",
     "home_page_url": "https://www.backend.ai/blog"
   },
-  "syncedAt": "2026-10-27T08:43:23.181Z",
+  "syncedAt": "2026-10-28T09:22:46.311Z",
   "items": [
+    {
+      "id": "2026-10-introducing-backend.ai-slurm-frontend",
+      "title": "Backend.AI Slurm Frontend: Slurm을 유지한 채 사용하는 현대적인 AI 플랫폼",
+      "summary": "Backend.AI Slurm Frontend는 기존 ...",
+      "url": "https://www.backend.ai/ko/blog/engineering/2026-10-introducing-backend.ai-slurm-frontend",
+      "image": "https://cdn.lablup.com/slurm_frontend_rev_ko_ad345688ba.jpg",
+      "date_modified": "2026-10-27T00:00:00.000Z"
+    },
     {
       "id": "2026-10-demo-day-care-junction-x-ai-go",
       "title": "Demo Day Care 팀, AI:GO로 벤치마크 결과를 시각화하다",
@@ -94,14 +102,6 @@
       "url": "https://www.backend.ai/ko/blog/engineering/2026-06-heterogeneous-gpu-operation",
       "image": "https://cdn.lablup.com/heterogeneous_gpus_ko_b559d649a3.jpg",
       "date_modified": "2026-06-19T00:00:00.000Z"
-    },
-    {
-      "id": "2026-06-vlm-overreaction-visual-emergency",
-      "title": "비전-언어 모델 안전성 판단의 함정: 안전한 장면을 위험한 장면으로 판단하는 이유",
-      "summary": "어느 날 소방서에 다급한 화재 신고가 들어옵니다. 누군...",
-      "url": "https://www.backend.ai/ko/blog/engineering/2026-06-vlm-overreaction-visual-emergency",
-      "image": "https://cdn.lablup.com/vision_language_model_ko_e85c3395cc.jpg",
-      "date_modified": "2026-06-18T00:00:00.000Z"
     }
   ]
 }

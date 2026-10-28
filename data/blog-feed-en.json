@@ -5,8 +5,16 @@
     "feed_url": "https://www.backend.ai/en/rss/blog-feed.json",
     "home_page_url": "https://www.backend.ai/blog"
   },
-  "syncedAt": "2026-10-27T08:43:23.222Z",
+  "syncedAt": "2026-10-28T09:22:48.070Z",
   "items": [
+    {
+      "id": "2026-10-introducing-backend.ai-slurm-frontend",
+      "title": "Backend.AI Slurm Frontend: Keep Slurm, Gain a Modern AI Platform",
+      "summary": "Backend.AI Slurm Frontend lets...",
+      "url": "https://www.backend.ai/blog/engineering/2026-10-introducing-backend.ai-slurm-frontend",
+      "image": "https://cdn.lablup.com/slurm_frontend_en_ad852b671d.jpg",
+      "date_modified": "2026-10-27T00:00:00.000Z"
+    },
     {
       "id": "2026-10-demo-day-care-junction-x-ai-go",
       "title": "How Demo Day Care Visualized Benchmark Results with AI:GO",
@@ -94,14 +102,6 @@
       "url": "https://www.backend.ai/blog/engineering/2026-06-heterogeneous-gpu-operation",
       "image": "https://cdn.lablup.com/heterogeneous_gpus_en_ff30b8eba4.jpg",
       "date_modified": "2026-06-19T00:00:00.000Z"
-    },
-    {
-      "id": "2026-06-vlm-overreaction-visual-emergency",
-      "title": "VLM Safety Failures: Why safe scenes get flagged as dangerous",
-      "summary": "An urgent fire report comes in...",
-      "url": "https://www.backend.ai/blog/engineering/2026-06-vlm-overreaction-visual-emergency",
-      "image": "https://cdn.lablup.com/vision_language_model_en_555ad575ce.jpg",
-      "date_modified": "2026-06-18T00:00:00.000Z"
     }
   ]
 }

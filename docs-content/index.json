@@ -3,8 +3,8 @@
     "repo": "lablup/mlxcel",
     "ref": "main",
     "dir": "docs",
-    "commit": "ffea91111977751e409a8cb03ae1945ef372b327",
-    "commitDate": "2026-10-27T08:15:46Z"
+    "commit": "752db4f9cac06c43c39e8de8a0f584e61f29ffa5",
+    "commitDate": "2026-10-28T07:41:49Z"
   },
   "files": [
     {
@@ -53,7 +53,7 @@
       "name": "CONTINUOUS_BATCHING.md",
       "slug": "CONTINUOUS_BATCHING",
       "title": "Continuous batching and disaggregated serving",
-      "size": 72543
+      "size": 77298
     },
     {
       "name": "dense-prediction.md",
@@ -65,19 +65,19 @@
       "name": "distributed.md",
       "slug": "distributed",
       "title": "Distributed inference",
-      "size": 21608
+      "size": 47005
     },
     {
       "name": "embeddings.md",
       "slug": "embeddings",
       "title": "Embeddings and reranking APIs and CLI",
-      "size": 62422
+      "size": 63048
     },
     {
       "name": "environment-variables.md",
       "slug": "environment-variables",
       "title": "Environment variables",
-      "size": 247894
+      "size": 251866
     },
     {
       "name": "sparse-paged-decode.md",
@@ -95,19 +95,19 @@
       "name": "image-generation.md",
       "slug": "image-generation",
       "title": "Image generation",
-      "size": 33850
+      "size": 66946
     },
     {
       "name": "installation.md",
       "slug": "installation",
       "title": "Installation",
-      "size": 97672
+      "size": 99088
     },
     {
       "name": "llama-server-compat.md",
       "slug": "llama-server-compat",
       "title": "llama-server compatibility boundary (b10621)",
-      "size": 146218
+      "size": 147505
     },
     {
       "name": "mla-absorbed-decode.md",
@@ -125,7 +125,7 @@
       "name": "adding-models.md",
       "slug": "adding-models",
       "title": "Model Addition Guide",
-      "size": 29560
+      "size": 30486
     },
     {
       "name": "model-catalog.md",
@@ -185,7 +185,7 @@
       "name": "supported-models.md",
       "slug": "supported-models",
       "title": "Supported models",
-      "size": 276057
+      "size": 278763
     },
     {
       "name": "f32-attention-widen-audit.md",
@@ -215,7 +215,7 @@
       "name": "vision-model-scope.md",
       "slug": "vision-model-scope",
       "title": "Vision model scope",
-      "size": 13030
+      "size": 13944
     },
     {
       "name": "webui-integration-matrix.md",
