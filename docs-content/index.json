@@ -3,8 +3,8 @@
     "repo": "lablup/mlxcel",
     "ref": "main",
     "dir": "docs",
-    "commit": "752db4f9cac06c43c39e8de8a0f584e61f29ffa5",
-    "commitDate": "2026-10-28T07:41:49Z"
+    "commit": "7b100c826c21ace904e4fc269c3a2aaac24349e3",
+    "commitDate": "2026-10-29T03:43:06Z"
   },
   "files": [
     {
@@ -53,7 +53,7 @@
       "name": "CONTINUOUS_BATCHING.md",
       "slug": "CONTINUOUS_BATCHING",
       "title": "Continuous batching and disaggregated serving",
-      "size": 77298
+      "size": 78140
     },
     {
       "name": "dense-prediction.md",
@@ -65,7 +65,7 @@
       "name": "distributed.md",
       "slug": "distributed",
       "title": "Distributed inference",
-      "size": 47005
+      "size": 50543
     },
     {
       "name": "embeddings.md",
@@ -95,7 +95,7 @@
       "name": "image-generation.md",
       "slug": "image-generation",
       "title": "Image generation",
-      "size": 66946
+      "size": 87802
     },
     {
       "name": "installation.md",
@@ -107,7 +107,7 @@
       "name": "llama-server-compat.md",
       "slug": "llama-server-compat",
       "title": "llama-server compatibility boundary (b10621)",
-      "size": 147505
+      "size": 148353
     },
     {
       "name": "mla-absorbed-decode.md",
@@ -185,7 +185,7 @@
       "name": "supported-models.md",
       "slug": "supported-models",
       "title": "Supported models",
-      "size": 278763
+      "size": 280332
     },
     {
       "name": "f32-attention-widen-audit.md",
@@ -215,7 +215,7 @@
       "name": "vision-model-scope.md",
       "slug": "vision-model-scope",
       "title": "Vision model scope",
-      "size": 13944
+      "size": 14382
     },
     {
       "name": "webui-integration-matrix.md",
