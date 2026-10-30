@@ -3,8 +3,8 @@
     "repo": "lablup/mlxcel",
     "ref": "main",
     "dir": "docs",
-    "commit": "7b100c826c21ace904e4fc269c3a2aaac24349e3",
-    "commitDate": "2026-10-29T03:43:06Z"
+    "commit": "8385f40bcd325bd6522da50b19749754c3ccb68f",
+    "commitDate": "2026-10-30T06:20:05Z"
   },
   "files": [
     {
@@ -29,7 +29,7 @@
       "name": "benchmarks.md",
       "slug": "benchmarks",
       "title": "Benchmarks",
-      "size": 91472
+      "size": 91662
     },
     {
       "name": "block-diffusion.md",
@@ -95,13 +95,13 @@
       "name": "image-generation.md",
       "slug": "image-generation",
       "title": "Image generation",
-      "size": 87802
+      "size": 89064
     },
     {
       "name": "installation.md",
       "slug": "installation",
       "title": "Installation",
-      "size": 99088
+      "size": 99432
     },
     {
       "name": "llama-server-compat.md",
