@@ -359,11 +359,38 @@ available on the deployment host, not only the runtime libraries:
 
 Compiled kernels are cached on disk (`MLX_PTX_CACHE_DIR`; `mlxcel` and
 `mlxcel-server` default it to `~/.cache/mlxcel/cuda-ptx/<mlx-commit>`, other
-binaries leave MLX's system temp dir default), so only the first run of each
-kernel variant pays the NVRTC cost. This includes the custom kernels behind
-mlxcel's fused decode paths (fused MoE, SSM), which upstream MLX recompiled in
-every process and which therefore used to add about a second to each
-`mlxcel generate` on GB10 (lablup/mlxcel#2492).
+binaries fall back to the per-user `$TMPDIR/mlx-<euid>/<mlx-version>/ptx`), so
+only the first run of each kernel variant pays the NVRTC cost. This includes
+the custom kernels behind mlxcel's fused decode paths (fused MoE, SSM), which
+upstream MLX recompiled in every process and which therefore used to add about
+a second to each `mlxcel generate` on GB10 (lablup/mlxcel#2492). Entries sit
+in a subdirectory named after the GPU's compute capability and the NVRTC
+version (for example `sm121-nvrtc13.0`), so a cache shared by several GPUs or
+toolkits never hands one of them code built for another.
+
+The cache directory is used only when every component of its path, from the
+directory itself up to `/`, is owned by you or by root and is not group- or
+other-writable (a root-owned sticky directory such as `/tmp` is fine);
+anyone who can write it could plant compiled code that your process loads
+(lablup/mlxcel#2539). Otherwise mlxcel prints one line,
+`mlxcel: CUDA kernel disk cache disabled: <directory> <reason>` (the reason is
+`is not owned by the current user`, `is group- or other-writable`,
+`is a symbolic link`, `is not a directory`, or `cannot be resolved`), and
+compiles every kernel in every run. Fix it by removing group and other write access
+from the named directory (`chmod go-w <directory>`) or by pointing
+`MLX_PTX_CACHE_DIR` at a private directory. A `umask` of `002` (the default
+for user private groups on Ubuntu) creates group-writable directories, so
+`mlxcel` and `mlxcel-server` create their default cache directories with mode
+`0700` and remove group and other write access from the ones they manage when
+an earlier release created them that way: `cuda-ptx` and
+`cuda-ptx/<mlx-commit>`, plus `~/.cache/mlxcel` itself when `MLXCEL_CACHE_DIR`
+is unset. Only directories you own are changed. A group-writable explicit
+`MLX_PTX_CACHE_DIR` or `MLXCEL_CACHE_DIR`, or a group-writable `~/.cache`, is
+left as it is and still refused with the notice.
+
+A `..` in `MLX_PTX_CACHE_DIR` is resolved before any directory is created. A cache entry (`.ptx` or `.txt`) is used only if it is a regular file, not a symlink, owned by you or by root with no group or other write access; otherwise the kernel is compiled again and the entry is replaced. Entries that an earlier release wrote under a `umask` of `002` are therefore recompiled once.
+
+Entries from the earlier flat layout directly under the cache root are no longer read. Publish temporaries are created with `O_EXCL` and `O_NOFOLLOW`, and ones older than an hour are swept.
 
 ### C++ ISA baseline (`MLXCEL_CXX_MARCH`)
 
@@ -514,7 +541,11 @@ bundle lacks them, because the check does not require them (earlier cuDNN 9
 releases do not ship them; the packaging script does). With the driver
 installed, `nvcuda.dll` is found in System32 before the current directory.
 For the others, start `mlxcel` from a directory other users cannot write to.
-Which of them a generate run opens has not been checked on an NVIDIA host.
+On the validated RTX Spark N1X, a generate run that reaches cuDNN loads
+`nvcuda.dll` from System32 and the driver's `nvcudart_hybrida64.dll` (the
+arm64 name) from its DriverStore folder. `zlibwapi.dll`,
+`cask_profile_interface.dll` and `nvtileiras64.dll` do not load, and the two
+optional cuDNN sub-libraries load from the bundle.
 
 `scripts/package_windows_cuda_runtime.py` (Python 3, standard library) builds
 the bundle from the toolkit, cuDNN and the CUDA build tree:
@@ -538,8 +569,12 @@ This writes `dist\mlxcel-cuda-runtime-<version>-win-<x64|arm64>.zip`:
   CUTLASS licenses.
 
 The DLL list was derived from the import tables and embedded DLL names of the
-CUDA 13.4.3 and cuDNN 9.27 `windows-x86_64` DLLs; it has not yet been checked
-against the loaded-module list of a run on an NVIDIA host. The script reads
+CUDA 13.4.3 and cuDNN 9.27 `windows-x86_64` DLLs, and checked against the
+loaded-module list of generate and server runs on an arm64 RTX Spark N1X. No
+listed DLL was missing. cuFFT, cuSOLVER and cuSPARSE did not load in those
+runs, and a missing cuFFT does not stop a run that never calls it. cuDNN loads
+only when a run reaches its attention path, such as prefill of a long prompt
+on Llama 3.1 8B. The script reads
 CCCL, CUTLASS and OpenBLAS from the build's `out\build\_deps` directory,
 found under `CARGO_TARGET_DIR` (or `target`); `--deps-dir` names it when there
 is more than one CUDA build. It fails naming every DLL, header or license file
@@ -560,9 +595,11 @@ Notes:
   in the cuDNN root, and checks each file's text, because the redistributable
   archives all carry a file named `LICENSE`: unpacked into one directory, the
   last archive's copy replaces the others. In that case extract the `LICENSE`
-  of the `cuda_cudart`, `cudnn` and `cccl` archives and pass them with
-  `--cuda-license`, `--cudnn-license` and `--cccl-license` (the CCCL release
-  the build downloads has no license file either).
+  of the `cuda_cudart` and `cudnn` archives and pass them with
+  `--cuda-license` and `--cudnn-license`. The `LICENSE` in the `windows-arm64`
+  `cccl` archive is the CUDA EULA, and the CCCL release the build downloads has
+  no license file, so pass `LICENSE` from the matching `NVIDIA/cccl` release
+  tag with `--cccl-license`.
 - Headers and redistribution. The CUDA EULA (Attachment A) lists the CUDA
   DLLs above and some headers (`cuda_fp16.h`, `cuda_bf16.h`, `cuda_fp8.h`,
   `cuda_runtime_api.h`, `vector_types.h`, ...) as redistributable, but not
@@ -577,6 +614,13 @@ Notes:
   kernels. `C:\Program Files` has that protection; for a folder created
   directly under `C:\`, remove the inherited access as described for the
   [ROCm SDK](#windows-with-amd-rocm-experimental).
+- The bundle does not carry the Visual C++ runtime. `MSVCP140.dll` and
+  `VCRUNTIME140.dll` loaded from System32 on the validated host, which also has
+  Visual Studio, so a machine without them needs the Visual C++ Redistributable.
+  A run on a machine with only the display driver has not been tried.
+- `openblas.dll` is a normal import, so it comes from the executable's folder,
+  not from `MLXCEL_CUDA_RUNTIME_DIR`. Keep a copy beside a binary that runs
+  outside the bundle.
 - Keep the bundle path short (for example `C:\mlxcel`): DLL paths past 260
   characters need Win32 long paths enabled.
 - Do not extract the bundle into a folder that holds another application's
@@ -596,7 +640,7 @@ reports a path it cannot open, enable Win32 long paths or set a short
 | Unix domain socket listen (`--host *.sock`) | Refused; listen on TCP. |
 | Router-mode model downloads and cache removal (WebUI model library) | Refused: they depend on directory-fd-anchored filesystem operations, which have no Windows implementation. |
 | CPU device (`MLXCEL_DEVICE=cpu`, or a build without `cuda`) | Builds and loads, but quantized matmul runs MLX's scalar CPU loops: on the validated host a 24-token `generate` with gemma-4-e4b-it-qat-4bit had not finished after 30 minutes. |
-| CUDA runtime directory and bundle | Verified by building only: the x64 CUDA release build, the delay-import tables, the host test of the directory choice and the packaging tests. Not run on an NVIDIA host: the DLL list (derived statically), which DLLs a generate run loads from the bundle, and everything after device initialization. |
+| CUDA runtime directory and bundle | Validated on an RTX Spark N1X (`aarch64-pc-windows-msvc`, driver 617.74, CUDA 13.4, cuDNN 9.27) with the toolkit renamed and `CUDA_PATH` unset: `mlxcel generate` from a cold JIT cache and a `mlxcel-server` chat request ran from the bundle folder and through `MLXCEL_CUDA_RUNTIME_DIR`, every CUDA, cuDNN and NVRTC DLL that loaded came from the bundle, and a removed required DLL stopped the run with its expected path. Not run: x64 GPU hosts, a machine with only the display driver, and cuFFT or cuSOLVER calls. |
 | Prebuilt release archives | None yet. |
 | CI | Compile-only, no GPU. The hosted `Windows build (compile-only)` job in `ci.yml` runs on `windows-latest` when the Windows build scripts, `build_support/`, the overlays' runtime-directory sources, the bundle packagers or the MLX pin change (or the PR carries `ci:full`, a label the repository does not define yet): the `mlxcel-mlx-pin` unit tests, the `tests/` Python suites, and `cargo check -p mlxcel-core --features rocm` against the ROCm 10.1.0 `gfx1151` TheRock SDK, which builds MLX and its HIP kernels. No CI job builds the `cuda` feature on Windows. The host tests of both overlays' runtime-directory choice run on Linux in `overlay-host-tests`. |
 
@@ -1150,7 +1194,7 @@ before it, 8.07 tok/s in the baseline page linked above;
 | `MLXCEL_CXX_MARCH` | C++ bridge `-march` value, build-time; `none` omits the flag | `native` |
 | `MLXCEL_CCCL_DIR` | Override for the bundled CCCL (libcu++) header dir used by the CUDA NVRTC JIT | bundled `<exe-dir>/../include/cccl`, then build-time fallback |
 | `MLXCEL_CUTLASS_DIR` | Override for the bundled CUTLASS/CuTe header dir used by the CUDA NVRTC JIT for quantized matmul kernels | bundled `<exe-dir>/../include`, then build-time fallback |
-| `MLX_PTX_CACHE_DIR` | On-disk cache for JIT-compiled CUDA kernels, custom kernels included | `~/.cache/mlxcel/cuda-ptx/<mlx-commit>` for `mlxcel` and `mlxcel-server`, otherwise the system temp dir |
+| `MLX_PTX_CACHE_DIR` | On-disk cache for JIT-compiled CUDA kernels, custom kernels included, in an `sm<cc>-nvrtc<version>` subdirectory. On Linux it is refused (one `CUDA kernel disk cache disabled` line, kernels still compile) unless every path component is owned by you or root and not group- or other-writable | `~/.cache/mlxcel/cuda-ptx/<mlx-commit>` for `mlxcel` and `mlxcel-server`, otherwise `$TMPDIR/mlx-<euid>/<mlx-version>/ptx` (Windows: `%TEMP%\mlx\<mlx-version>\ptx`, no ownership check) |
 | `MLXCEL_QUIET_JIT` | Suppress the one-time "compiling CUDA kernels" notice on a cold first run | unset (notice shown) |
 | `MLXCEL_DEVICE` | Runtime device hint (`gpu`, `metal`, or `cpu`) | `gpu` |
 | `MLXCEL_WIRED_LIMIT` | Apple Silicon wired-memory ceiling, e.g. `64GB`; `0`/`none` disables it | `max` |

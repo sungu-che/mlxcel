@@ -862,6 +862,27 @@ Muse Glimmer accepts exactly one drafter, its own assistant: `mlxcel-server`
 refuses any other `--draft-model`, any `--draft-kind` other than `dflash`, and
 draft flags without a drafter, by name at startup.
 
+## KV cache modes on model-owned families
+
+Some families keep their KV caches inside the model rather than in the scheduler's cache pool, so `--kv-cache-mode` (and the batch KV quantization config) reaches them only through the per-layer table the server and `mlxcel generate` inject at startup (#2766). How each of the following families treats that table:
+
+| Family | `--kv-cache-mode` | Why |
+|---|---|---|
+| ExaOne 4 (`exaone4`) | honored per layer | attention reads K/V through `update_and_fetch`, so every layer's cache is built in its table entry (see the sliding-window note below) |
+| GPT-OSS (`gpt_oss`) | honored per layer | same |
+| Ministral 3 (`ministral3`) | honored per layer | same |
+| Step 3.5 (`step3p5`, also the Step-3.7 VLM backbone) | honored per layer | same |
+| Mellum (`mellum`) | honored per layer | same |
+| Laguna (`laguna`) | honored per layer | same; the DFlash round loop keeps its own FP16 caches |
+| Nemotron-NAS (`nemotron-nas`) | honored per block | the table is indexed by the block's layer index; `no_op` blocks hold no cache and `replace_with_linear` blocks keep a slot they never write |
+| LongCat Flash / LongCat Flash N-gram (`longcat_flash`, `longcat_flash_ngram`) | FP16 only | each layer caches the MLA latent pair `(kv_latent, k_pe)`, which no quantized mode supports; a quantized request logs one warning and the model reports FP16 |
+
+Sliding-window layers (GPT-OSS, Mellum, Laguna, Step 3.5, Ministral 3, AFMoE, and ExaOne 4 checkpoints with a `sliding_window`) build a `RotatingKVCache` in the table's mode, but the rotating cache stores only FP16 and `fp16+turbo4` today: under `int8`, `turbo4`, `turbo4-delegated` or `fp16+turbo3` those layers keep FP16 storage, so the memory saving comes from the full-attention layers alone. The same limit applies to Gemma 3 and Gemma 4. The server's `kv_cache_mode_applied_layers` startup count and the `logit_trace` example report this storage, so they count only the layers that really quantize (#2783). `fp16+turbo4` also needs a sliding window that is a multiple of 32; on any other window the sliding layers fall back to FP16 with one warning instead of failing at startup, and the full-attention layers keep `fp16+turbo4`.
+
+These families list `fp16`, `int8` and `turbo4` under `kv_modes` in `mlxcel arch --json` (symmetric `turbo4` resolves to `fp16+turbo4` for them); LongCat stays `fp16` only.
+
+On these families a KV bound (`--max-kv-size`, or the `--ctx-size` window) with `--context-shift` does not shift: the shift trims pool caches, which they do not have, so the server turns context shifting off at startup with a warning and a sequence that reaches the bound stops with `truncated: true` (see [`docs/llama-server-compat.md`](llama-server-compat.md#context-shift-is-off-by-default-and-retention-is-operator-settable-1472)). Nemotron-NAS and LongCat cannot batch and hold one shared cache slot; the server frees that slot when the request that filled it is released, so an idle server does not keep the last request's KV resident.
+
 ## Known non-goals / caveats
 
 - A supported architecture does not imply every community checkpoint variant is

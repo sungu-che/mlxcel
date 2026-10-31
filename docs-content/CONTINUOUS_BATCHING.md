@@ -52,7 +52,7 @@ roofline, while per-request decode rate falls proportionally. The defaults:
   worker restores the whole configured context as the one effective request
   window and publishes that post-load value to `/props`, `/slots`, and
   `/v1/models`.
-  The remaining clamps are the epic's class D exclusions: diffusion generation (`diffusion_gemma`, `llada2_moe`); document/encoder-decoder runtimes (`florence2`, `nemotron_parse`, Falcon OCR text/VLM and `unlimited_ocr`); the session-owned `nemotron_voicechat` speech pipeline; Phi4MM-VL's per-request LoRA selection; NemotronNAS and LongCat Flash/Flash Ngram pending the single-sequence cache corrections in #2544; and the loaded-model fallback of `TensorParallelGemma4Model`. The rank-sharded Gemma 4 path and `Gemma4UnifiedModel` already support batching and are not clamped. These exclusions have no batched-decode throughput claim in #2574.
+  The remaining clamps are the epic's class D exclusions: diffusion generation (`diffusion_gemma`, `llada2_moe`); document/encoder-decoder runtimes (`florence2`, `nemotron_parse`, Falcon OCR text/VLM and `unlimited_ocr`); the session-owned `nemotron_voicechat` speech pipeline; Phi4MM-VL's per-request LoRA selection; NemotronNAS and LongCat Flash/Flash Ngram, which keep one model-owned cache set (#2544; NemotronNAS allocates one cache per attention block rather than per `num_layers()`, so a batch-capable layout is a follow-up); and the loaded-model fallback of `TensorParallelGemma4Model`. The rank-sharded Gemma 4 path and `Gemma4UnifiedModel` already support batching and are not clamped. These exclusions have no batched-decode throughput claim in #2574.
   `supports_batching()` being true does not by itself mean a family runs one
   forward per tick: families with a native decode path include Llama 3,
   Llama 4, Qwen 3, Gemma 3, Gemma 3n text/VLM, Gemma 4 text/VLM/Unified,
@@ -203,13 +203,14 @@ On ROCm the invariant holds without `MLXCEL_SDPA_DETERMINISTIC` (the variable is
 > across the batch, so aggregate decode now scales with concurrency on CUDA
 > too: 40.4 / 68.5 / 74.2 tok/s at 1/2/4 clients on llama-3.1-8b-4bit on GB10
 > (vs 40.5 / 49.8 / 49.6 with the kill switch off). Scaling stays sublinear
-> versus Metal because attention KV reads still grow with B; the small-M
-> `qmm_sm80` tile shape (`M*B >= 8`) remains upstream MLX territory. For the
-> same reason, keep `--parallel` at 7 or below on CUDA (both server binaries
-> also accept `--n-parallel`): the multirow window covers 2-7 rows, and a full batch of 8+ decode
-> rows crosses into the under-tiled `qmm_sm80` shape, which measures worse
-> than per-row decode until the upstream small-M tile lands. The shipped
-> default of 4 sits comfortably inside the window. See
+> versus Metal because attention KV reads still grow with B. A decode batch
+> `[B, 1, K]` over a shared 2D weight also folds into rows (#2690): from 8 rows,
+> and on compute capability 12.1 from 5 rows of a weight of at least 2^24
+> elements, it runs one GEMM that reads the weight once. On an RTX Spark N1X that
+> lifts 8-client aggregate decode 1.2x to 3.2x across four models
+> (`docs/benchmark_results/cuda-qmm-fold-batch-n1x-2026-10-31.md`). The older
+> advice to keep `--parallel` at 7 or below predates the fold, and GB10 has not
+> been re-measured with it. See
 > `docs/benchmark_results/qmv-multirow-gb10-2026-07-11.md`. `--max-batch-prefill`
 > (large-M, tile-tuned, `docs/benchmark_results/qmm-sm121-tile-tuning-gb10-2026-07-10.md`)
 > and the prompt cache remain independent wins on CUDA.
@@ -900,13 +901,23 @@ The router tracks node health and fails over without wedging:
   attempts from 100 ms, so a refused connect fails over within about 150 ms
   of backoff rather than after 3 s (issue #2712). A node that dies after
   accepting a request still costs that request the full handoff timeout.
-- A background health monitor TCP-probes every peer's serving address on an
-  interval. A node that stops accepting connections is marked unreachable (so
-  routing skips it, including a dead decode node the router never sends to
-  directly), and a node that starts accepting again is restored to online.
+- A background health monitor TCP-probes every peer's serving address, once
+  when the router starts and then every 3 s (2 s connect timeout). A node that
+  stops accepting connections is marked unreachable (so routing skips it,
+  including a dead decode node the router never sends to directly), and a node
+  that starts accepting again is restored to online.
 - Admission control runs before every dispatch: when the prefill queue is full
   or no prefill node is available, the router returns HTTP 503 instead of
-  attempting a dispatch that cannot succeed.
+  attempting a dispatch that cannot succeed. When no prefill node is available
+  and at least one prefill node is marked unreachable, the router first re-probes
+  the nodes marked unreachable
+  with a 500 ms connect timeout, restores any that accept, and admits the
+  request if one did (issue #2763). The re-probe is single-flight and runs at
+  most once per 250 ms router-wide: concurrent requests wait for the running
+  one and reuse its result, so a pool that is really down costs at most one
+  500 ms probe timeout per 250 ms window (a refused connect returns at once, a
+  host that silently drops packets takes the full timeout). A full queue is
+  refused without probing.
 
 `GET /router/stats` reports the per-node dispatch counts for both pools, the
 registered nodes with their current health status, and the routing-metrics

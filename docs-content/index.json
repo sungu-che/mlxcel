@@ -3,8 +3,8 @@
     "repo": "lablup/mlxcel",
     "ref": "main",
     "dir": "docs",
-    "commit": "8385f40bcd325bd6522da50b19749754c3ccb68f",
-    "commitDate": "2026-10-30T06:20:05Z"
+    "commit": "1a257bcd862575c600183fb68b54a58f296f4886",
+    "commitDate": "2026-10-31T07:15:43Z"
   },
   "files": [
     {
@@ -29,7 +29,7 @@
       "name": "benchmarks.md",
       "slug": "benchmarks",
       "title": "Benchmarks",
-      "size": 91662
+      "size": 101360
     },
     {
       "name": "block-diffusion.md",
@@ -53,7 +53,7 @@
       "name": "CONTINUOUS_BATCHING.md",
       "slug": "CONTINUOUS_BATCHING",
       "title": "Continuous batching and disaggregated serving",
-      "size": 78140
+      "size": 78989
     },
     {
       "name": "dense-prediction.md",
@@ -65,7 +65,7 @@
       "name": "distributed.md",
       "slug": "distributed",
       "title": "Distributed inference",
-      "size": 50543
+      "size": 57031
     },
     {
       "name": "embeddings.md",
@@ -77,7 +77,7 @@
       "name": "environment-variables.md",
       "slug": "environment-variables",
       "title": "Environment variables",
-      "size": 251866
+      "size": 258229
     },
     {
       "name": "sparse-paged-decode.md",
@@ -95,19 +95,19 @@
       "name": "image-generation.md",
       "slug": "image-generation",
       "title": "Image generation",
-      "size": 89064
+      "size": 91593
     },
     {
       "name": "installation.md",
       "slug": "installation",
       "title": "Installation",
-      "size": 99432
+      "size": 103264
     },
     {
       "name": "llama-server-compat.md",
       "slug": "llama-server-compat",
       "title": "llama-server compatibility boundary (b10621)",
-      "size": 148353
+      "size": 150803
     },
     {
       "name": "mla-absorbed-decode.md",
@@ -185,7 +185,7 @@
       "name": "supported-models.md",
       "slug": "supported-models",
       "title": "Supported models",
-      "size": 280332
+      "size": 283368
     },
     {
       "name": "f32-attention-widen-audit.md",
