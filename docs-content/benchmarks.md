@@ -41,6 +41,8 @@ between documents. The current Apple Silicon benchmark report is:
 
 - [Benchmark Report - 2026-05-19](benchmark_results/benchmark-report.md)
 - [Native batched decode on M3 Ultra — 2026-10-27](benchmark_results/native-batched-decode-m3ultra-2026-10-27.md): 21 checkpoints, 23 configurations, with raw traces and serving evidence.
+- [CUDA quantized matmul batch fold on RTX Spark N1X, 2026-10-31](benchmark_results/cuda-qmm-fold-batch-n1x-2026-10-31.md)
+- [MoE expert overlap in batched decode on RTX Spark N1X, 2026-10-31](benchmark_results/moe-distinct-experts-n1x-2026-10-31.md)
 - [Few-row quantized matmul for batched decode on M1 Ultra, 2026-10-30](benchmark_results/few-row-qmm-batched-decode-m1ultra-2026-10-30.md): Llama 3.1 8B 4-bit 8-row decode step 56.5 ms to 39 ms, B=8/B=1 serving ratio 1.35x to 1.95x.
 
 That combined report is the cross-hardware surface, but it is older than the
@@ -532,7 +534,7 @@ Measure with the `speculative_bench` harness or the server:
 mlxcel serve -m <target> --draft-model <drafter> --draft-kind mtp
 ```
 
-The offline `mlxcel generate` command also supports the MTP round-loop path (issue #166) for Gemma 4 text, VLM, and Unified targets. Pass `--draft-model <drafter> --draft-kind mtp` explicitly; without `--draft-kind mtp` the command keeps the classic speculative path for backward compatibility even when the drafter auto-detects as MTP.
+The offline `mlxcel generate` command also supports the MTP round-loop path (issue #166) for Gemma 4 text, VLM, and Unified targets. Pass `--draft-model <drafter>`, with `--draft-kind mtp` when the drafter's `model_type` does not say; a drafter with no offline round loop on the target is refused before it loads.
 
 Parity: at `temperature 0` with no repetition, frequency, presence, or DRY penalties, the offline MTP output matches the non-speculative path within the documented f16 / #203 batched-kernel jitter class (on some hardware, notably M1 Ultra, near-tie token choices can differ). When any sampling penalty is active, only the first bonus token samples from the penalized distribution; subsequent tokens in each verify window are accepted or rejected greedily, so non-greedy or penalized requests are not byte-identical to the non-speculative path. This matches the known limitation of the server burst path.
 

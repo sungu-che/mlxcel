@@ -3,21 +3,21 @@
     "repo": "lablup/mlxcel",
     "ref": "main",
     "dir": "docs",
-    "commit": "1a257bcd862575c600183fb68b54a58f296f4886",
-    "commitDate": "2026-10-31T07:15:43Z"
+    "commit": "79b031001c903b56b0773ec73bc556935b251d3a",
+    "commitDate": "2026-11-01T06:54:00Z"
   },
   "files": [
     {
       "name": "mtp-policy-api.md",
       "slug": "mtp-policy-api",
       "title": "Adaptive MTP policy API (`/v1/internal/mtp-policy`)",
-      "size": 13724
+      "size": 13621
     },
     {
       "name": "architecture.md",
       "slug": "architecture",
       "title": "Architecture overview",
-      "size": 16573
+      "size": 16464
     },
     {
       "name": "audio-preprocessing.md",
@@ -29,7 +29,7 @@
       "name": "benchmarks.md",
       "slug": "benchmarks",
       "title": "Benchmarks",
-      "size": 101360
+      "size": 101588
     },
     {
       "name": "block-diffusion.md",
@@ -53,7 +53,7 @@
       "name": "CONTINUOUS_BATCHING.md",
       "slug": "CONTINUOUS_BATCHING",
       "title": "Continuous batching and disaggregated serving",
-      "size": 78989
+      "size": 83980
     },
     {
       "name": "dense-prediction.md",
@@ -65,7 +65,7 @@
       "name": "distributed.md",
       "slug": "distributed",
       "title": "Distributed inference",
-      "size": 57031
+      "size": 57419
     },
     {
       "name": "embeddings.md",
@@ -77,7 +77,7 @@
       "name": "environment-variables.md",
       "slug": "environment-variables",
       "title": "Environment variables",
-      "size": 258229
+      "size": 259673
     },
     {
       "name": "sparse-paged-decode.md",
@@ -89,7 +89,7 @@
       "name": "gelu-call-sites.md",
       "slug": "gelu-call-sites",
       "title": "GELU call sites and the upstream activation each one ports",
-      "size": 64606
+      "size": 80707
     },
     {
       "name": "image-generation.md",
@@ -101,13 +101,13 @@
       "name": "installation.md",
       "slug": "installation",
       "title": "Installation",
-      "size": 103264
+      "size": 113991
     },
     {
       "name": "llama-server-compat.md",
       "slug": "llama-server-compat",
       "title": "llama-server compatibility boundary (b10621)",
-      "size": 150803
+      "size": 150944
     },
     {
       "name": "mla-absorbed-decode.md",
@@ -119,7 +119,7 @@
       "name": "README.md",
       "slug": "README",
       "title": "mlxcel documentation layout",
-      "size": 8192
+      "size": 8180
     },
     {
       "name": "adding-models.md",
@@ -179,7 +179,7 @@
       "name": "speculative-acceptance.md",
       "slug": "speculative-acceptance",
       "title": "Speculative-decoding acceptance rules",
-      "size": 25918
+      "size": 17443
     },
     {
       "name": "supported-models.md",

@@ -359,8 +359,8 @@ available on the deployment host, not only the runtime libraries:
 
 Compiled kernels are cached on disk (`MLX_PTX_CACHE_DIR`; `mlxcel` and
 `mlxcel-server` default it to `~/.cache/mlxcel/cuda-ptx/<mlx-commit>`, other
-binaries fall back to the per-user `$TMPDIR/mlx-<euid>/<mlx-version>/ptx`), so
-only the first run of each kernel variant pays the NVRTC cost. This includes
+binaries fall back to the per-user `$TMPDIR/mlx-<euid>/<mlx-version>/ptx`, on
+Windows `%TEMP%\mlx\<mlx-version>\ptx`), so only the first run of each kernel variant pays the NVRTC cost. This includes
 the custom kernels behind mlxcel's fused decode paths (fused MoE, SSM), which
 upstream MLX recompiled in every process and which therefore used to add about
 a second to each `mlxcel generate` on GB10 (lablup/mlxcel#2492). Entries sit
@@ -381,12 +381,19 @@ from the named directory (`chmod go-w <directory>`) or by pointing
 `MLX_PTX_CACHE_DIR` at a private directory. A `umask` of `002` (the default
 for user private groups on Ubuntu) creates group-writable directories, so
 `mlxcel` and `mlxcel-server` create their default cache directories with mode
-`0700` and remove group and other write access from the ones they manage when
-an earlier release created them that way: `cuda-ptx` and
-`cuda-ptx/<mlx-commit>`, plus `~/.cache/mlxcel` itself when `MLXCEL_CACHE_DIR`
-is unset. Only directories you own are changed. A group-writable explicit
-`MLX_PTX_CACHE_DIR` or `MLXCEL_CACHE_DIR`, or a group-writable `~/.cache`, is
-left as it is and still refused with the notice.
+`0700` and remove group write access from the ones they manage when an earlier
+release created them that way: `cuda-ptx` and `cuda-ptx/<mlx-commit>`, plus
+`~/.cache/mlxcel` itself when `MLXCEL_CACHE_DIR` is unset. Only directories you
+own are changed. Other write access is not something a `umask` leaves behind, so
+it is not repaired and stays refused with the notice, like a group-writable
+explicit `MLX_PTX_CACHE_DIR` or `MLXCEL_CACHE_DIR`, or a group-writable
+`~/.cache`.
+
+`MLX_PTX_CACHE_DIR` and `MLXCEL_CACHE_DIR` must be absolute paths for this cache: a relative one would resolve against the current directory, which anyone can pick for you. The notice then reads `MLX_PTX_CACHE_DIR must be an absolute path, got "<value>"`, and nothing is created. On Windows, `\cache` and `C:cache` count as relative. `MLXCEL_CACHE_DIR` is not consulted when `MLX_PTX_CACHE_DIR` is set, and an empty value of either counts as unset.
+
+On Windows the same rule reads owners and ACLs (lablup/mlxcel#2797). A folder such as `D:\mlxcel` usually inherits write access for Authenticated Users from the drive, so every component below the drive root must have an owner that is you, SYSTEM, Administrators or TrustedInstaller (which owns `C:\Windows`, where the profile of a service running as SYSTEM or NetworkService lives), and no entry granting write access to any other account. Otherwise the notice gives the reason `is writable by <SID>`, `is not owned by the current user`, `has no access control list` (a FAT or exFAT volume reports none), `cannot be inspected`, `is a symbolic link` (a symlink or junction at a name only mlxcel creates: `sm<cc>-nvrtc<version>`, and `mlx`, `<mlx-version>` and `ptx` in the temp fallback), `is not a directory`, `cannot be created`, or `cannot be resolved`. Remove the entry with `icacls <directory> /remove <account>`, also from the parent it was inherited from, or point `MLX_PTX_CACHE_DIR` at a private directory such as one under your profile. The drive root is not checked: by default it lets Authenticated Users create subdirectories on every drive, which does not let them delete or rename another account's, and what it grants to inherit shows on a first component that keeps inheritance, which is checked. Nothing is repaired on Windows, since an ACL is yours to change. A cache entry (`.ptx` or `.txt`) is used only if it is a regular file, not a reparse point, that passes the same owner and write rules, so entries left in a directory that was shared before you made it private are not loaded: the kernel is compiled again and the entry replaced.
+
+Since lablup/mlxcel#2797 `mlxcel` and `mlxcel-server` on Windows use `.cache\mlxcel\cuda-ptx\<mlx-commit>` under the profile directory the Known Folder API reports (the `USERPROFILE` variable does not move it), or `MLXCEL_CACHE_DIR`, as documented. Earlier releases created that directory but kept their entries in `%TEMP%\mlx`, because the overlay read the variable through the C runtime's copy of the environment, so the first run after an upgrade compiles once and `%TEMP%\mlx` can be deleted.
 
 A `..` in `MLX_PTX_CACHE_DIR` is resolved before any directory is created. A cache entry (`.ptx` or `.txt`) is used only if it is a regular file, not a symlink, owned by you or by root with no group or other write access; otherwise the kernel is compiled again and the entry is replaced. Entries that an earlier release wrote under a `umask` of `002` are therefore recompiled once.
 
@@ -535,12 +542,42 @@ themselves: the driver's `nvcuda.dll` and `nvcudart_hybrid64.dll`,
 `zlibwapi.dll` (cuDNN), `cask_profile_interface.dll` (a cuDNN profiling
 hook) and `nvtileiras64.dll` (nvJitLink). The binary does not load or check
 these, so Windows' standard search order applies to them: the executable's
-directory, System32, and then the current directory and `PATH`. The same
-holds for `cudnn_ext64_9.dll` and `cudnn_engines_tensor_ir64_9.dll` when a
-bundle lacks them, because the check does not require them (earlier cuDNN 9
-releases do not ship them; the packaging script does). With the driver
-installed, `nvcuda.dll` is found in System32 before the current directory.
-For the others, start `mlxcel` from a directory other users cannot write to.
+directory, System32, the Windows directory and `PATH`. The same holds for
+`cudnn_ext64_9.dll` and `cudnn_engines_tensor_ir64_9.dll` when a bundle lacks
+them, because the check does not require them (earlier cuDNN 9 releases do not
+ship them; the packaging script does).
+
+The current directory is not in that search (lablup/mlxcel#2641): at startup,
+in a bundle and in a developer build alike, the binary calls
+`SetDllDirectoryW(L"")`, which removes only the current directory. A same-named
+DLL in the working directory is therefore not loaded, unless the working directory
+is also the executable's directory (running `.\mlxcel.exe` from `bin`), because the
+executable's directory stays in the search. `nvcuda.dll` still resolves from
+System32. `SetDefaultDllDirectories` was rejected because it also changes the
+search for everything else the process and the display driver load.
+
+This does not close the path entirely. `PATH` stays in the search, so a DLL with
+one of these names in a directory on `PATH` still loads (on a machine without the
+driver that includes `nvcuda.dll`), and a relative `PATH` entry such as `.` puts
+the current directory back. Keep `PATH` to absolute directories other users cannot
+write to. `SearchPathW` does not honor the setting, so a library that looks a file
+up that way still finds it in the current directory. A child process does not
+inherit the setting (measured on Windows 11), so the programs `mlxcel` starts keep
+the standard search of their own, current directory included: `ffmpeg` and
+`ffprobe` for video input and, in `xla-backend` builds, the IREE compiler.
+If you use those, still start `mlxcel` from a directory other users cannot write
+to. A DLL you kept only in the working directory no longer loads: put it beside the
+executable.
+
+The DLLs the executable imports directly (`openblas.dll` or `libopenblas.dll`,
+`MSVCP140.dll` and `VCRUNTIME140.dll`) load before any of this runs, so the binaries
+are linked with `/DEPENDENTLOADFLAG:0xA00`: Windows looks for them only in the
+executable's directory and System32, not in the current directory or on `PATH`.
+Keep OpenBLAS beside the executable, as the build and the bundle do, and install
+the Visual C++ runtime so that it is in System32, or keep it beside the executable.
+With the DLL missing, the binary stops with a not-found error rather than taking a
+copy from the working directory.
+
 On the validated RTX Spark N1X, a generate run that reaches cuDNN loads
 `nvcuda.dll` from System32 and the driver's `nvcudart_hybrida64.dll` (the
 arm64 name) from its DriverStore folder. `zlibwapi.dll`,
@@ -722,8 +759,50 @@ What the Windows build does differently from Linux:
   `hsa-ext-finalize64.dll` and `dtif64a.dll`, which neither the SDK nor the
   driver ships. Generation and serving do not load them (checked with decoys
   in the working directory), but an optional path that opens them by name,
-  such as profiling, uses the standard Windows search, which includes the
-  current directory.
+  such as profiling, uses the standard Windows search. The current directory
+  is not in that search (lablup/mlxcel#2641): before the first ROCm DLL loads,
+  the hook calls `SetDllDirectoryW(L"")`, which removes only the current
+  directory, so a decoy in the working directory is not loaded, unless the working
+  directory is also the executable's directory (running `.\mlxcel.exe` from
+  `bin`), because the executable's directory stays in the search.
+  `SetDefaultDllDirectories` was rejected because it also changes the search
+  for everything else the process and the display driver load. This does not
+  close the path entirely: System32, the Windows directory and `PATH` stay in the
+  search, so a DLL with one of these names in a directory on `PATH` still loads,
+  and a relative `PATH` entry such as `.` puts the current directory back. Keep
+  `PATH` to absolute directories other users cannot write to. `SearchPathW` does
+  not honor the setting. A child process does not inherit it (measured on Windows
+  11), so the programs `mlxcel` starts keep the standard search of their own,
+  current directory included: `ffmpeg` and `ffprobe` for video input and, in
+  `xla-backend` builds, the IREE compiler. If you use those, still start
+  `mlxcel` from a directory other users cannot write to. A DLL you kept only in the
+  working directory no longer loads: put it beside the executable.
+- The DLLs the executable imports directly (`libopenblas.dll`, `MSVCP140.dll` and
+  `VCRUNTIME140.dll`) load before any of this runs, so the binaries are linked with
+  `/DEPENDENTLOADFLAG:0xA00`: Windows looks for them only in the executable's
+  directory and System32, not in the current directory or on `PATH`. With one
+  missing, the binary stops with a not-found error rather than taking a copy from
+  the working directory.
+- The on-disk cache of JIT-compiled kernels is per-user, under
+  `%USERPROFILE%\.cache\mlxcel\hsaco\<version>\<arch>` (or under
+  `MLXCEL_CACHE_DIR`, or `MLX_HSACO_CACHE_DIR\<arch>`). The profile directory is the
+  one the Known Folder API reports, the same one mlxcel's other caches use, so
+  overriding the `USERPROFILE` variable moves neither. A folder such as `D:\mlxcel`
+  usually inherits write access for Authenticated Users from the drive, so every
+  component below the drive root must have an owner that is you, SYSTEM,
+  Administrators or TrustedInstaller, and no entry granting write access to any
+  other account;
+  otherwise the cache is off with the one line described in
+  [Kernel disk cache](#kernel-disk-cache), with the reason `is writable by <SID>`,
+  `is not owned by the current user`, `has no access control list`, or
+  `cannot be inspected`. Remove the entry with `icacls`. The drive root is not
+  checked: every drive's default ACL grants Authenticated Users the right to create
+  folders there, and what it grants to inherit shows on a first component that
+  keeps inheritance. A symlink or junction at `hsaco`, `<version>` or `<arch>` is
+  refused. A cache entry must be a regular file, not a reparse point, that passes
+  the same owner and write rules; otherwise the kernel is compiled again and the
+  entry replaced, so entries left in a directory that was shared before you made
+  it private are not loaded.
 - The runtime kernel compiler (hiprtc) takes its headers from the first of
   these that applies (lablup/mlxcel#2639):
   1. `ROCM_HOME`, then `ROCM_PATH` (`<root>\include`), explicit overrides.
@@ -1113,6 +1192,49 @@ merged: the ROCm gate, every ROCm-only test, CLI-vs-server parity (dense and
 paged) and decode throughput against the pre-epic loop, in
 [`docs/benchmark_results/rocm-unified-engine-gfx1151-2026-10-08.md`](benchmark_results/rocm-unified-engine-gfx1151-2026-10-08.md).
 
+#### Kernel disk cache
+
+Kernels JIT-compiled through hipRTC are cached on disk, per user, in
+`${MLXCEL_CACHE_DIR:-$HOME/.cache/mlxcel}/hsaco/<version>/<arch>`, with new
+directories created with mode `0700` (lablup/mlxcel#2641). This replaces the
+shared `/tmp/mlx/<version>/hsaco/<arch>`, where another local user could create
+the directory first and plant kernels; entries there are no longer read.
+`MLX_HSACO_CACHE_DIR` overrides the location, with the architecture appended. It
+and `MLXCEL_CACHE_DIR` must be absolute paths for this cache: a relative one would
+resolve against the current directory.
+
+Anyone who can write the directory could plant compiled code that loads into
+the GPU, so the directory, default or explicit, is used only when every component
+of its path, from the directory itself up to `/`, is owned by you or by root and
+is not group- or other-writable (a root-owned sticky directory such as `/tmp` is
+fine). `hsaco`, `<version>` and `<arch>` must also be real directories, not
+symlinks, even to a private target; `~/.cache/mlxcel` and the directories you name
+may be symlinks and are judged by their target. The part of the path that exists
+is checked first, so a refused run creates nothing. A refused directory turns the
+cache off, every run compiles its kernels, and mlxcel prints one line,
+`mlxcel: ROCm kernel disk cache disabled: <directory> <reason>` (the reason is
+`is not owned by the current user`, `is group- or other-writable`,
+`is a symbolic link`, `is not a directory`, `cannot be resolved`,
+`cannot be inspected`, or `cannot be created`), or, when no directory can be
+named, `no directory: MLXCEL_CACHE_DIR and the home directory are unset` or
+`MLX_HSACO_CACHE_DIR must be an absolute path, got "<value>"` (likewise for
+`MLXCEL_CACHE_DIR`). Fix it by removing group and other write access from the named
+directory (`chmod go-w <directory>`) or by pointing `MLX_HSACO_CACHE_DIR` at a
+private directory.
+
+A `umask` of `002` creates group-writable directories, so for the default location,
+once everything above passes, mlxcel removes group write from the ones it manages
+when you own them: `<arch>`, `<version>`, `hsaco`, plus `~/.cache/mlxcel` itself
+when `MLXCEL_CACHE_DIR` is unset. A directory that is other-writable is not repaired
+and is refused. A group-writable explicit `MLX_HSACO_CACHE_DIR` or
+`MLXCEL_CACHE_DIR`, or a group-writable `~/.cache`, is left as it is and still
+refused.
+
+A cache entry (`.hsaco`, `.txt` or `.hip`) is used only if it is a regular file,
+not a symlink, owned by you or by root with no group or other write access, and
+the `.hsaco` is not empty and every `.txt` line is well formed; otherwise the kernel
+is compiled again and the entry replaced. New entries get mode `0600`.
+
 #### Memory footprint
 
 Two defaults keep the allocator's footprint close to the weights
@@ -1194,7 +1316,7 @@ before it, 8.07 tok/s in the baseline page linked above;
 | `MLXCEL_CXX_MARCH` | C++ bridge `-march` value, build-time; `none` omits the flag | `native` |
 | `MLXCEL_CCCL_DIR` | Override for the bundled CCCL (libcu++) header dir used by the CUDA NVRTC JIT | bundled `<exe-dir>/../include/cccl`, then build-time fallback |
 | `MLXCEL_CUTLASS_DIR` | Override for the bundled CUTLASS/CuTe header dir used by the CUDA NVRTC JIT for quantized matmul kernels | bundled `<exe-dir>/../include`, then build-time fallback |
-| `MLX_PTX_CACHE_DIR` | On-disk cache for JIT-compiled CUDA kernels, custom kernels included, in an `sm<cc>-nvrtc<version>` subdirectory. On Linux it is refused (one `CUDA kernel disk cache disabled` line, kernels still compile) unless every path component is owned by you or root and not group- or other-writable | `~/.cache/mlxcel/cuda-ptx/<mlx-commit>` for `mlxcel` and `mlxcel-server`, otherwise `$TMPDIR/mlx-<euid>/<mlx-version>/ptx` (Windows: `%TEMP%\mlx\<mlx-version>\ptx`, no ownership check) |
+| `MLX_PTX_CACHE_DIR` | On-disk cache for JIT-compiled CUDA kernels, custom kernels included, in an `sm<cc>-nvrtc<version>` subdirectory. It must be an absolute path. On Linux it is refused (one `CUDA kernel disk cache disabled` line, kernels still compile) unless every path component is owned by you or root and not group- or other-writable; on Windows, unless every component below the drive root is owned by you, SYSTEM, Administrators or TrustedInstaller with no write entry for another account | `~/.cache/mlxcel/cuda-ptx/<mlx-commit>` for `mlxcel` and `mlxcel-server`, otherwise `$TMPDIR/mlx-<euid>/<mlx-version>/ptx` (Windows: `%TEMP%\mlx\<mlx-version>\ptx`) |
 | `MLXCEL_QUIET_JIT` | Suppress the one-time "compiling CUDA kernels" notice on a cold first run | unset (notice shown) |
 | `MLXCEL_DEVICE` | Runtime device hint (`gpu`, `metal`, or `cpu`) | `gpu` |
 | `MLXCEL_WIRED_LIMIT` | Apple Silicon wired-memory ceiling, e.g. `64GB`; `0`/`none` disables it | `max` |
