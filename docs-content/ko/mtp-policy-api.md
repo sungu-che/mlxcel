@@ -63,7 +63,7 @@
 | `samples_required` | integer | 프로파일링 윈도우가 확정되기까지 필요한 적격 샘플 수. |
 | `samples_remaining` | integer 또는 null | 아직 필요한 적격 샘플 수. 다른 상태에서는 대기 중인 것이 없으므로 `state`가 `"profiling"`일 때만 null이 아닙니다. |
 
-`target`, `drafter`, `hardware`, `block_size` 네 필드가 조합 키입니다. 판정을 보여 주는 소비자는 이들이 표시하려는 조합과 일치하는지, 특히 `block_size`를 확인해야 합니다. 하나의 K에서 프로파일링된 판정은 다른 K로 이어지지 않으며, `--draft-block-size` / `MLXCEL_DRAFT_BLOCK_SIZE`를 변경하면 새 프로파일링 윈도우가 시작됩니다. `--num-draft-tokens`는 별개의 오프라인 전용 `generate` 설정이며 정책 키에 영향을 주지 않습니다.
+`target`, `drafter`, `hardware`, `block_size` 네 필드가 조합 키입니다. 판정을 보여 주는 소비자는 이들이 표시하려는 조합과 일치하는지, 특히 `block_size`를 확인해야 합니다. 하나의 K에서 프로파일링된 판정은 다른 K로 이어지지 않으며, `--draft-block-size` / `MLXCEL_DRAFT_BLOCK_SIZE`를 변경하면 새 프로파일링 윈도우가 시작됩니다.
 
 ### 상태
 

@@ -80,6 +80,7 @@ pub fn create_causal_mask(size: i32, offset: i32) -> UniquePtr<MlxArray> {
 
 **추적해야 할 주요 공유 컴포넌트:**
 - `src/lib/mlxcel-core/src/layers.rs` - KVCache, Attention, Normalization
+- `src/lib/mlxcel-core/src/batched_decode.rs` - 공유 네이티브 배치 split attention
 - `src/lib/mlxcel-core/src/utils.rs` - create_causal_mask, softcap, repeat_kv
 - `src/models/*.rs`의 모델별 attention 변형
 
@@ -228,7 +229,7 @@ nodes.sort_by(|a, b| a.config.id.cmp(&b.config.id));
 
 이 계열의 모든 수정에는 특정 형태의 테스트가 필요했으며, 다음 세 가지 중 하나라도 놓친 테스트는 수정되지 않은 코드에서도 통과합니다.
 
-1. **매 반복마다 새 맵을 만들고 최소 32회 반복하십시오.** `RandomState`는 인스턴스마다 시드를 부여하므로 하나의 맵을 반복해서 조사하는 것은 아무것도 측정하지 못합니다. 맵을 다시 만들어야 합니다. 트리에 있는 반복 횟수는 `ORDER_RESOLVE_ITERATIONS = 32`(`src/lang_bias.rs:755`), `ITERATIONS = 64`(`src/vision/detection/rt_detr_v2/sanitize.rs:388`), `ORDER_ITERATIONS = 64`(`src/distributed/registry_tests.rs:257`), `SELECTION_ITERATIONS = 32`(`src/distributed/disaggregated/request_router_tests.rs:865`)입니다.
+1. **매 반복마다 새 맵을 만들고 최소 32회 반복하십시오.** `RandomState`는 인스턴스마다 시드를 부여하므로 하나의 맵을 반복해서 조사하는 것은 아무것도 측정하지 못합니다. 맵을 다시 만들어야 합니다. 트리에 있는 반복 횟수는 `ORDER_RESOLVE_ITERATIONS = 32`(`src/lang_bias.rs:774`), `ITERATIONS = 64`(`src/vision/detection/rt_detr_v2/sanitize.rs:388`), `ORDER_ITERATIONS = 64`(`src/distributed/registry_tests.rs:271`), `SELECTION_ITERATIONS = 32`(`src/distributed/disaggregated/request_router_tests.rs:865`)입니다.
 2. **실제 동점을 만드십시오.** 서로 다른 키는 이미 전순서를 이루므로, 서로 다른 키로 만든 테스트는 수정 없이도 통과하며 아무것도 증명하지 못합니다. 테스트 대상은 바로 동점입니다.
 3. **같은 타임스탬프를 의도적으로 기록하십시오.** `Instant::now()`는 이 프로젝트가 대상으로 하는 플랫폼에서 나노초 단위로 해석되므로, 별도의 호출 두 번으로 기록한 두 항목은 사실상 충돌하지 않습니다. `Instant::now()`로 항목에 타임스탬프를 찍고 동점이 되기를 기대하는 테스트는 다루려는 경우를 결코 만들어 내지 못합니다.
 
@@ -238,11 +239,11 @@ nodes.sort_by(|a, b| a.config.id.cmp(&b.config.id));
 
 ### 대신 BTreeMap 선택하기
 
-`BTreeMap`과 `BTreeSet`은 순회 순서가 정의되어 있으므로 컨테이너를 바꾸는 것이 구조적인 수정이며 해당 지점에서 이 부류 전체를 제거합니다. 대가로 O(1) `get`이 O(log n)이 되므로, 조회가 뜨겁지 않은 곳에서는 올바른 선택이고 뜨거운 곳에서는 잘못된 선택입니다. #1277이 반대 방향의 사례입니다. 레지스트리의 노드 맵은 주 요청 경로에서 읽히므로 `HashMap`을 유지하고 네 개의 accessor가 노드 id로 정렬합니다.
+`BTreeMap`과 `BTreeSet`은 순회 순서가 정의되어 있으므로 컨테이너를 바꾸는 것이 구조적인 수정이며 해당 지점에서 이 부류 전체를 제거합니다. 대가로 O(1) `get`이 O(log n)이 되므로, 조회가 뜨겁지 않은 곳에서는 올바른 선택이고 뜨거운 곳에서는 잘못된 선택입니다. #1519가 이 방향의 사례입니다. responses 및 conversation 저장소는 `HashMap` 옆에 `BTreeSet<LruKey>` 인덱스를 두고 그 첫 번째 원소를 evict하므로, 희생자를 고르기 위해 맵을 순회하는 일이 없습니다(아래 강제 방법 참고). #1277이 반대 방향의 사례입니다. 레지스트리의 노드 맵은 주 요청 경로에서 읽히므로 `HashMap`을 유지하고 네 개의 accessor가 노드 id로 정렬합니다.
 
 **여덟 건의 사례.** 이들은 2026-08-20부터 2026-08-22 사이의 한 번의 리뷰 스윕에서 여섯 개 모듈에 걸쳐 발견되었으며, 툴체인의 어떤 부분도 이를 표시하지 않았습니다.
 
-- **#1265**(PR #1266). 네 개의 `filled_weights` 테스트 fixture가 `WeightMap`을 순회하며 키마다 LCG 시드 하나를 진행시켰기 때문에, 프로세스마다 서로 다른 합성 모델이 만들어졌습니다. 정렬도 인덱스도 보이지 않는, 루프 간에 이어지는 누산기였습니다. 원인을 찾기 전에 이미 추적되는 파일에 두 개의 잘못된 결론이 들어갔으며, 둘 다 `Makefile:604-616`에서 그 자리에서 철회되었습니다.
+- **#1265**(PR #1266). 네 개의 `filled_weights` 테스트 fixture가 `WeightMap`을 순회하며 키마다 LCG 시드 하나를 진행시켰기 때문에, 프로세스마다 서로 다른 합성 모델이 만들어졌습니다. 정렬도 인덱스도 보이지 않는, 루프 간에 이어지는 누산기였습니다. 원인을 찾기 전에 이미 추적되는 파일에 두 개의 잘못된 결론이 들어갔으며, 둘 다 `Makefile:713-725`에서 그 자리에서 철회되었습니다.
 - **#1267**(PR #1269). `LangBiasYamlConfig::bias`는 `Option<HashMap<String, BiasValueStr>>`였고 이것이 `LangBiasSet.ordered`로 전달되었는데, 이는 우선순위 순서로 문서화되어 있고 첫 번째 언어가 우선하도록 소비됩니다. 그 결과 여러 CJK 언어가 있는 YAML 설정은 공유되는 한자 token에 실행마다 다른 bias를 할당했으며, 문서 주석의 스키마 예시 자체가 CJK 세 개짜리 설정이어서 그것을 복사하기만 해도 문제가 발생했습니다.
 - **#1276**(PR #1281). `needs_sanitize`는 `weights.keys()` 순회 도중 처음 만난 마커에서 반환했기 때문에, 두 마커 계열을 모두 가진 체크포인트는 동전 던지기 같은 레이아웃 판정을 받았습니다. 비용이 큰 쪽은 잘못된 방향입니다. 이미 MLX 형식인 가중치에 sanitize 파이프라인을 다시 돌리면 conv 가중치가 두 번 전치되어, 이후 어떤 단계에서도 표시할 수 없는 형태상 유효한 텐서가 만들어집니다.
 - **#1277**(PR #1284). 레지스트리 accessor 네 개(`all_nodes`, `nodes_with_role`, `peer_addresses`, `topology_summary`)가 `HashMap` 값을 정렬하지 않은 채 위치 기반으로 인덱싱하거나 입력 순서로 동점을 처리하는 소비자에게 반환했고, 이것이 주 요청 경로의 노드 선택에 도달했습니다.

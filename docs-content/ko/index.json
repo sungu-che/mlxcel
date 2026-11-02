@@ -51,6 +51,11 @@
       "titleKo": "코드 수정 가이드라인"
     },
     {
+      "name": "dense-prediction.md",
+      "slug": "dense-prediction",
+      "titleKo": "Dense prediction"
+    },
+    {
       "name": "distributed.md",
       "slug": "distributed",
       "titleKo": "분산 추론"
@@ -76,6 +81,16 @@
       "titleKo": "f32 승격 감사"
     },
     {
+      "name": "gelu-call-sites.md",
+      "slug": "gelu-call-sites",
+      "titleKo": "GELU 호출 지점과 각 지점이 포팅하는 upstream activation"
+    },
+    {
+      "name": "image-generation.md",
+      "slug": "image-generation",
+      "titleKo": "이미지 생성"
+    },
+    {
       "name": "installation.md",
       "slug": "installation",
       "titleKo": "설치"
@@ -94,6 +109,11 @@
       "name": "model-catalog.md",
       "slug": "model-catalog",
       "titleKo": "모델 카탈로그"
+    },
+    {
+      "name": "model-triage.md",
+      "slug": "model-triage",
+      "titleKo": "모델 커버리지 분류(triage)"
     },
     {
       "name": "mtp-policy-api.md",
@@ -141,9 +161,19 @@
       "titleKo": "지원 모델"
     },
     {
+      "name": "token-classification.md",
+      "slug": "token-classification",
+      "titleKo": "Token classification과 span extraction"
+    },
+    {
       "name": "turbo-kv-cache.md",
       "slug": "turbo-kv-cache",
       "titleKo": "TurboQuant KV cache"
+    },
+    {
+      "name": "vision-model-scope.md",
+      "slug": "vision-model-scope",
+      "titleKo": "비전 모델 범위"
     },
     {
       "name": "webui-integration-matrix.md",

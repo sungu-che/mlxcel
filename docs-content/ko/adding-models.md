@@ -172,6 +172,19 @@ Muse Glimmer가 이 규칙의 현재 예시입니다. 첫 번째 베이스라인
    - Qwen-VL 토큰 삽입: `src/multimodal/qwen_vl.rs`
    - 일반 이미지 토큰 블록 확장: `src/multimodal/vlm_prompt.rs`
    - Phi3V 프롬프트 태그 처리: `src/multimodal/phi3v_prompt.rs`
+8. 학습된 모든 비전 파라미터에 대해 MLX 양자화 sidecar가 있는지 감사합니다. 여기에는
+   위치 테이블, class/query 토큰, 구분자, latent, 그리고 선형 레이어가 아닌 raw 배열
+   파라미터가 포함됩니다.
+   - 행 조회에는 `UnifiedEmbedding`을 사용하고, 텐서 전체를 더하거나 슬라이스하거나
+     reshape하거나 보간하거나 이어 붙일 때는 `vision::weights::load_dense_param`을
+     사용합니다. 호출자가 체크포인트의 `group_size`와 `bits`를 알고 있으면 이를 전달하고,
+     그렇지 않으면 헬퍼가 packed 레이아웃을 맞추도록 둡니다.
+   - MLX 양자화 FFI 연산을 호출하기 전에 packed dtype, packed shape, scale/bias sidecar를
+     검증합니다. 그런 다음 역양자화 후의 논리적 shape를 검증하고, hidden 폭은 packed 텐서의
+     마지막 차원이 아니라 config에서 가져옵니다.
+   - 서로 다른 사용 패턴마다 합성 양자화 회귀 테스트를 추가하고, dense 호환 케이스와
+     잘못된 레이아웃 오류 케이스도 함께 추가합니다.
+
 
 ## 새 패밀리 모듈을 만들어야 하는 경우
 

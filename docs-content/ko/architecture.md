@@ -63,9 +63,8 @@ src/
   decode 루프는 `engine/`에 있습니다. `engine/direct.rs`는 `DirectEngine`으로, raw-completion 클라이언트인 `mlxcel generate`,
   벤치마크, 추론 세션 실행이 사용합니다(ADR 0007, #2176). `engine/speculative.rs`는 prompt lookup 같은 drafter를 위한
   토큰 전용 speculative 루프입니다.
-- `src/lib/mlxcel-core/src/drafter/` 및 `src/lib/mlxcel-core/src/speculative/` — speculative decoding 지원.
-  `speculative/stochastic_accept.rs`에는 수락 규칙과 분포 보존 보장이 있습니다.
-  각 경로가 어떤 규칙을 실행하는지는 [`speculative-acceptance.md`](speculative-acceptance.md)를 참조하십시오.
+- `src/lib/mlxcel-core/src/drafter/` 및 `src/lib/mlxcel-core/src/speculative/` — speculative decoding 지원. 각 경로가 어떤 규칙을 실행하는지는
+    [`speculative-acceptance.md`](speculative-acceptance.md)를 참조하십시오.
 - `src/lib/mlxcel-core/src/layers.rs`, `src/lib/mlxcel-core/src/weights.rs`, `src/lib/mlxcel-core/src/utils.rs` — 모델 구성 요소,
   SafeTensors 로딩, 마스크, 헬퍼 연산.
 - `src/lib/mlxcel-core/src/autotune/`: shape 버킷 기반 커널 autotuner(issue #906). `TunableOp` 계약,
@@ -131,6 +130,12 @@ model path
   `src/loading/special.rs`, `src/loading/vlm*.rs`에 로딩 구현이 있습니다.
 - `src/loaded_model.rs`와 `src/loaded_model_capabilities.rs`는 하위 CLI/서버 코드가
   모든 구체적인 모델 타입에 대해 매칭하지 않도록 합니다.
+- `src/vision/detection/mod.rs`는 별도의 객체 감지(object-detection) 로드 경계입니다.
+  정확한 `config.json` model type에 따라 RT-DETRv2 또는 PP-DocLayoutV3로 dispatch하고,
+  `mlxcel detect`가 소비하는 공통 `Detector` 결과를 노출합니다. PP-DocLayoutV3는
+  모델이 예측한 읽기 순서를 제공하며, RT-DETRv2는 이를 비워 두므로 CLI가 기하학적
+  폴백을 유지합니다.
+
 - `src/backend/`는 compute-backend seam입니다. CLI와 서버의 로드 지점은 `loading::load_model`을 직접 호출하는 대신
   `select_backend().load_model(...)`을 호출하므로, `LanguageModel::forward`를 실행하는 엔진은
   로드 경계에서 선택됩니다. 기본 기능 하에서는 seam이 컴파일 시점에 MLX 백엔드로 접히며 런타임 디스패치가 추가되지 않습니다.

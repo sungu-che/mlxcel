@@ -74,7 +74,7 @@ mlxcel serve -m mlx-community/Qwen3-4B-4bit --host 127.0.0.1 --port 8080
 mlxcel serve -m mlx-community/Qwen3-4B-4bit --host /tmp/mlxcel.sock
 ```
 
-모델과 연결 대상을 모두 전달하면 모드가 모호해지므로 `MlxcelError`가 발생합니다.
+모델과 함께 `base_url=` 또는 `transport=`를 전달하면 모드가 모호해지므로 `MlxcelError`가 발생합니다. `socket=`은 예외입니다. 모델과 함께 쓰면 띄우는 서버의 bind 경로(아래 레시피 참조)이고, 모델 없이 쓰면 연결 대상입니다.
 
 ## 보안: 다중 사용자 호스트
 

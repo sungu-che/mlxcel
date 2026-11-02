@@ -126,7 +126,7 @@ b10621은 `/completion`과 `/completions`를 하나의 핸들러로, `/v1/comple
 
 `/detokenize`는 upstream의 `tokens_to_str`처럼 special token을 건너뛰지 않고 렌더링하며, `tokens`가 없거나 비어 있을 때 실패하는 대신 `{"content": ""}`로 응답합니다. 문자를 이룰 수 없는 바이트는 U+FFFD로 반환되며, upstream의 JSON writer가 replacing 에러 핸들러로 실행되므로 upstream도 이렇게 내보냅니다.
 
-`/apply-template`는 chat-completions 본문을 로드된 chat template으로 렌더링하여 생성 없이 `{"prompt": "..."}`로 응답합니다. `/chat/completions/input_tokens`, `/v1/chat/completions/input_tokens`, `/responses/input_tokens`, `/v1/responses/input_tokens`는 `/v1/messages/count_tokens`가 이미 사용하던 키인 `{"input_tokens": N}`으로 응답합니다. 다섯 개 모두 생성 경로가 실행하는 것과 같은 렌더링과 같은 인코딩을 실행하므로, 그 숫자는 어긋날 수 있는 별도의 추정치가 아니라 해당 요청이 실제로 prefill될 토큰 수입니다. Responses 쌍은 `/v1/responses`가 사용하는 것과 같은 translator를 거치므로, `previous_response_id`와 `conversation` 복원도 함께 집계됩니다. 로드된 체크포인트가 소비할 수 없는 미디어 파트는 렌더링이 이를 해석하기 전에 생성 라우트가 거부하는 방식과 동일하게 여기서도 거부되므로, 다섯 개 중 어느 것도 생성 경로가 거절했을 프롬프트를 집계하지 않습니다.
+`/apply-template`는 chat-completions 본문을 로드된 chat template으로 렌더링하여 생성 없이 `{"prompt": "..."}`로 응답합니다. `/chat/completions/input_tokens`, `/v1/chat/completions/input_tokens`, `/responses/input_tokens`, `/v1/responses/input_tokens`는 `/v1/messages/count_tokens`가 이미 사용하던 키인 `{"input_tokens": N}`으로 응답합니다. 다섯 개 모두 생성 경로가 실행하는 것과 같은 렌더링과 같은 인코딩을 실행하므로, 그 숫자는 어긋날 수 있는 별도의 추정치가 아니라 해당 요청이 실제로 prefill될 토큰 수입니다. 이미지, 비디오 클립, 오디오가 들어 있는 본문은 model worker에서 집계합니다. 각 미디어 파트는 그곳에서만 soft token으로 변환되므로, 생성이 실행하는 것과 같은 soft-token 확장을 거친 뒤 prefill 직전에 멈추며, 그 수치는 같은 본문이 생성될 때 보고하는 `usage.prompt_tokens`(또는 `usage.input_tokens`)와 같습니다. 이런 집계는 생성처럼 worker 슬롯을 하나 사용하므로 바쁜 서버는 이를 거부할 수 있습니다. 텍스트 전용 본문은 여전히 요청 스레드에서 인코딩되며 worker를 기다리지 않습니다. Responses 쌍은 `/v1/responses`가 사용하는 것과 같은 translator를 거치므로, `previous_response_id`와 `conversation` 복원도 함께 집계됩니다. 로드된 체크포인트가 소비할 수 없는 미디어 파트는 렌더링이 이를 해석하기 전에 생성 라우트가 거부하는 방식과 동일하게 여기서도 거부되므로, 다섯 개 중 어느 것도 생성 경로가 거절했을 프롬프트를 집계하지 않습니다. 렌더링에는 프롬프트 캐시가 켜져 있을 때 서버가 content만 있는 assistant 턴에 다시 주입하는 reasoning이 생성 라우트와 동일하게 포함되므로, 후속 턴은 실제로 prefill되는 프롬프트를 집계합니다. 생성할 수 없는 서버(`--embeddings` 또는 `--reranking`으로 시작했거나 chat 모델이 로드되지 않은 경우)에서는 각 집계 라우트가 자신의 생성 라우트와 동일한 501과 본문을 반환합니다. 스트리밍 `/v1/messages`는 `message_start.usage.input_tokens`에 같은 값을 보고합니다. 텍스트 전용 본문은 로컬에서 집계해 이벤트를 즉시 내보내고, 미디어가 있는 본문은 worker가 prefill 시점에 확장된 프롬프트 길이를 보고할 때까지 `message_start`를 보류합니다. 그 전까지 스트림에는 keepalive 주석만 실리므로, `--sse-ping-interval -1`을 쓰면 미디어 요청이 큐에서 대기하고 prefill하는 동안 클라이언트는 바이트를 전혀 받지 못합니다. `/apply-template`도 같은 경로로 렌더링하므로 그 prompt에도 다시 주입된 reasoning이 표시됩니다.
 
 `/infill`은 어휘가 fill-in-the-middle 마커를 선언하는 모델에서 제공되며, 그렇지 않으면 누락된 마커를 명시하는 upstream의 문구로 거부됩니다. 마커 표기는 `llama-vocab.cpp`가 검색하는 목록이므로 Qwen, StarCoder, Granite, DeepSeek-Coder, CodeLlama 체크포인트는 별도 설정 없이 해석됩니다. `--spm-infill`은 middle 마커는 마지막에 둔 채 suffix 블록을 prefix 블록 앞으로 옮기며, 이는 upstream이 하는 교환입니다. 한 가지 순서로 학습된 모델은 다른 순서의 프롬프트에도 유창하지만 틀린 답을 내므로, 이 플래그는 취향이 아니라 정확성 스위치입니다.
 
@@ -170,7 +170,7 @@ b10621의 `--embedding` / `--embeddings`, `--rerank` / `--reranking`, `--pooling
 
 ### Speculative decoding 표면 (#1433)
 
-b10621의 모든 speculative 옵션은 두 서버 바이너리에서 파싱됩니다. `--spec-draft-model`(`-md`, `--model-draft`, mlxcel의 `--draft-model` 표기 포함)은 MTP / DFlash draft 체크포인트를 선택하고, `--spec-draft-n-max`(제거된 `--draft` / `--draft-n` / `--draft-max` 표기가 별칭으로 유지됨)는 draft 토큰 상한을 설정합니다. 이 상한의 정식 변수는 `LLAMA_ARG_SPEC_DRAFT_N_MAX`이며, 제거된 `LLAMA_ARG_DRAFT_MAX`는 fallback으로 인정됩니다. `--spec-type`은 mlxcel이 실행할 수 있는 것을 변환합니다. `none`은 b10621과 정확히 같이 speculation을 비활성화하고, `draft-mtp` / `draft-dflash`는 `--draft-kind`에 매핑되며, 그 밖의 모든 서브시스템(n-gram 모드 포함)은 진단과 함께 시작 시 실패합니다. mlxcel 고유의 drafter 없는 n-gram speculation은 `--draft-kind prompt-lookup`(#2255, [`docs/CONTINUOUS_BATCHING.md`](CONTINUOUS_BATCHING.md#prompt-lookup-under-continuous-batching) 참고)이며, `--spec-type none`은 이것도 끕니다. 나머지 `--spec-draft-*` 계열은 GGML 그룹처럼 inert-or-reject로 분류된 숨겨진 호환성 표면입니다. 무해한 값(upstream 기본값, full-offload `--spec-draft-ngl` 표기, `f16` draft 캐시 타입, n-gram 선택자를 고를 수 없는 동안의 모든 n-gram 튜닝 값)은 받아들여지고, mlxcel이 재현할 수 없는 동작을 바꾸는 모든 값은 모델 로드 전에 시작 시 실패합니다. 해석된 설정은 `/props`의 `speculative` 아래(draft 모델의 basename만, kind override, `n_max`)에 보고됩니다. 네이티브 `/completion`의 `speculative.*` 점 표기 필드는 받아들여지고 효과가 없으며, 해당 스키마 블록이 컴파일에서 제외된 b10621과 일치합니다. 응답 측면에서, draft된 요청의 `timings` 객체는 upstream이 표기하고 게이트하는 방식 그대로(verify 라운드가 실행되었을 때만 존재) b10621 자체의 선택적 `draft_n` / `draft_n_accepted` 쌍을 담으며, upstream에는 대응이 없는 두 개의 mlxcel 키도 더합니다. 하나는 이 쌍만으로는 라운드당 평균 허용 길이를 복원할 수 없게 되므로 필요한 `draft_rounds`이고, 다른 하나는 mlxcel의 어느 drafter가 요청을 처리했는지 알려 주는 `draft_kind`입니다. `/v1/chat/completions`는 이 블록 전체를 비스트리밍 응답과 `finish_reason` 청크의 최상위 `timings` 객체로 담으며, 이는 b10621이 자체 OpenAI chat 응답에 넣는 객체입니다. 거기에 남은 차이는 존재 여부입니다. upstream은 모든 chat completion에서 이를 내보내지만 mlxcel은 draft된 요청에서만 내보내며, 두 chat 라우트 항목 모두 이를 기록합니다(#1314). [`docs/speculative-acceptance.md`](speculative-acceptance.md)를 참고하십시오.
+b10621의 모든 speculative 옵션은 두 서버 바이너리에서 파싱됩니다. `--spec-draft-model`(`-md`, `--model-draft`, mlxcel의 `--draft-model` 표기 포함)은 MTP / DFlash draft 체크포인트를 선택하고, `--spec-draft-n-max`(제거된 `--draft` / `--draft-n` / `--draft-max` 표기가 별칭으로 유지됨)는 draft 토큰 상한을 설정합니다. 이 상한의 정식 변수는 `LLAMA_ARG_SPEC_DRAFT_N_MAX`이며, 제거된 `LLAMA_ARG_DRAFT_MAX`는 fallback으로 인정됩니다. `--spec-type`은 mlxcel이 실행할 수 있는 것을 변환합니다. `none`은 b10621과 정확히 같이 speculation을 비활성화하고, `draft-mtp` / `draft-dflash`는 `--draft-kind`에 매핑되고, `draft-simple`(b10621의 일반 draft-model speculation)은 `--draft-kind full-model`에 매핑되며(#2757), 그 밖의 모든 서브시스템(n-gram 모드 포함)은 진단과 함께 시작 시 실패합니다. mlxcel 고유의 drafter 없는 n-gram speculation은 `--draft-kind prompt-lookup`(#2255, [`docs/CONTINUOUS_BATCHING.md`](CONTINUOUS_BATCHING.md#prompt-lookup-under-continuous-batching) 참고)이며, `--spec-type none`은 이것도 끕니다. 나머지 `--spec-draft-*` 계열은 GGML 그룹처럼 inert-or-reject로 분류된 숨겨진 호환성 표면입니다. 무해한 값(upstream 기본값, full-offload `--spec-draft-ngl` 표기, `f16` draft 캐시 타입, n-gram 선택자를 고를 수 없는 동안의 모든 n-gram 튜닝 값)은 받아들여지고, mlxcel이 재현할 수 없는 동작을 바꾸는 모든 값은 모델 로드 전에 시작 시 실패합니다. 해석된 설정은 `/props`의 `speculative` 아래(draft 모델의 basename만, kind override, `n_max`)에 보고됩니다. 네이티브 `/completion`의 `speculative.*` 점 표기 필드는 받아들여지고 효과가 없으며, 해당 스키마 블록이 컴파일에서 제외된 b10621과 일치합니다. 응답 측면에서, draft된 요청의 `timings` 객체는 upstream이 표기하고 게이트하는 방식 그대로(verify 라운드가 실행되었을 때만 존재) b10621 자체의 선택적 `draft_n` / `draft_n_accepted` 쌍을 담으며, upstream에는 대응이 없는 두 개의 mlxcel 키도 더합니다. 하나는 이 쌍만으로는 라운드당 평균 허용 길이를 복원할 수 없게 되므로 필요한 `draft_rounds`이고, 다른 하나는 mlxcel의 어느 drafter가 요청을 처리했는지 알려 주는 `draft_kind`입니다. `/v1/chat/completions`는 이 블록 전체를 비스트리밍 응답과 `finish_reason` 청크의 최상위 `timings` 객체로 담으며, 이는 b10621이 자체 OpenAI chat 응답에 넣는 객체입니다. 거기에 남은 차이는 존재 여부입니다. upstream은 모든 chat completion에서 이를 내보내지만 mlxcel은 draft된 요청에서만 내보내며, 두 chat 라우트 항목 모두 이를 기록합니다(#1314). [`docs/speculative-acceptance.md`](speculative-acceptance.md)를 참고하십시오.
 
 ### Context shift는 기본적으로 꺼져 있으며, retention은 운영자가 설정할 수 있습니다 (#1472)
 
@@ -181,6 +181,8 @@ b10621의 모든 speculative 옵션은 두 서버 바이너리에서 파싱됩�
 - `--context-shift`가 있으면 스케줄러는 유지되는 prefix 뒤의 토큰을 버려 공간을 확보합니다. `--keep`(요청별로는 `n_keep`이며, `-1` = 초기 프롬프트 전체, 토크나이저가 앞에 붙이는 BOS에 대해 토큰 하나 추가, `bound - 4`로 clamp)은 모든 shift에서 살아남고, 요청별 `n_discard`는 버리는 깊이를 설정합니다(`0`이 기본값이며 유지되지 않는 윈도의 절반을 버립니다). prefill 청크가 한계를 넘어서면 상한이 지켜지도록 버리는 양이 넘어선 만큼으로 늘어납니다.
 
 **예전의 rolling-window 동작에 가까운 것으로 복원하려면 `--context-shift --keep 4`를 전달하십시오.** 이전 동작은 단계마다 초과분만 정확히 버렸고 새 기본 discard는 윈도의 절반이므로 유지되는 텍스트는 다르지만, attention sink가 고정된 채 생성이 다시 무제한이 됩니다. 이전 trim에서 이어지는 두 가지 주의점이 있습니다. shift는 Turbo 양자화 KV 레이어에서는 기록된 no-op이며(시작 시 경고), VLM 요청은 upstream이 멀티모달을 예외로 두는 것처럼 이 모든 장치에서 제외됩니다.
+
+KV cache가 모델 내부에 있는 모델(`ModelOwned` 시퀀스 상태 레이아웃: Gemma 3/4, Qwen 3.5, ExaOne 4, GPT-OSS, Ministral 3, Step 3.5, Mellum, Laguna, Nemotron-NAS, LongCat 그리고 [`docs/supported-models.md`](supported-models.md#kv-cache-modes-on-model-owned-families)에 나열된 다른 패밀리)에는 shift가 trim할 pool cache가 없습니다. 슬롯별 KV 상한(`--max-kv-size` 또는 `--ctx-size` 윈도)이 적용되면 서버는 이런 모델을 context shift를 끈 채로 서빙하고, 모델의 스케줄러가 처음 시작될 때 모델당 한 번 경고를 남깁니다(`--sleep-idle-seconds`에서 깨어난 모델은 이를 반복하지 않으며, 멀티 모델 서버에서는 영향을 받는 모델마다 각자 경고를 남깁니다). 따라서 상한은 컨텍스트 윈도까지 조용히 커지는 대신 admission 거부와 `truncated: true` 중단으로 지켜집니다(#2766, #2783).
 
 같은 이슈에서 배칭 및 슬롯 개수 항목도 닫혔고, #1815는 upstream의 자동 컨텍스트 동작을 마무리했습니다. `--parallel`은 b10621의 전체 값 범위를 받아들이며 기본값은 `-1`(auto)이고, upstream 자체의 auto와 정확히 같이 4개 슬롯으로 해석되며, auto는 기본적으로 `kv_unified`를 활성화합니다. 통합 컨텍스트 예산 방식에서는 모든 슬롯이 `--ctx-size` 윈도 전체를 보면서, 스케줄러는 활성 시퀀스 전체에 걸쳐 하나의 공유 live-token 예산을 적용합니다. 명시적인 `--parallel N` 또는 명시적인 `--max-batch-size`는 `--kv-unified`도 명시되지 않는 한 슬롯별 분리된 윈도를 유지하며, `--no-kv-unified`는 분리된 윈도를 강제합니다. `--batch-size`는 `--prefill-chunk-size`에 `aliased`로 분류됩니다(같은 논리적 prefill 배치이며, ADR 0007 이후 upstream과 같은 2048 기본값). `--ubatch-size`는 `not_applicable`입니다(통합 메모리에는 물리적 마이크로 배치가 없으며, 값은 받아들여지고 시작 시 고지되며 `/props`에 보고됨). `--swa-full`은 `not_applicable`이며 설정되면 거부됩니다. sliding-window 패밀리는 체크포인트의 `sliding_window`로부터 자체 ring 캐시를 구성하고, 이 플래그가 upstream에서 확보해 주는 상태 연산은 ring 크기가 아니라 스케줄러가 소유한 캐시에 게이트되어 있기 때문입니다. 단일 대시 표기인 `-np`, `-kvu`, `-no-kvu`, `-ub`는 argv pre-pass를 통해 재작성됩니다.
 
@@ -237,7 +239,7 @@ b10621은 Google Cloud Vertex AI custom container를 순전히 `AIP_*` 환경 �
 
 이 그룹의 모든 것은 b10621의 내장 브라우저 UI를 위해 존재합니다. `--ui` / `--webui`는 `/`에서 SvelteKit 번들을 제공하고, `--path`는 이를 디렉터리로 대체하며, `--tools`와 `--tools-runtime`은 `/tools`를 통해 서버가 실행하는 도구를 해당 UI에 노출하고(upstream 자체의 개발자 문서는 이 엔드포인트를 UI 내부용으로 표시함), `--mcp-servers-config` / `--mcp-servers-json`은 stdio MCP 자식 프로세스로 같은 엔드포인트에 공급하고, `--ui-mcp-proxy`는 브라우저가 원격 MCP 서버에 도달할 수 있도록 범용 `/cors-proxy` URL 프록시를 열며, `--agent`는 프록시와 모든 도구를 한꺼번에 켭니다. mlxcel은 `--ui` / `--webui`를 번들된 WebUI의 별칭으로 받아들이고 셸을 `${api-prefix}/webui/`에서 제공하며 `/`를 health 엔드포인트로 유지합니다. 여전히 서버 측 도구를 실행하지 않고, MCP 자식 프로세스를 생성하지 않으며, 임의의 정적 디렉터리를 제공하지 않고, 범용 CORS 프록시를 노출하지 않습니다.
 
-구체적으로, 두 서버 바이너리 모두에서: `--ui` / `--webui`는 번들된 WebUI를 활성화하고, `--no-ui` / `--no-webui`는 비활성화하며, `LLAMA_ARG_UI`는 b10621의 `parse_bool_value` 규칙과 `LLAMA_ARG_NO_UI` 별칭으로 해석됩니다. CLI 플래그가 우선하며 반복된 활성화/비활성화 형태는 last-wins 파싱을 사용합니다. 지원되지 않는 인접 형태(`--ui-config`, `--ui-config-file`, `--path`, `--tools`, `--tools-runtime`, `--mcp-servers-config`, `--mcp-servers-json`, `--ui-mcp-proxy`, `--webui-mcp-proxy`, `--agent`, 단일 대시 `-ag`)는 여전히 모델 로드 전에 지원되는 대안을 명시하는 한 줄 진단과 함께 시작 시 실패합니다. 지원되지 않는 표면에 대한 부정 형태(`--no-agent`, `--no-ui-mcp-proxy`, `--no-webui-mcp-proxy`)는 계속 효과가 없습니다.
+구체적으로, 두 서버 바이너리 모두에서: `--ui` / `--webui`는 번들된 WebUI를 활성화하고, `--no-ui` / `--no-webui`는 비활성화하며, `LLAMA_ARG_UI`는 b10621의 `parse_bool_value` 규칙과 `LLAMA_ARG_NO_UI` 별칭으로 해석됩니다. CLI 플래그가 우선하며 반복된 활성화/비활성화 형태는 last-wins 파싱을 사용합니다. 지원되지 않는 인접 형태(`--ui-config`, `--ui-config-file`, `--path`, `--tools`, `--tools-runtime`, `--mcp-servers-config`, `--mcp-servers-json`, `--ui-mcp-proxy`, `--webui-mcp-proxy`, `--agent`, 단일 대시 `-ag`)는 여전히 모델 로드 전에 지원되는 대안을 명시하는 한 줄 진단과 함께 시작 시 실패합니다. 지원되지 않는 표면에 대한 부정 형태(`--no-agent`, `--no-ui-mcp-proxy`, `--no-webui-mcp-proxy`)는 계속 효과가 없습니다. `--webui`와 `--no-webui`는 mlxcel 고유의 제품 플래그이며, 이 그룹에서 `--help`의 `WebUI Options` 아래에 나열되는 유일한 표기입니다(#1900). `--ui`, `--no-ui`, 그리고 거부되거나 효과가 없는 모든 형태는 shard의 `mlxcel.hidden` 클레임이 기록하듯 계속 숨겨집니다. WebUI 자체는 [docs/webui/README.md](webui/README.md)에 문서화되어 있습니다.
 
 `GET`/`POST /tools`와 `GET`/`POST /cors-proxy`는 b10621 자체의 비활성화된 기능 stub으로 마운트됩니다. `{"error":{"message":"this feature is disabled","type":"feature_disabled"}}`를 담은 403이며, 바이트 형태가 upstream의 `res_403`과 같습니다. 이 기능을 꺼 둔 llama-server 배포의 클라이언트는 여기서도 동일한 응답을 봅니다. 이를 켜 두었던 배포는 기록된 divergence입니다. CORS 프록시는 구현되지 않고 거부되므로, 그 SSRF 표면(loopback, link-local, metadata-service, DNS-rebinding 도달 가능성)은 구조상 여기에 존재하지 않습니다. chat-completion 요청에서 클라이언트가 선언한 `tools`는 무관하며 계속 동작합니다. mlxcel은 도구 호출에 대한 모델 출력을 파싱하지만 서버 측에서는 아무것도 실행하지 않습니다. OpenAI Responses의 내장 도구 계약으로 표현되는 서버 측 MCP 도구 루프는 b10621 호환성 밖의 제품 기능으로서 #1457에서 별도로 추적됩니다.
 ### `--models-dir`은 router 모드이며, 저장소 루트는 `--model-store-root`로 이동했습니다 (#1438)
@@ -262,7 +264,7 @@ mlxcel은 모델 provider를 교체하는 대신 서빙 **워커**를 재웁니�
 
 ### Multi-adapter LoRA, unfused로 서빙 (#1439)
 
-`--lora`는 쉼표로 구분된 adapter 경로를 받고(각각 scale 1.0이며, mlxcel 고유의 `--adapter` 표기는 별칭으로 유지), `--lora-scaled`는 쉼표로 구분된 `FNAME:SCALE` 쌍을 받습니다. adapter는 **unfused**로 서빙됩니다. 각 adapter는 linear 레이어가 forward마다 더하는 저랭크 항 `scale * (x @ A) @ B`를 기여하며, 사용자 scale은 adapter 자체의 `alpha / r`에 곱해지고, 이는 upstream이 적용하는 곱과 정확히 같습니다. 기본 가중치는 결코 수정되지 않으므로 scale은 라이브입니다. 서빙 레이어가 쓰고 레이어가 읽는 공유 핸들 뒤에 있습니다. 숫자가 아니거나, NaN이거나, 무한대인 scale, 없는 adapter 디렉터리, 텐서 shape가 기본 projection에 맞지 않는 adapter, 그리고 multi-adapter 또는 scaled 로딩을 tensor/pipeline parallelism과 결합하는 것은 모두 시작 시 실패합니다. `GET /lora-adapters`는 모든 adapter를 b10621의 항목 형태(`id`, `path`, `scale`, `task_name`, `prompt_prefix`)로, 라이브 서버 기본 scale과 함께 보고하므로 교체가 거기서 보입니다.
+`--lora`는 쉼표로 구분된 adapter 경로를 받고(각각 scale 1.0이며, mlxcel 고유의 `--adapter` 표기는 별칭으로 유지), `--lora-scaled`는 쉼표로 구분된 `FNAME:SCALE` 쌍을 받습니다. adapter는 **unfused**로 서빙됩니다. 각 adapter는 linear 레이어가 forward마다 더하는 저랭크 항 `scale * (x @ A) @ B`를 기여하며, 사용자 scale은 adapter 자체의 `alpha / r`에 곱해지고, 이는 upstream이 적용하는 곱과 정확히 같습니다. 기본 가중치는 결코 수정되지 않으므로 scale은 라이브입니다. 서빙 레이어가 쓰고 레이어가 읽는 공유 핸들 뒤에 있습니다. 숫자가 아니거나, NaN이거나, 무한대인 scale, 없는 adapter 디렉터리, 텐서 shape가 기본 projection에 맞지 않는 adapter, 모델이 공유 linear 생성자 밖에서 만드는 adapter 레이어(적용되지 않을 것이므로), tied-embeddings 체크포인트의 `lm_head` 쌍, Llama decoder(`llama`, `tie_word_embeddings: true`인 `qwen2`)와 Qwen3이 아닌 패밀리의 tied 체크포인트에 있는 `embed_tokens` 쌍(이런 adapter는 먼저 `mlx_lm.fuse`로 병합하십시오. 지원되는 패밀리에서 mlx-lm의 `LoRAEmbedding` 쌍은 adapter의 단일 scale 뒤에서 임베딩 조회와 tied head에 모두 unfused로 적용됩니다), mixture-of-experts expert adapter(expert별 3차원 `lora_a` / `lora_b`, 미지원), 그리고 multi-adapter 또는 scaled 로딩을 tensor/pipeline parallelism과 결합하는 것은 모두 시작 시 실패합니다. `GET /lora-adapters`는 모든 adapter를 b10621의 항목 형태(`id`, `path`, `scale`, `task_name`, `prompt_prefix`)로, 라이브 서버 기본 scale과 함께 보고하므로 교체가 거기서 보입니다.
 
 `POST /lora-adapters`는 upstream의 규칙(나열된 id는 scale을 설정하고, 나열되지 않은 id는 0.0으로 떨어지며, 알 수 없는 id는 무시됨)으로 해석되는 새 scale 벡터를 런타임에 적용합니다. 요청별 네이티브 `lora` 필드도 같은 방식으로 해석되며 해당 요청에만 적용됩니다. 둘 다 upstream의 타이밍을 따릅니다. 요청은 admission 시점에 자신의 scale을 스냅샷하고, 스케줄러는 배치마다 한 번 실행 중인 그룹의 스냅샷으로 공유 핸들을 쓰며, b10621 자체의 `can_batch_with` 규칙은 배치를 하나의 스냅샷으로 유지하므로, 교체가 이미 진행 중인 생성을 바꾸는 일은 없고 서로 다른 adapter 집합을 지정한 두 동시 요청이 서로에게 새어 들어갈 수 없습니다. `--lora-init-without-apply`는 시작 지점에서의 같은 메커니즘입니다. adapter는 scale 0.0으로 로드 및 검증되고, 이후 POST로 재시작 없이 올릴 수 있습니다. scale 0.0의 항은 어떤 연산도 추가하지 않으므로, 적용되지 않은 adapter를 보유한 서버는 adapter 없이 시작한 서버와 바이트 단위로 동일하게 응답합니다.
 
@@ -388,364 +390,4 @@ mlxcel 고유의 `int8`, `fp16+turbo4`, `fp16+turbo3`, `turbo4`, `turbo4-delegat
 
 mlxcel의 #1447 이전 동작은 무조건 `deepseek`였습니다. 같은 배치가 같은 라우트를 제공하는 disaggregated router front에도 적용됩니다.
 
-스트리밍 형태도 #1470 이후에는 구분자를 포함하므로, `none`과 `deepseek-legacy`에서 `delta.content`를 이어 붙인 결과가 비스트리밍 `message.content`와 바이트 단위로 같습니다. 이전에는 불가능했습니다. 스트리밍 필터는 thinking 구분자를 일치시키면서 소비하고, 블록을 열린 상태로 준비시키는 generation prompt는 모델이 열기 마커를 전혀 내보내지 않는다는 뜻이기 때문입니다. 이제 필터는 소비하는 모든 구분자에 대해 **정규(canonical)** 마커 쌍을 보고하며(Gemma 4의 opener는 `<|channel>thought`로 일치하지만 비스트리밍 형태가 쓰는 `<|channel>`로 보고됨), 라우트는 reasoning 조각 주위에 그 마커를 다시 내보냅니다. 준비된(primed) 경우는 비스트리밍 재구성이 raw 텍스트의 닫기 마커로부터 해석하는 것과 정확히 같이, 준비된 닫기 마커가 가리키는 패밀리에서 열기 마커를 해석합니다.
-
-비스트리밍 형태도 이와 함께 바뀌었으며, 클라이언트가 볼 수 있는 방식입니다. 이제 모델이 닫기 마커와 답변 사이에 내보낸 공백을 유지하는데, 이는 이전에 파서의 trim이 버리던 것입니다. `none`은 생성을 파싱하지 않은 채로 두기 위해 존재하며 스트리밍 형태는 이미 그 바이트를 통과시키고 있었으므로, 두 형태는 정확히 그 부분만큼 어긋나 있었습니다. 실제 체크포인트 검증에서 `</think>\n\n2 plus 2 equals 4.`로 끝나는 생성에서 608바이트 스트림 대 606바이트 `message.content`가 측정되었으며, 답변 자체는 thoughts가 별도로 보고되는 `deepseek`에서 여전히 trim됩니다.
-
-하나의 차이는 남아 있으며 `by_design`입니다. `auto`는 템플릿에서 감지되는 대신 `deepseek`로 해석되는데, mlxcel의 reasoning 분리는 지원하는 모든 패밀리에 하나의 마커 테이블을 사용하고 감지기가 선택할 수 있는 두 번째 배치가 없기 때문입니다. 그 패밀리들에 대해서는 upstream의 `auto`도 `deepseek`로 해석됩니다. 세 번째 차이는 사라졌습니다. #1470이 `reasoning_in_content` 문제를 b10621 트리 전체에 대해 정리했습니다. upstream은 그 플래그를 `tools/server/server-schema.cpp`에서 설정하고 `params_to_json`에서 보고하지만 이를 읽는 파서는 없으므로, 이 커밋에서 그것은 죽은 필드이고 스트리밍된 `deepseek-legacy` 응답은 도움말 텍스트가 문서화한 대로 두 필드 모두에 thoughts를 담으며, 이는 mlxcel이 이미 하던 일입니다.
-
-`--reasoning-budget-message`(`LLAMA_ARG_THINK_BUDGET_MESSAGE`)는 #1470 이후 주입됩니다. b10621은 강제 실행을 `message_tokens + end_tag_tokens`로 구성하고 그 전체 시퀀스를 FORCING 상태에서 토큰 단위로 강제하며(런타임 `reasoning_end`에서도 이 상태에 진입), 따라서 메시지는 예산 소진 경로와 force-end 경로 모두에 나타납니다. mlxcel도 일치합니다. 메시지는 모델의 어휘에 대해 한 번 토큰화되어 닫기 태그 바로 앞에 강제되며, 예산 내에서 스스로 블록을 닫는 모델은 영향을 받지 않습니다.
-
-네이티브 `--reasoning-alias-field <none|reasoning>` 정책은 그 배치 테이블과 직교합니다. 기본값은 내보낸 `reasoning_content`를 OpenRouter 스타일 클라이언트를 위해 동일한 `reasoning` 필드로 복제하는 것이며, `none`은 b10621 호환 필드만 유지합니다.
-
-thoughts를 보존하는 content 형태는 raw 텍스트가 아니라 파서 자체의 content에 추출된 reasoning을 더해 재구성됩니다. 재구성이 두 가지 점에서 중요합니다. raw 텍스트에는 파서가 제거한 tool-call 구문이 여전히 들어 있어 같은 호출이 `content`와 `tool_calls`로 두 번 보고될 수 있고, raw 텍스트 정리 단계는 `none`이 유지하려는 Gemma 4의 `<|channel>` 구분자를 제거하기 때문입니다.
-
-`--skip-chat-parsing`은 upstream과 마찬가지로 이 모든 것에 우선합니다. 모델이 내보낸 모든 것이 reasoning과 tool-call 구문을 포함하여 그대로 `content`로 가며, `reasoning_content`나 `tool_calls`는 생성되지 않습니다. tool-call 파싱은 이와 함께 모든 경로에서 꺼지므로, 호출이 두 번 보고되는 일은 없습니다.
-
-### Template kwarg인 플래그
-
-`--reasoning`, `--reasoning-effort`, `--reasoning-preserve`는 upstream에서 응답 형성이 아닙니다. b10621은 세 개 모두를 `--chat-template-kwargs`가 채우는 것과 같은 맵인 `params.default_template_kwargs`에 `enable_thinking`, `reasoning_effort`, `preserve_reasoning`을 써서 구현합니다. mlxcel도 같은 키를 같은 곳에 쓰므로, 병합 규칙, 요청별 override, 템플릿이 키를 무시할 자유가 재구현되는 대신 upstream과 공유됩니다.
-
-clap은 명령줄 순서를 제공하지 않으므로, `--chat-template-kwargs`가 그 키 중 하나도 명시하면 여기서는 전용 플래그가 이기고 충돌이 로그에 기록됩니다. b10621은 마지막에 실행된 핸들러를 적용합니다. upstream 자체도 kwargs를 통한 `enable_thinking` 설정을 `--reasoning` 사용을 권장하며 deprecated 처리하므로, 플래그가 마지막에 왔을 때는 둘이 일치합니다. upstream에서 하나의 필드에 쓰는 `--chat-template`과 `--chat-template-file`도 같은 형태이며, 여기서는 인라인 템플릿이 이깁니다.
-
-### `--chat-template`은 이름이 아니라 템플릿 텍스트를 받습니다
-
-b10621은 Jinja 템플릿 텍스트 또는 54개의 내장 식별자(`chatml`, `llama3`, `deepseek3`, ...) 중 하나를 받습니다. mlxcel에는 내장 템플릿 라이브러리가 없습니다. MLX 체크포인트는 자체 템플릿을 `tokenizer_config.json`에 담고 있으며, 이것이 mlxcel이 기본으로 렌더링하는 것입니다. 이름만 있는 내장 이름은 그 자체가 템플릿이 되어 모든 프롬프트가 그 리터럴 문자열로 렌더링될 것이므로, 이름 집합은 인식되어 모델이 해석되기 전에 거부됩니다.
-
-### `tools`는 요청이 도구를 담고 있을 때만 정의됩니다 (#1597)
-
-b10621은 템플릿 컨텍스트의 `tools` 항목을 `common_chat_tools_to_json_oaicompat`로 구성하는데, 이는 빈 도구 배열에 대해 null JSON 값으로 응답하고, minja의 `chat-template.hpp`는 그 값이 null이 아닐 때만 키를 설정합니다. 따라서 `tools`가 없거나 `"tools": []`인 요청은 `tools`가 아예 없는 컨텍스트에 대해 렌더링됩니다. mlxcel은 #1597 이후 같은 일을 합니다. 요청이 적어도 하나의 도구를 담고 있지 않으면 키가 없으며, `tool_choice: "none"`은 항상 그래 왔듯이 도구 없음으로 템플릿에 도달합니다.
-
-정의 여부는 겉치레가 아니라 실제로 중요합니다. 공개된 템플릿은 도구 호출 서문(preamble)을 세 가지 형태로 게이트하는데, 그중 둘은 정의된 빈 리스트로 충족됩니다. DeepSeek V3 파생 모델은 `tools is defined and tools is not none`을 테스트하고, Llama 3.1 / 3.2 / 3.3 / 4는 `tools`가 정의되지 않았을 때만 `none`을 기본값으로 둔 뒤 `tools is not none`을 테스트합니다. 이 중 어느 패밀리든 `tools = []`로 렌더링하면(#1597 이전에 mlxcel이 전달하던 것) 모든 일반 chat 요청에서 빈 함수 목록과 함께 전체 서문이 출력되었습니다. Llama 3.2에서는 `Environment: ipython`과 "Given the following functions" 블록이, Youtu-LLM에서는 빈 `<|begin_of_tool_description|>` 블록이 나왔습니다. transformers는 `tools=None`을 전달하며, 이는 mlxcel이 대응하는 모든 가드 형태에서 undefined와 동일하게 렌더링되므로, mlx-lm 오라클과 llama-server가 서로 일치했고 이제 mlxcel과도 일치합니다.
-
-`none`이 아니라 undefined인 것은 의도적입니다. Nemotron과 MiMo가 사용하는 세 번째 가드 형태는 undefined `tools`를 스스로 `[]`로 기본값 처리한 뒤 `tools is iterable and tools | length > 0`을 테스트하는데, minijinja의 `iterable` 테스트는 `none`에 대해 성공하지만 `none`에 `| length`는 오류가 나므로, `none`은 그 렌더링을 중단시키고 프롬프트를 일반 chat fallback으로 조용히 저하시킵니다.
-
-이슈 #1597을 넘어 업그레이드하면 영향을 받는 모델의 렌더링된 프롬프트가 바뀌므로, 모델별 첫 요청은 prompt cache에서 한 번 미스하고 이를 다시 구성합니다. 이는 호환성 파괴가 아니라 단일 cold miss입니다. 키 digest 버전은 바뀌지 않으며 마이그레이션도 필요 없습니다.
-
-### 남은 것
-
-이 shard에는 더 이상 `deferred` 항목이 없습니다. `--reasoning-budget-message`는 #1470의 주입으로 `supported`가 되었고, `--reasoning-format`은 스트리밍 구분자가 구현된 뒤 `auto` 해석만으로 `by_design`이 되었습니다. 이 shard에서 `echo`를 제외한 모든 네이티브 필드는 `not_applicable`입니다. mlxcel의 `POST /completion`은 구성하거나 파싱할 chat template과 chat 파싱이 없는 raw-prompt 엔드포인트이기 때문입니다.
-
-### Assistant prefill과 `echo` (#1470)
-
-`--prefill-assistant`가 제공되며, upstream과 마찬가지로 기본적으로 켜져 있습니다. chat 요청의 마지막 메시지가 assistant 메시지이면 그것은 모델이 응답하는 턴이 아니라 모델이 이어 쓰는 prefix입니다. `--no-prefill-assistant`는 #1470 이전 동작을 복원합니다. 두 개 이상의 후행 assistant 메시지는 b10621 자체의 문구로 거부됩니다.
-
-mlxcel은 패밀리별 C++이 아니라 chat template을 통해 이어진 프롬프트에 도달합니다. b10621은 `messages[:-1]`을 렌더링한 뒤 손으로 쓴 패밀리별 generation prompt와 이어지는 텍스트를 덧붙이며, mlxcel은 `add_generation_prompt = true`로 `messages[:-1]`을 렌더링하는데 이는 그 패밀리 자체의 assistant 턴 opener이고, 닫는 태그 없이 이어지는 텍스트를 덧붙입니다. 결과는 upstream이 핸들러를 가진 패밀리에 대해서는 동일한 프롬프트이고, mlxcel이 로드하는 다른 모든 패밀리에 대해서도 올바른 프롬프트입니다.
-
-렌더링은 prompt-cache 키의 차원입니다. 이어진 프롬프트는 답변된 프롬프트의 엄격한 prefix이므로, 이 차원이 없으면 한 렌더링에서 기록된 경계 스냅샷을 다른 렌더링이 가져다 쓸 수 있고, 이는 같은 문자열의 다른 지점에서 이어지게 됩니다. 같은 이유로 prefill 아래에서는 경계 렌더링 자체가 완전히 건너뛰어집니다.
-
-`echo`는 prefill이 응답의 앞에 오는지를 선택합니다. 이는 `POST /completion`에서는 효과가 없으며 upstream의 동작도 마찬가지입니다. 입력 토큰을 echo한다는 도움말 텍스트와 달리 이 필드의 유일한 소비자는 *이어쓰기의* prefill이 다시 내보내지지 않도록 chat 파서를 준비시키는 것이며, raw-prompt 요청은 결코 이어쓰기가 아닙니다. chat 라우트에서 `echo: true`는 prefill된 assistant 텍스트를 `message.content`의 맨 앞과 스트리밍된 delta의 맨 앞에 둡니다.
-
-한 가지 경우는 제공되지 않고 거부됩니다. `reasoning`만 있고 `content`가 없는 후행 assistant 메시지이며, chat template이 열린 thinking 블록을 준비시키지 않은 경우입니다. 열기 마커는 템플릿의 것이며, 이를 재구성하려면 요청 경로에 패밀리별 마커 테이블을 하드코딩해야 합니다.
-
-## 멀티모달 projector와 요청 미디어
-
-b10621의 멀티모달 지원은 별도의 아티팩트입니다. `libmtmd`는 언어 모델 옆에서 projector 파일을 로드하고(`--mmproj`, `--mmproj-url`), 장치에 배치하며(`--mmproj-device`, `--mmproj-offload`), 아예 로드하지 않도록 지시할 수도 있습니다(`--no-mmproj`). mlxcel은 통합된 MLX VLM 체크포인트를 로드합니다. vision tower, audio tower, 멀티모달 projector는 언어 모델과 같은 SafeTensors 스냅샷 안의 텐서이며 같은 `-m` 참조로 해석됩니다. 이 차이가 `multimodal-and-audio.json` shard(#1451) 전체를 결정합니다.
-
-| 플래그 | 환경 변수 | 상태 | 동작 |
-|---|---|---|---|
-| `--mmproj` / `-mm` | `LLAMA_ARG_MMPROJ` | `not_applicable` | 시작 시 거부됩니다. MLX 체크포인트에 붙일 별도의 GGUF projector가 없으며, 진단은 `-m`이 가리켜야 할 MLX VLM 체크포인트를 명시합니다. |
-| `--mmproj-url` / `-mmu` | `LLAMA_ARG_MMPROJ_URL` | `not_applicable` | 같은 이유로 거부됩니다. |
-| `--mmproj-auto` / `--no-mmproj` / `--no-mmproj-auto` | `LLAMA_ARG_MMPROJ_AUTO` | `aliased` | 적용됩니다. 기본값은 미디어를 허용하며, `--no-mmproj`는 모든 image, audio, video 파트를 b10621 자체의 `<kind> input is not supported` 절로 거부합니다. |
-| `--mmproj-offload` / `--no-mmproj-offload` | `LLAMA_ARG_MMPROJ_OFFLOAD` | `not_applicable` | 기본값은 효과가 없으며, mlxcel에는 호스트 projector 경로가 없으므로 `--no-mmproj-offload`는 거부됩니다. |
-| `--mmproj-device` / `-mmdev` | `MTMD_BACKEND_DEVICE` | `not_applicable` | 거부되며, 체크포인트 전체에 대한 MLX 장치를 선택하는 `MLXCEL_DEVICE`를 안내합니다. |
-| `--image-min-tokens` | `LLAMA_ARG_IMAGE_MIN_TOKENS` | `aliased` | 동적 해상도 전처리 경로에서 적용됩니다. 아래를 참고하십시오. |
-| `--image-max-tokens` | `LLAMA_ARG_IMAGE_MAX_TOKENS` | `aliased` | 같은 경로에서 적용됩니다. |
-| `--mtmd-batch-max-tokens` | `LLAMA_ARG_MTMD_BATCH_MAX_TOKENS` | `not_applicable` | b10621 자체의 기본값 1024에서는 효과가 없으며, 다른 값은 거부됩니다. mlxcel은 각 이미지를 한 번의 vision-tower forward로 인코딩하며 제한할 image-token 배치가 없기 때문입니다. |
-| `--media-path` | - | `aliased` | 한정된 루트와 함께 구현됩니다. 아래를 참고하십시오. |
-
-`--media-path`를 제외한 모든 것은 `--help`에서 숨겨져 있습니다. projector 계열을 렌더링하면 GGUF `mmproj` 파일을 MLX 체크포인트에 붙일 수 있다고 암시하게 되는데, 이는 분류가 부정하는 바로 그것입니다. `--media-path`는 실제 mlxcel 기능이며 `Multimodal Options` 제목 아래에 표시됩니다.
-
-### 체크포인트가 소비할 수 없는 미디어 파트는 거부됩니다
-
-텍스트 전용 체크포인트는 이전에 HTTP 경계에서 `image_url` content 블록을 받아들이고 `prepare_request_vlm_embeddings` 안에서 버린 뒤 프롬프트만으로 답했습니다. 응답은 유창했고, 호출자는 무시된 사진과 설명된 사진을 구별할 수 없었습니다. chat-completions, responses, Anthropic-messages 라우트는 이제 참조된 URL이나 파일을 읽기 전에, b10621 자체의 선두 절과 HTTP 501의 `not_supported_error` 타입으로 요청을 거부합니다.
-
-```text
-image input is not supported - hint: the loaded checkpoint 'qwen3-0.6b-4bit' has no image tower; ...
-```
-
-capability는 이미 video 지원을 결정하던 것과 같은 `config.json`만 보는 model-type probe에서 오므로, 새로 포팅된 VLM 패밀리는 갱신할 목록 없이 허용됩니다. 워커는 거부의 자체 사본을 유지하므로, 라우트 게이트를 거치지 않고 도달하는 경로는 텍스트로 저하되는 대신 실패합니다. upstream 문장의 hint 절은 의도적으로 교체되었습니다. 통합 체크포인트에 `mmproj`를 제공하라고 운영자에게 알려 주는 것은 의미가 없습니다. 다섯 개의 프롬프트 검사 라우트가 같은 게이트를 실행하는 데에는 또 다른 이유가 있습니다. 이 라우트들은 생성 라우트가 렌더링하는 것과 같은 호출을 통해 렌더링하고, 그 호출은 모든 미디어 파트를 해석하며, 그 후 워커에는 전혀 도달하지 않으므로, 게이트가 없으면 텍스트 전용 체크포인트가 클라이언트가 지정한 URL을 가져와서 토큰 수 외에는 아무것도 응답하지 않게 됩니다.
-
-게이트의 한 갈래는 capability 공백이 아니며 그런 형태를 취하지 않습니다. video만 소비하고 audio만 소비하지만 둘의 쌍에 대한 병합 경로가 없는 체크포인트는, `video_url`과 `input_audio`를 함께 담은 요청을 `Combined video and audio inputs are not supported`로 거부하며, 이는 어느 한쪽 파트를 버려도 체크포인트가 서빙할 수 있는 요청이 남기 때문에 501이 아니라 HTTP 400의 `invalid_request_error` 타입입니다(이슈 #1349). `gemma4_unified`는 둘 다 병합하므로 허용됩니다. modality별 검사가 먼저 실행되므로, 텍스트 전용 체크포인트에 그 쌍을 보내면 여전히 어느 modality의 tower가 없는지 알려 줍니다.
-
-### 네이티브 video 경로가 없는 체크포인트의 `video_url`
-
-`video_url` content 블록은 이전에 temporal processor를 가진 소수의 패밀리를 제외한 모든 패밀리에서 거부되었는데, 거부하던 패밀리들도 각각 정지 이미지 시퀀스를 충분히 읽을 수 있었습니다. 이슈 #1322 이후 vision tower가 있고 네이티브 video 경로가 없는 체크포인트는 대신 이 블록을 서빙합니다. 클립은 요청의 `video_url.fps`(없으면 `--video-fps`, 기본값 2.0)로 디코딩되고, 첫 프레임과 마지막 프레임은 항상 유지하면서 최대 `--video-max-frames` 프레임으로 균등하게 서브샘플링되며, 시간순으로 그만큼의 `image_url` 파트로 다시 쓰이고, 그 앞에 `Here is a video as a sequence of N frames in chronological order.`라는 텍스트 파트가 붙습니다. 본문의 각 클립은 자신의 프레임 수를 명시하는 자신의 텍스트 파트를 가지며, 이는 `mlxcel generate`가 여러 `--video` 플래그를 렌더링하는 방식이기도 합니다. 다시 쓰기는 capability 게이트 이후 템플릿이 렌더링되기 전에 요청에서 일어나므로, 프롬프트는 프레임마다 하나의 이미지 placeholder를 담고, 이후의 모든 것(soft-token 예산, 요청별 이미지 제한, prompt-cache 멀티모달 digest)은 프레임을 이제 그것이 된 이미지로 취급합니다.
-
-```text
-model gemma-3-4b-it-4bit has no native video path; sending 8 of 8 sampled frames from /srv/clips/demo.mp4 as ordered images
-```
-
-그 `info` 줄이 대체가 일어났다는 유일한 신호입니다. `GET /props`는 어느 쪽이든 블록이 받아들여지므로 어느 쪽이든 `video: true`를 보고합니다. 네이티브 경로를 가진 패밀리(Gemma 4 VL, Gemma 4 Unified, Inkling, Kimi-VL / Kimi-VL 2.5, Qwen-VL 세대)는 이로부터 영향을 받지 않으며 이를 로그에 기록하지 않습니다. Muse Glimmer는 의도적으로 제외됩니다. CLI는 그 패밀리에 대해 이름으로 `--video`를 거부하며, HTTP 경계에서만 클립을 허용하면 하나의 체크포인트에 대해 두 전면이 서로 어긋나게 됩니다. vision tower가 없는 체크포인트는 그대로 501을 유지합니다.
-
-알아 둘 만한 두 가지 제한이 있습니다. 프레임은 일반적인 요청별 이미지 예산을 소모하므로, `--max-images`(둘 다 기본값 16)를 넘는 `--video-max-frames`는 단순한 이미지 개수 오류가 아니라 프레임 수, 호출자 자신의 이미지 수, 제한을 명시하는 메시지와 함께 거부됩니다. 그리고 이 대체는 시간 정보를 전달하지 않습니다. 모델은 프레임 타임스탬프나 움직임이 아니라 순서가 있는 그림들과 그것이 하나의 클립이라는 문장을 받으므로, 응답은 프레임에 걸쳐 무엇이 바뀌는지 설명할 수는 있지만 속도나 길이에 대해서는 질문할 수 없습니다. 로컬 `file://` 경로는 여전히 `MLXCEL_VIDEO_DIR_ALLOWLIST`가 지정한 디렉터리 안에 있어야 하며, 이는 fail-closed이고 두 네이티브 video 패밀리와 이 fallback 모두에 대해 시작 시 한 번 해석됩니다. 변수를 바꾸거나 나열된 디렉터리를 만든 뒤에는 서버를 재시작하십시오. 요청 처리는 이를 다시 읽지 않습니다. 연결을 끊은 클라이언트는 다음 클립이 해석되기 전과 대기 중인 decode가 시작되기 전에 대체를 중단시키며, 이미 디코딩 중인 클립은 끝까지 실행됩니다.
-
-### `--image-min-tokens` / `--image-max-tokens`는 실제 픽셀 경계를 이동시킵니다
-
-upstream은 `clip_hparams::set_limit_image_tokens`에서 토큰 예산을 픽셀 경계로 변환합니다.
-
-```text
-patch_area       = patch_size^2 * n_merge^2
-image_min_pixels = image_min_tokens * patch_area
-image_max_pixels = image_max_tokens * patch_area
-```
-
-mlxcel의 동적 해상도 processor는 같은 두 경계를 `min_pixels` / `max_pixels`로 표현하므로, 변환은 항등입니다. 같은 patch 면적에 대한 같은 곱셈이 `src/vision/image_token_overrides.rs`에서 적용되고 `vision::processors::qwen2_vl::smart_resize`에서 소비됩니다. upstream의 값 범위도 그대로 이어집니다. 양수 값만 사용자 지정 경계이고, `0`과 음수는 "모델에서 읽는다"는 뜻이며, 최댓값이 최솟값보다 작으면 upstream이 `image_max_pixels < image_min_pixels`에서 예외를 던지는 것과 정확히 같이 거부됩니다.
-
-고정된 geometry로 리사이즈하는 전처리기를 가진 체크포인트에는 이동시킬 경계가 없습니다. 이를 준수하는 아키텍처의 손으로 쓴 목록 대신, 경계를 소비하는 모든 processor가 적용 횟수 카운터를 증가시키고, 예산이 요청되었는데 체크포인트 로드 후에도 카운터가 여전히 0이면 모델 워커는 체크포인트와 플래그를 명시하며 서빙을 거부합니다. 이는 [`rope_overrides`](../src/models/rope_overrides.rs)가 `--rope-freq-base`에 이미 사용하는 메커니즘이며 같은 이유입니다. 패밀리가 포팅되는 순간 목록은 낡아 버리기 때문입니다.
-
-### `--media-path`는 로컬 파일을 하나의 루트로 한정합니다
-
-`--media-path`가 없으면 요청의 `file://` 미디어 URL은 b10621 자체의 문장 `file:// URLs are not allowed unless --media-path is specified`로 거부됩니다. 있으면 요청의 경로가 설정된 디렉터리에 대해 해석되며 그 밖으로 나갈 수 없습니다.
-
-**해석 규칙, 한 번만 서술합니다.** 요청의 경로는 b10621이 하는 그대로 먼저 루트에 대해 상대적으로 해석되고, 절대 경로가 루트 안의 파일을 가리키면 fallback으로 받아들여집니다. `--media-path /srv/media`에서 상대 형태 `file://cat.png`와 절대 형태 `file:///srv/media/cat.png`는 모두 `/srv/media/cat.png`를 읽으며, 이름만 있는 `cat.png`도 마찬가지입니다. `file:///etc/passwd`는 탈출로 거부됩니다. b10621의 이름 검증에 있는 255바이트 제한은 전체 경로에 적용되고 두 형태 중 어느 것을 시도하기 전에 실행되므로, 절대 경로가 255바이트를 넘길 만큼 깊은 파일은 루트에 상대적으로 지정해야 합니다. 이는 upstream의 규칙이며 그대로 유지됩니다. `mlxcel-server --help`는 `--media-path` 항목에서 같은 규칙을 설명합니다.
-
-mlxcel은 upstream의 규칙을 재현한 다음, 순수한 문자열 검사로는 할 수 없는 것을 더합니다.
-
-- **join이 아니라 연결(concatenation).** b10621은 `media_path + file_path`를 평가하므로 `file:///etc/passwd`는 루트를 대체하는 대신 루트 아래에 놓입니다. mlxcel은 연결 전에 선행 구분자를 제거하는데, 절대 컴포넌트를 가진 Rust `Path::join`은 루트를 버리고 호환성 기능을 임의 파일 읽기로 바꿔 버리기 때문입니다.
-- **루트 안의 절대 경로는 fallback으로.** 연결만으로는 다른 모든 도구가 받아들이는 절대 형태가 결코 해석될 수 없습니다. `file:///srv/media/cat.png`는 `<root>/srv/media/cat.png`에서 탐색되어 없는 것으로 보고되지만, 그것이 가리키는 파일은 존재하고 읽을 수 있습니다. 연결된 후보가 해석되지 않고 참조 자체가 절대 경로이면, mlxcel은 참조를 정규화(canonicalize)하여 같은 containment 검사를 거치게 하므로, 루트 안의 파일은 읽히고 루트 밖의 파일은 탈출로 거부됩니다(이슈 #1612). fallback은 참조가 절대 경로일 때로 엄격히 한정되므로 상대 참조는 서버의 작업 디렉터리에 대해 정규화되지 않으며, 연결이 우선으로 유지되므로 이전에 해석되던 것은 지금 다르게 해석되지 않습니다.
-- **b10621의 전체 이름 검증.** `fs_validate_filename(path, allow_subdirs=true)`: 어디에도 `..`이 없고, 제어 문자가 없으며, `: * ? " < > |`가 없고, 선행 또는 후행 공백이 없으며, 후행 `.`이 없고, 최대 255바이트이며, 유니코드 구분자 유사 문자(`U+FF0E`, `U+2215`, `U+2216`, `U+FFFD`, `U+FEFF`)가 거부됩니다.
-- **퍼센트 디코딩 없음, 그리고 퍼센트 인코딩된 traversal 없음.** upstream은 결코 디코딩하지 않으므로 거기서 `%2e%2e`는 리터럴 파일 이름입니다. mlxcel도 디코딩하지 않으며, 추가로 `.`, `/`, `\`, NUL에 대한 퍼센트 이스케이프를 담은 경로를 거부하므로, 이 속성은 없는 호출로부터 물려받는 것이 아니라 검사됩니다.
-- **정규화하고 한정합니다.** 결합된 경로는 정규화되어야 하며 정규 루트 안에 머물러야 합니다. 대상이 루트를 벗어나는 심볼릭 링크는 거부되고, 안에 머무는 링크는 계속 해석되므로 링크로 미디어 루트를 구성하는 것은 계속 동작합니다.
-- **open에서의 `O_NOFOLLOW`.** resolve에서 open까지의 창은 마지막 컴포넌트를 심볼릭 링크로 바꿔치기해서 이길 수 없으며, open은 `ELOOP`로 실패합니다. 이는 video 리졸버가 이미 사용하던 것과 같은 primitive입니다.
-- **일반 파일만.** 루트 아래의 디렉터리, FIFO, 소켓, 장치 노드는 거부되므로, FIFO가 writer를 기다리며 요청 태스크를 막을 수 없습니다.
-
-마지막 세 개는 경로가 가리키는 것을 무엇이든 읽는 순수 문자열 테스트인 b10621의 검사보다 엄격하며, 항목에 divergence로 기록됩니다. 이름만 있는 상대 경로는 `--media-path`를 설정한 운영자가 자연스럽게 쓰는 것이므로 같은 루트가 관장합니다.
-
-절대 경로 fallback도 divergence이며, 클라이언트가 관찰할 수 있는 두 가지 모두에 대해 그렇게 기록됩니다. upstream은 루트 안이든 밖이든 모든 절대 표기에 대해 `file does not exist or cannot be opened`로 보고하지만, mlxcel은 안쪽의 것을 읽고 바깥쪽의 것에는 `file path escapes the --media-path root`로 응답합니다. 그리고 경로가 정말로 해석되지 않는 경우, mlxcel의 문장은 경로가 해석되는 디렉터리로 `--media-path`를 명시하는 후행 절을 담는데, upstream은 그렇지 않습니다. 실제로 탐색한 후보는 `debug` 수준에서 서버 로그에 기록되고 응답에는 결코 들어가지 않는데, 설정된 루트를 그대로 드러내기 때문입니다.
-
-### 원격 미디어 URL에는 네트워크 주소 정책이 있습니다
-
-요청은 `http(s)` 이미지, 오디오, 비디오 URL을 지정할 수 있고 서버가 이를 가져오므로, 서버는 인증되지 않은 호출자가 조종하는 fetch 프록시가 됩니다. b10621은 `common_remote_get_content`로 가져오며 주소 정책을 전혀 적용하지 않습니다. mlxcel은 세 곳에서 공개되지 않은 주소를 거부하며, 이는 divergence로 기록됩니다.
-
-1. **요청 전.** 스킴은 `http` 또는 `https`여야 하고, URL은 자격 증명을 담을 수 없으며, IP 리터럴 호스트는 직접 검사되고, 이름으로 쓴 호스트는 해석되어 결과로 나온 모든 주소가 검사됩니다.
-2. **모든 리디렉션에서.** 리디렉션 정책은 다음 URL을 따라가기 전에 확인하므로, 공개 origin이 fetch를 `http://169.254.169.254/`로 튕겨 보낼 수 없습니다. 체인은 다섯 홉으로 제한됩니다.
-3. **연결 후.** 요청이 실제로 도달한 peer 주소는 본문 바이트를 하나라도 읽기 전에 다시 검사되며, 이는 앞의 두 단계가 열어 두는 DNS-rebinding 창을 닫습니다.
-
-거부 대상: loopback, unspecified 주소, multicast와 broadcast, IPv4 사설 및 link-local 범위(클라우드 metadata 서비스 `169.254.169.254`를 닿지 못하게 하는 것), carrier-grade NAT, IETF 프로토콜 할당, 벤치마킹, 문서화용 prefix, `240.0.0.0/4`, IPv6 unique-local, link-local, 문서화용, 그리고 거부된 IPv4 주소의 IPv4-mapped 또는 IPv4-compatible IPv6 표기입니다. 내부 오브젝트 스토어에서 미디어를 실제로 제공하는 배포는 `MLXCEL_ALLOW_PRIVATE_MEDIA_URLS=1`을 설정하며, 이는 모든 주소 검사를 통과로 바꿉니다. 사설 네트워크에 도달하는 fetch 프록시는 운영자의 명시적 결정이어야 하므로 기본값은 꺼져 있습니다.
-
-기존의 바이트 및 decode 제한은 변경되지 않았으며 여전히 적용됩니다. `--max-image-payload-size`, `--max-images`, 디코더의 너비, 높이, 할당 상한, 오디오의 클립별 및 요청별 상한, 10초 fetch 타임아웃입니다. JSON 요청의 base64 `data:` 이미지에 대해서는, HTTP 본문 extractor의 크기가 Axum의 2 MiB 기본값이 아니라 설정된 이미지 예산에서 정해집니다. `--max-image-payload-size * --max-images`에 base64의 4/3 엔벌로프와 작은 JSON/data-URL 오버헤드를 더해 확장한 값입니다. JSON 본문이 이 도출된 상한을 넘는 요청은 파싱 전에 OpenAI 형태의 `413` 오류 객체로 거부됩니다. 도출된 extractor 상한은 2 GiB로 clamp되므로, 극단적인 이미지 제한 설정이 버퍼링된 JSON 파싱을 무제한 할당 경로로 만들 수 없으며, 이미지별 디코딩은 본문이 파싱된 후에도 설정된 정확한 이미지 페이로드, 개수, 크기, 할당 제한을 여전히 적용합니다.
-
-## 오디오 전사(Audio transcription)
-
-`POST /v1/audio/transcriptions`와 그 `/audio/transcriptions` 별칭은 b10621이 마운트하는 유일한 오디오 라우트이며, 이 절이 다루는 유일한 라우트입니다. `/v1/audio/speech`와 `/v1/audio/translations`는 mlxcel 고유이며 [`audio-api.md`](audio-api.md)에 문서화되어 있습니다.
-
-### b10621에는 speech-to-text 모델이 없습니다
-
-upstream의 라우트는 `/v1/chat/completions` 위의 변환 레이어입니다. 로드된 chat 모델이 오디오를 받지 않으면 거부하고, multipart 폼을 ASR 프롬프트와 업로드된 클립을 담은 단일 user 메시지의 chat 요청으로 변환하며, completion을 transcript 이벤트로 렌더링합니다. 그 안에는 별도의 ASR 모델이 어디에도 없습니다.
-
-mlxcel의 라우트는 전용 Whisper 워커가 제공했으며, 그 워커는 `-m`이 Whisper 체크포인트를 가리킬 때만 채워지고 chat 워커는 로드되지 않은 상태로 남습니다. 따라서 두 형태는 상호 배타적인 서버 형태였으며, 이 트리에서 측정한 결과는 다음과 같습니다.
-
-| 명령줄 | `/v1/chat/completions` | `/v1/audio/transcriptions` (#1446 이전) |
-|---|---|---|
-| `mlxcel-server -m models/mlx/whisper-tiny` | 503, chat 모델 없음 | 전사함 |
-| `mlxcel-server -m models/mlx/gemma3n-e2b-4bit` | 응답함 | **501 `audio model kind not loaded: stt`** |
-
-두 번째 행은 b10621이 표현할 수 있는 유일한 형태이며, 동작하지 않던 형태였습니다. 로드된 모델을 통해 전사하는 `llama-server` 배포에는 multipart 필드 집합이 아무리 가깝게 일치해도 mlxcel 대응이 없었습니다. 라우트 이름이 겹친다고 호환성이 있는 것은 아니었습니다. 이것이 #1446이 요청한 설계 결정이며, 선호가 아니라 측정으로 정리되었습니다.
-
-**공유 라우트는 이제 upstream과 정확히 같이 로드된 chat 모델을 통해 디스패치합니다.** 클립을 `gemma3n-e2b-4bit`에 게시하면 그 transcript가 반환됩니다. 오디오를 받을 수 있는 chat 모델이 없을 때는 여전히 Whisper 워커가 구현이며, 이는 b10621이 전혀 표현할 수 없는 Whisper-server 형태이므로 upstream이 도달할 수 있는 어떤 구성에서도 divergence를 추가하지 않습니다. 그 자체의 제한은 아래에 나열되어 있습니다.
-
-### 클라이언트가 보는 것
-
-응답은 OpenAI의 고전적인 `{"text": ...}` 객체가 **아닙니다**. b10621은 transcript-event 형태를 내보내며, 이제 mlxcel도 그렇습니다.
-
-```json
-{"type":"transcript.text.done","text":"The quick brown fox jumps over the lazy dog.","usage":{"type":"tokens","input_tokens":206,"output_tokens":10,"total_tokens":216,"input_tokens_details":{"cached_tokens":0}}}
-```
-
-**`/v1/audio/transcriptions`에서 `{"text": ...}`를 파싱하던 클라이언트는 대신 그 객체에서 `text`를 읽거나, 변경되지 않은 `/v1/audio/translations`로 옮겨야 합니다.** 스트리밍 형태는 `data: {"type":"transcript.text.delta","delta":"..."}` 프레임들이고 그 뒤에 `done` 프레임과 `data: [DONE]`이 옵니다.
-
-upstream과 일치하는 항목이며, 각각 스키마의 산문이 아니라 고정된 소스에 대해 확인했습니다.
-
-- capability 거부는 501 `not_supported_error`로 `The current model does not support audio input.`이며, 모든 필드 검사보다 앞서므로 두 가지 면에서 잘못된 요청은 501을 받습니다.
-- `file` 파트가 없는 폼은 `No input file found for transcription`(400)입니다.
-- `response_format`의 기본값은 `json`이고 그 외는 `Only 'json' response_format is supported for transcription`(400)입니다. mlxcel 고유의 `text`와 `verbose_json`은 b10621이 마운트하지 않는 `/v1/audio/translations`로 옮겨졌으므로, 공유 라우트의 기본값은 upstream의 것입니다.
-- 프롬프트는 upstream의 ASR preset `Transcribe audio to text`이며 `prompt` 필드로 덮어쓸 수 있고, 비어 있지 않은 `language`는 디코더 파라미터로 전달되는 대신 upstream 자체의 `" (language: xx)"` 형태로 덧붙여집니다.
-- `temperature`와 `max_tokens`는 문자열로 도착하여 타입이 변환되며, 파싱되지 않는 값에는 400이 반환됩니다. upstream의 `std::stof` / `std::stoul`이 `std::invalid_argument`를 던지고 그 wrapper가 이를 400으로 매핑하기 때문입니다.
-- `stream`은 폼이 문자열을 담으므로 boolean 어휘가 아니라 리터럴 `"true"`와 비교됩니다.
-- multipart 중복 규칙은 upstream의 것입니다. 반복된 텍스트 필드는 배열로 합쳐지고, upstream의 `json_value`가 이를 타입으로 거부하여 기본값으로 대체하므로, 중복된 `prompt`는 무시되고 중복된 `response_format`은 `json`으로 fallback하며, 반복된 `file` 파트는 마지막 것을 유지합니다.
-- 알 수 없는 필드는 전달되고 무시됩니다.
-
-### 컨테이너
-
-받아들여지는 요청 경계 집합은 upstream의 것인 **wav, mp3, flac**입니다. 컨테이너는 클라이언트가 보내는 `format` 문자열이 아니라 클립 자체의 매직 바이트로 식별되며, 집합 밖의 컨테이너는 내용을 근거로 거부됩니다. RIFF/WAVE는 mlxcel의 in-tree 리더를 유지하므로 모든 WAV 클립은 이전과 바이트 단위로 같게 디코딩되고, mp3와 flac은 [`symphonia`](https://github.com/pdeljanov/Symphonia)(순수 Rust, MPL-2.0)를 거치며 이 두 코덱에 대해서만 활성화됩니다.
-
-압축 디코더는 현재 Phi-4 Multimodal과 Gemma 3n이 사용하는 공유 waveform 전처리기를 통해 연결되어 있습니다. Gemma 4, Gemma 4 Unified, Qwen3-Omni, Nemotron-H Nano Omni는 여전히 패밀리 로컬 서버 준비 단계에서 WAV 리더를 호출하므로, mp3 또는 flac 요청은 라우트 검증은 통과하지만 해당 체크포인트 중 하나에 디스패치될 때 실패합니다. 이는 b10621의 균일한 mtmd 디코더와 비교했을 때 남아 있는 모델 백엔드의 공백입니다. 아래의 전용 Whisper 확장도 WAV 전용입니다.
-
-### 제한
-
-모든 경계는 디코더가 클립을 보기 전에 적용됩니다. 최대 32개의 multipart 파트, 파트당 25 MiB(라우트의 본문 제한과 일치), 그리고 디코딩이 아니라 컨테이너 헤더에서 읽은 geometry인 최대 192 kHz, 8 채널, 600초입니다. 파일이 담고 있는 것보다 더 많은 오디오를 선언하는 `data` 청크는 실제로 존재하는 양으로 clamp되므로, 증폭 헤더는 헤더 파싱 비용만 듭니다. 압축 컨테이너는 샘플로 확장되는 크기보다 자릿수가 작은 헤더에 길이를 명시하므로, 클립별 프레임 예산은 디코더가 실제로 생성하는 것에 대해 다시 검사됩니다. 헤더가 길이를 과소 표기한 파일은 무한히 커지는 대신 상한에서 멈춥니다. FLAC 업로드는 추가로, 디코더가 필드를 읽기 전에 metadata-block 체인을 순회합니다. 진짜 FLAC 헤더와 랜덤 본문을 담은 12 MiB 파일이 probe로 하여금 약 3.9 GiB의 상주 메모리를 할당하게 했기 때문이며, 이는 probe에 도달하지 않고 8 MiB만 증가한 같은 warm 서버에서의 동일 크기 대조군과 비교하여 측정되었습니다. 그 할당은 파일 내부의 필드에서 크기가 정해지므로, 이를 막을 유일한 곳은 디코더 앞입니다. 검사가 적용되면 같은 스무 개의 요청이 2 MiB 증가합니다. 형식이 잘못되었거나 잘린 파일은 구조적 문제를 명시하는 400이며 100분의 몇 초 안에 응답됩니다.
-
-### 스트리밍
-
-chat 모델 경로에서 `stream=true`는 디코딩된 토큰마다 하나의 `transcript.text.delta`를 내보낸 다음 `transcript.text.done` 프레임과 `data: [DONE]`을 내보내며, 이는 upstream의 단위이자 프레임 형태입니다. 스트리밍 응답은 완료된 생성을 다시 프레이밍하는 것이 아니라 자체 생성을 구동하므로, delta는 모델이 생성하는 대로 도착하며, 이를 이어 붙인 결과는 비스트리밍 응답이 `text`로 반환하는 것과 같은 문자열입니다.
-
-### Whisper-server 형태는 mlxcel 확장입니다
-
-`mlxcel-server -m models/mlx/whisper-tiny`는 전용 STT 워커를 로드하고 chat 모델은 로드하지 않으며, 이는 b10621이 전혀 표현할 수 없는 서버 형태입니다. b10621에는 speech-to-text 모델이 없고 그 전사 라우트는 chat 모델 위의 변환 레이어로만 존재합니다. 그 형태에서는 chat 모델 경로와 세 가지가 다르며, diverge할 upstream 동작이 없으므로 이는 b10621 divergence가 아니라 mlxcel 확장의 제한입니다.
-
-- `usage` 카운트는 0을 보고합니다. STT 워커는 완성된 문자열을 반환하며 토큰 집계가 없습니다.
-- `prompt`는 같은 이유로 아무것도 유도하지 않습니다.
-- 스트리밍 응답은 전체 transcript를 담은 단일 delta입니다. 분할할 토큰 스트림이 없기 때문입니다.
-- 워커는 WAV만 받습니다. mp3와 flac은 in-tree WAV 리더에 도달하기 전에 변환되지 않습니다.
-
-b10621이 표현할 수 있는 모든 것은 chat 모델 경로를 거치며, 거기서는 usage, 프롬프트 유도, 증분 스트리밍이 적용됩니다. 컨테이너 지원 범위는 위에서 설명한 대로 여전히 로드된 패밀리에 따라 달라집니다.
-
-## 재생성(Regeneration)
-
-```bash
-python3 scripts/compat/extract_b10621_manifest.py \
-    --llama-server /path/to/llama-b10621/llama-server \
-    --source-dir /path/to/llama.cpp-c1d0e7a \
-    --archive /path/to/llama-b10621-bin-macos-arm64.tar.gz
-```
-
-추출기는 공식 바이너리(옵션에 대해서는 `--help`가 기준)와 고정된 소스(라우트와 네이티브 필드에 대해서는 `server.cpp`, `server-http.cpp`, `server-schema.cpp`)를 소비합니다. `--archive`는 다운로드를 고정된 SHA-256에 대해 검증한 다음, `--llama-server` 바이너리가 그 검증된 아카이브의 멤버와 바이트 단위로 동일할 것을 요구하며, 둘 다 바이너리가 실행되기 전에 이루어집니다. 이 두 번째 절반이 중요한 이유는, 추출기가 자신의 디렉터리를 가리키는 `DYLD_LIBRARY_PATH` / `LD_LIBRARY_PATH`로 바이너리를 실행하기 때문입니다. tarball을 해시하면서 관련 없는 경로를 실행하는 것은 결코 사용되지 않는 파일에 대한 보증이 됩니다. 아카이브는 읽기 모드의 `tarfile`을 통해 비교되며 결코 압축 해제되지 않습니다. `--archive`를 생략하면 바이너리가 검증 없이 실행되며 추출기는 stderr에 경고합니다. 재생성은 결정적입니다. fact는 통째로 다시 쓰이고, 정책 필드(`state`, `issue`, `test`, `notes`, `divergence`, `rationale`, `mlxcel`)는 항목 id로 보존되어 그 정규 키 순서로 다시 내보내지며(이전 스키마가 쓴 적 없는 정책 키는 skeleton에서 채워짐), `pin.json`의 `shards[name].owners` 맵은 `mlxcel_baseline`과 정확히 같이 shard 이름으로 보존되고(새로운 shard는 빈 owner 집합으로 시작하며, CI가 그 안의 항목을 받아들이기 전에 사람이 필요함), 추출기를 두 번 실행해도 worktree는 깨끗하게 유지됩니다. upstream에서 새로 생긴 항목은 `_unclassified.json`에 놓이며, validator는 사람이 분류할 때까지 이를 거부하므로, pin을 더 새로운 nightly로 올리면 조용한 드리프트 대신 병합을 막는 검토 가능한 diff가 만들어집니다.
-
-## RoPE와 YaRN 런타임 override
-
-`--rope-scaling`, `--rope-scale`, `--rope-freq-base`, `--rope-freq-scale`은 b10621의 표기, 값 범위, `LLAMA_ARG_ROPE_*` 바인딩과 함께 두 서버 바이너리에서 받아들여지며, 회전을 실제로 바꿉니다. 이들은 모델이 구성되기 전, 즉 어떤 KV 캐시도 존재하기 전에 체크포인트의 `rope_scaling` 블록과 `rope_theta`를 다시 쓰며, 이는 upstream에서 `llama_model_load`가 이를 적용하는 위치와 일치합니다.
-
-| 플래그 | 환경 변수 | 효과 |
-|---|---|---|
-| `--rope-scaling {none,linear,yarn}` | `LLAMA_ARG_ROPE_SCALING_TYPE` | `none`은 체크포인트의 블록을 버리고 일반 `base^(2i/d)` 테이블로 회전합니다. `linear`는 위치를 `--rope-scale`로 나누며, 그 플래그가 없으면 체크포인트 자체의 factor로 나눕니다. `yarn`(#1472)은 `--rope-scale` / `--rope-freq-scale`의 factor와 `--yarn-*` 노브로 YaRN 테이블을 구성합니다. |
-| `--rope-scale N` | `LLAMA_ARG_ROPE_SCALE` | 컨텍스트를 N배로 확장합니다(`rope_freq_scale = 1/N`). |
-| `--rope-freq-scale N` | `LLAMA_ARG_ROPE_FREQ_SCALE` | 같은 설정의 역수 표기입니다. 서로 역수가 아닌 값으로 둘 다 전달하면 조용한 우선순위 선택이 아니라 시작 오류입니다. |
-| `--rope-freq-base N` | `LLAMA_ARG_ROPE_FREQ_BASE` | `rope_theta`를 대체합니다. Gemma 3에서는 global-attention 레이어에만 적용되며, sliding 레이어는 llama.cpp의 별도 `rope_freq_base_train_swa`인 `rope_local_base_freq`를 유지합니다. |
-
-한 가지 조합은 근사하는 대신 거부됩니다. banded 방식(`llama3`)을 선언한 체크포인트에서의 단독 `--rope-scale` 또는 `--rope-freq-scale`은 시작 오류입니다. llama.cpp는 자체 `rope_freq_scale`을 그 회전에 곱하는데 mlxcel의 banded 테이블에는 그런 승수가 없으며, 어느 한쪽 절반을 버리면 결과가 조용히 바뀌기 때문입니다. 어떤 회전을 원하는지 말하려면 방식을 명시하십시오(`--rope-scaling linear` 또는 `--rope-scaling none`). YaRN을 선언한 체크포인트에서는 같은 단독 scale이 합성됩니다. 회전의 factor를 대체하며, 이는 b10621이 YaRN 모델에 대해 `rope_freq_scale`을 쓰는 위치입니다.
-
-### YaRN (#1472)
-
-이슈 #1472 이후 공유 RoPE 경로는 실제 YaRN 주파수 테이블을 구성합니다(`src/models/rope_utils.rs`의 `RopeScalingKind`의 `Yarn` arm). 이는 in-tree DeepSeek/upstream `YarnRoPE` 수학을 ggml의 extrapolation mix로 일반화하여 이식하고, 회전 전에 Q와 K에 적용되는 attention-magnitude 승수를 더한 것입니다. 자체 `rope_scaling` 블록이 `yarn`을 선언하는 공유 경로의 체크포인트는 이제 이것으로 회전하며(이전에는 경고하고 스케일 없이 실행), `--rope-scaling yarn`은 이를 강제하고, factor는 `--rope-scale` / `--rope-freq-scale`에서 오며(기본값: 체크포인트 자체의 것, 없으면 1.0) 이를 따릅니다.
-
-다섯 개의 `--yarn-*` 플래그는 강제되었든 체크포인트가 선언했든 적용 중인 YaRN 회전을 조정하며, 다른 모든 회전에 대해서는 효과가 없는데, b10621에서도 마찬가지로 `llama_context`가 `LLAMA_ROPE_SCALING_TYPE_YARN`에서만 이를 읽기 때문입니다. sentinel(`-1.0`, 그리고 `--yarn-orig-ctx`의 경우 `0`)은 "모델이 학습된 값을 사용"한다는 뜻입니다. 원래 컨텍스트는 블록의 `original_max_position_embeddings`, 그다음 `max_position_embeddings`, 그다음 upstream `YarnRoPE`의 4096으로 fallback하고, beta는 블록의 값, 그다음 32 / 1로 fallback하며, extrapolation mix는 YaRN 회전에 대해 1.0으로 해석됩니다. 하나의 upstream 특이점은 의도적으로 그대로 따릅니다. `--yarn-attn-factor`는 해석된 extrapolation mix가 0일 때만 반영되는데, b10621의 `llama-context.cpp`가 mix가 0이 아닐 때마다 플래그 위에 attention factor를 다시 계산하기 때문입니다.
-
-YaRN을 공유 경로 밖에서 구현하는 패밀리(DeepSeek V2 / V3.2 / V4, gpt-oss, Mellum, TeleChat3)는 자체 config에서 이를 계속 구성하며, 그중 하나에 대해 설치된 런타임 override는 무시되는 대신 서빙을 거부하고(아래의 적용 횟수 카운터 검사), 자체 RoPE 리졸버가 그 방식을 표현할 수 없는 패밀리(Gemma 3의 linear 전용 global rope, InternLM의 dynamic-NTK 경로)는 이를 명시하는 로드 오류로 거부합니다.
-
-### 어떤 아키텍처가 override를 준수하는가
-
-override는 `src/models/rope_utils.rs`를 통해 회전을 해석하는 여섯 패밀리에 적용됩니다. Llama 3.x(그리고 이를 통한 Qwen2 / Qwen2.5, Helium, `mllama` 텍스트 디코더, 텍스트 백본이 그중 하나인 모든 VLM), Qwen3, Qwen3-MoE, Apertus, Gemma 3, InternLM2 / InternLM3입니다. 다른 패밀리는 주파수를 인라인으로 계산하므로 이를 무시할 것입니다.
-
-이들은 코드 어디에도 나열되어 있지 않은데, 준수하는 아키텍처를 손으로 유지하는 목록은 패밀리가 포팅되는 순간 낡아 버리기 때문입니다. 대신 override를 소비하는 각 seam이 카운터를 증가시키며, override가 요청되었는데 체크포인트 로드 후에도 카운터가 여전히 0이면 모델 워커는 체크포인트와 플래그를 명시하며 서빙을 거부합니다. `rope_utils`에 자신을 연결하는 패밀리는 갱신할 목록 없이 수용되기 시작하며, 그렇지 않은 패밀리는 조용히 무시되는 대신 보고됩니다.
-
-### 이 경로의 변경 검증
-
-짧은 프롬프트는 `rope_scaling` 결함을 볼 수 없습니다. banded 테이블과 일반 테이블은 낮은 위치에서 매우 가깝게 일치합니다. [`benchmarks.md`](benchmarks.md)의 teacher-forced logit trace를 사용하십시오. 이것은 환경에서 `LLAMA_ARG_ROPE_*`를 읽으므로 각 arm이 하나의 프로세스이며, 실제로 긴 위치를 추적하십시오.
-
-```bash
-cargo build --release --features metal,accelerate --example logit_trace
-./target/release/examples/logit_trace MODEL CORPUS.txt 2048 4 8 8192 > ref.tsv
-LLAMA_ARG_ROPE_SCALING_TYPE=none \
-./target/release/examples/logit_trace MODEL CORPUS.txt 2048 4 8 8192 > none.tsv
-python3 scripts/compare_logit_traces.py ref.tsv none.tsv
-```
-
-여섯 번째 인자는 추적되는 각 forward 전에 확립되는 컨텍스트이고, 청크 `c`의 추적 위치는 `c * CHUNK_TOKENS`에서 시작하므로, 좁은 청크는 그 인자가 아무리 커도 긴 위치에 도달할 수 없습니다. 위 명령은 네 개의 청크에 걸쳐 위치 0부터 8191까지를 추적합니다. `--rope-freq-base`를 체크포인트 자체의 `rope_theta`로 설정하는 것이 대조군입니다. 바이트 단위로 동일하게 돌아와야 하며, 이것이 "override가 회전을 움직였다"와 "override의 배선이 모델을 교란한다"를 구별합니다.
-
-## Prompt caching과 continuous batching
-
-`--cache-prompt` / `--no-cache-prompt`, `--cache-reuse`, `--cache-ram`, `--cont-batching` / `--no-cont-batching`은 b10621의 환경 변수 바인딩과 함께 두 서버 바이너리에서 받아들여집니다. 네 개 중 셋은 동작하고, 네 번째는 거부합니다.
-
-| 플래그 | 환경 변수 | 효과 |
-|---|---|---|
-| `--cache-prompt` / `--no-cache-prompt` | `LLAMA_ARG_CACHE_PROMPT` | prompt-prefix KV 캐시를 켜고 끕니다. upstream과 같이 기본적으로 켜져 있습니다. 이것과 mlxcel 고유의 `--no-prompt-cache` 사이에서는 어느 쪽 비활성화든 이기며, 반대 방향의 두 명시적 운영자 진술은 아무것도 캐시하지 않는 쪽으로 해석됩니다. |
-| `--cache-ram N` | `LLAMA_ARG_CACHE_RAM` | prompt cache의 바이트 예산이며, upstream의 `-1`(제한 없음)과 `0`(비활성화) sentinel을 갖는 MiB로 표기됩니다. `--prompt-cache-capacity-bytes`와 같은 설정이며 둘 다 주어지면 후자가 이깁니다. mlxcel의 미설정 기본값은 upstream의 8192에 대해 2048 MiB입니다. |
-| `--cont-batching` / `--no-cont-batching` | `LLAMA_ARG_CONT_BATCHING` | 비활성화하면 decode 폭을 하나의 시퀀스로 고정합니다(`--max-batch-size 1`). 이는 배치 스케줄러를 순차 워커로 대체하고 prompt cache와 speculative decoding까지 함께 없애는 mlxcel의 `--no-batch`가 아니라는 점이 의도적입니다. upstream의 `-nocb`는 슬롯을 유지하고 그것들이 인터리빙되지 않게 합니다. |
-| `--cache-reuse N` | `LLAMA_ARG_CACHE_REUSE` | upstream의 기본값인 `0`은 받아들여지고 효과가 없습니다. 양수 값은 시작을 거부합니다. |
-
-요청별로, chat 형태의 라우트는 b10621의 `cache_prompt`를 적용합니다. `false`를 보내면 해당 요청의 캐시 컨텍스트가 보류되며, 이는 스케줄러가 prefix 조회와 되돌려 기증 모두를 위해 저장소에 도달하는 단일 핸들이므로, 요청은 cold로 prefill되고 다른 요청이 재사용할 수 있는 모든 항목을 건드리지 않은 채 둡니다. 이는 요청 루트에, 평탄화된 OpenAI-SDK `extra_body`를 통해, 또는 `extra_body` 안에 중첩되어 도착합니다. 네이티브 `/completion`도 이 필드를 선언하며 `false`를 같은 방식으로 처리합니다(위의 `--cache-prompt` 절 참고).
-
-### `--cache-reuse`가 숫자를 받아들이는 대신 거부하는 이유
-
-upstream은 들어오는 프롬프트의 prefix가 아닌 캐시된 청크를, 분기점과 재개 지점 사이의 구간을 삭제하고 그 뒤 모든 것의 rotary 위치를 아래로 되돌려 이동시킴으로써 재사용합니다. mlxcel의 prompt cache는 엄격한 토큰 prefix를 재사용합니다. 토큰이 요청의 prefix인 캐시된 KV 집합을 채택하고 나머지를 prefill합니다. 이 간극은 없는 스위치가 아니라 없는 연산입니다. `KVCache::trim_front_keep_sink`는 `live_start`를 전진시켜 가장 오래된 토큰을 버리며 의도적으로 `offset`은 그대로 두고, `gather_positions` / `gather_within_tail`은 각 캐시된 key에 이미 구워진 회전은 건드리지 않은 채 남은 슬롯을 압축합니다. 어떤 것도 캐시된 key의 RoPE 회전을 다시 쓰지 않으므로 이동을 표현할 방법이 없고, 숫자를 받아들이는 서버는 운영자가 다르게 믿는 동안 `--cache-reuse 0`에서와 정확히 같이 동작할 것입니다. #1473은 이를 대기 중인 작업이 아니라 영구적인 분류로 정리했습니다. 이 연산을 만들려면 각 레이어의 RoPE descriptor로 연결되는 회전 primitive, Int8을 위한 dequantize-rotate-requantize 패스, 일반적인 head trim에도 Turbo 모드가 이미 거부하는 sidecar 재구성, 그리고 paged 블록 테이블에 대한 두 번째 구현이 필요한데, 이는 strict-prefix 캐시가 일반적인 경우에 이미 포괄하는 재사용 부류를 위한 것입니다. 거부 진단은 이슈를 가리키는 대신 이렇게 설명합니다.
-
-### 슬롯 상태와 컨텍스트 체크포인트는 진단과 함께 거부됩니다 (#1473)
-
-`--slot-prompt-similarity`(`-sps`), `--cache-idle-slots`, `--ctx-checkpoints`(`-ctxcp`, `--swa-checkpoints`로도 표기), `--checkpoint-min-step`(`-cms`)은 두 서버 바이너리에서 선언되며 효과 없는 값을 받아들입니다. 해당 동작을 요구하는 값은 무엇이 없는지 명시하는 진단과 함께 시작 시 실패합니다. 각각은 슬롯별로 유지되는 프롬프트나 컨텍스트 체크포인트의 ring을 조정하는데, mlxcel에는 둘 다 없습니다. 재사용은 어떤 시퀀스가 마지막으로 그것들을 보유했는지와 무관하게 모든 요청이 조회하는 토큰 prefix 위의 프로세스 전체 radix trie를 거치며, 시퀀스당 최대 하나의 history-boundary 스냅샷이 캡처됩니다. `--slot-prompt-similarity`가 이 점을 가장 날카롭게 보여 줍니다. upstream 기본값은 `0`이 아니라 `0.10`이므로, 이를 효과 없이 받아들이면 존중할 슬롯 선택 정책이 존재하지 않는데도 upstream 기본값을 전달하는 스크립트를 따르는 셈이 됩니다. #1473 이전에는 아예 선언되지 않았으며, clap의 unknown-argument 오류는 운영자에게 이유를 전혀 알려 주지 않았습니다.
-
-`--kv-unified`(`-kvu` / `-no-kvu`)는 mlxcel의 시퀀스별 캐시 풀 위에서 b10621의 가시적인 공유 컨텍스트 계약으로 구현됩니다. `--parallel`이 생략되거나 `-1`이면 auto는 네 개의 슬롯으로 해석되고 기본적으로 unified 모드를 활성화하므로, 각 슬롯은 설정된 컨텍스트 전체를 보고하고 스케줄러는 같은 값을 하나의 공유 live-token 예산으로 적용합니다. 명시적인 `--parallel`과 명시적인 `--max-batch-size`는 `--kv-unified`도 명시되지 않는 한 슬롯별 분리된 윈도를 유지하며, `--no-kv-unified`는 분리된 동작을 강제합니다.
-
-모델 로드 후에야 `supports_batching() == false`를 보고하는 패밀리의 경우, mlxcel은 유효 decode 폭을 하나로 clamp합니다. 그 경우 명시적인 분리 구성은 동시에 사용할 수 있는 네 개의 몫을 유지할 수 없으므로, 단일 live 요청이 설정된 컨텍스트 전체를 되찾으며, 워커는 수정된 로드 후 `n_ctx`를 `/props`, `/slots`, `/v1/models`에 게시하고 두 번째 해석된 geometry 로그 항목을 내보냅니다. 이것은 명시적인 b10621 슬롯 geometry와의 좁은 non-batching divergence이며, 컨텍스트의 4분의 3을 방치하는 것과 오래된 로드 전 몫을 보고하는 것을 모두 피합니다.
-
-### prompt cache 변경 검증
-
-`tests/prompt_cache_compat_e2e.rs`는 differential 게이트입니다. 실제 서버를 실행하고 cold 평가, prefix 캐시 히트, 요청별 `cache_prompt: false`, 그리고 서로 다른 프롬프트 길이의 동시 요청 세 개를 각자의 단독 실행과 비교하여 위치별 토큰과 logprob을 비교합니다. prompt cache가 갖춰야 할 것은 "좋음"이 아니라 "없는 것과 같음"이며, 이는 단일 실행 perplexity로는 표현할 수 없는 두 실행에 대한 진술입니다.
-
-그 비교가 의미가 있는지 결정하는 두 가지 속성이 있습니다. 같은 폭의 arm(캐시 히트, 요청별 비활성화)은 레퍼런스가 실행된 배치 폭에서 실행되므로 정확한 일치로 게이트됩니다. 동시 arm은 전체 불일치가 아니라 **첫 번째** 분기와 그 지점에서의 레퍼런스 자체의 상위 두 개 간격으로 게이트됩니다. 배치 폭 3에서의 decode는 폭 1에서와 같은 커널을 실행하지 않으며(이슈 #203), 근소한 동점이 다른 쪽으로 기울 수 있고, 하나의 토큰이 뒤집히면 그 뒤의 모든 위치가 다른 텍스트에 조건화되므로, 연쇄를 세는 것은 변화가 아니라 뒤집힘의 메아리를 측정하기 때문입니다. `qwen3-0.6b-4bit`에서 동시 arm은 결정된 위치 임계값 2.0에 대해 레퍼런스 간격 0.25와 0.125에서 갈라지며, 이는 캐시 결함이 아니라 그 jitter 부류입니다. 같은 폭의 arm은 32개 위치 모두에서 일치합니다.
-
-### 재현 가능한 greedy 출력: `cache_prompt: false`를 보내십시오
-
-prompt cache 히트는 분할된 prefill입니다. 캐시된 prefix는 이전 forward에서 계산되었고 나머지만 지금 prefill됩니다. 이 분할은 부동소수점 합산 순서를 바꾸며(양자화된 matmul 커널은 행 수로 경로를 선택하고, attention은 다른 query/key shape를 봄), 따라서 첫 생성 토큰의 logit은 cold prefill의 것에 가깝지만 항상 비트 단위로 동일하지는 않습니다. M1 Ultra의 command-r7b 4-bit와 Llama 3.1 8B 4-bit에서, 224토큰 프롬프트를 마지막 64토큰 안의 어디에서든 분할하면 argmax는 바뀌지 않은 채 첫 토큰의 logit이 최대 0.012에서 0.031까지 움직였습니다. 이후의 근소한 동점이 뒤집히면 greedy 응답은 cold 응답과 달라지므로, 같은 요청이 캐시가 얼마나 보유했는지에 따라 다르게 응답할 수 있습니다. 이것은 캐시 손상이 아니며, 어떤 분할 크기로도 사라지지 않습니다. 위 differential 게이트의 같은 폭 arm이 `qwen3-0.6b-4bit`에서 정확히 일치하는 것은 그 모델과 프롬프트의 속성이지 모든 패밀리에 대한 보장이 아닙니다.
-
-요청이 캐시 상태에 의존하지 않는 출력을 필요로 할 때(회귀 테스트, 평가 실행, 두 빌드 비교) `cache_prompt: false`를 보내십시오. 요청은 cold로 prefill되고, chat 라우트와 네이티브 `/completion`에서 캐시 항목을 읽지도 기증하지도 않습니다. `--no-cache-prompt`는 서버 전체에 대해 같은 일을 합니다.
-
-## 로깅, introspection, 내장 preset
-
-`logging-and-presets.json`은 하나의 소유자를 공유하는 서로 관련 없는 네 개의 표면을 담고 있습니다. 서버가 어디에 어떻게 로그를 남기는지, 출력하고 종료하는 두 개의 introspection 옵션, `--log-prompts-dir`, 그리고 b10621의 열두 개 내장 모델 preset입니다.
-
-### 로그 대상
-
-우선순위는 높은 것부터: `--log-disable`, 그다음 명령줄의 `--log-file PATH`, 그다음 `LLAMA_ARG_LOG_FILE`, 그다음 mlxcel 고유의 `LLAMA_LOG_FILE`, 그다음 표준 출력입니다. `--log-disable`은 b10621의 `common_log_pause`와 일치하게 subscriber를 아예 설치하지 않습니다.
-
-사용할 수 없는 대상은 터미널로의 조용한 fallback이 아니라 **시작 실패**입니다. 로그 파일을 요청했는데 stdout을 받은 배포는 갖고 있지 않은 감사 추적이 있다고 믿게 되므로, `--log-file`은 심볼릭 링크인 경로(미리 심어 둔 심볼릭 링크는 권한 없는 로컬 계정이 서버 로그를 자신이 쓸 수 없는 파일에 대한 append primitive로 바꾸는 방법), 디렉터리인 경로, 상위 디렉터리가 존재하지 않는 경로, append를 위해 열 수 없는 경로를 거부합니다. 각 거부는 옵션과 경로를 명시합니다.
-
-그 검사는 b10621 호환성 표면의 나머지가 분류되는 곳, 즉 모델 참조가 해석되기 전에 실행되는데, `-m mlx-community/...`는 수 기가바이트 다운로드를 뜻할 수 있고 subscriber 자체는 `start_server`까지 설치되지 않기 때문입니다. 대상도 거기서 생성되며, 이는 b10621이 하는 일입니다. 그 `--log-file` 핸들러는 인자 파서 내부에서 파일을 엽니다.
-
-파일은 `0600`으로 생성되고, 기존 파일은 열 때 `0600`으로 강화되므로, 서버를 다시 실행하면 권한을 물려받는 대신 고쳐집니다. #1448 이전에는 기본 umask가 `0644`로 남겼습니다. 모델 경로, 요청 메타데이터, 슬롯 타이밍을 담은 로그를 호스트의 모든 계정이 읽을 수 있었습니다.
-
-어떤 sink에 쓰이든 모든 줄은 redaction 패스를 거칩니다. `--api-key`, 모든 `--api-key-file`의 내용, `--hf-token`, `HF_TOKEN`, `LLAMA_API_KEY`, `MLXCEL_API_KEY`, `LLAMA_ARG_API_KEY_FILE`이 가리키는 파일은 subscriber가 설치되기 전에 등록되며, 로그 줄에서 이 값 중 하나가 나타나면 `[redacted]`로 대체됩니다. redaction은 쓰기별이 아니라 줄 버퍼 방식인데, `tracing` 포매터가 하나의 이벤트를 여러 번의 쓰기로 내보내므로 둘에 걸친 값은 쓰기별 스캔을 빠져나가기 때문입니다. `tests/llama_logging_presets.rs`는 이 속성을 검사가 아니라 canary 값을 사용한 실제 프로세스에 대해 증명합니다.
-
-mlxcel은 b10621이 표준 에러에 로그를 남기는 곳에서 표준 출력에 로그를 남깁니다. 이는 #1448이 의도적으로 그대로 둔 기존 mlxcel 기본값입니다. 이 절이 추가하는, 기계가 읽을 수 있는 출력을 stdout에 쓰는 두 옵션인 `--cache-list`와 `--completion-bash`는 둘 다 subscriber가 존재하기 전에 실행되고 종료하므로, 아무것도 섞이지 않습니다.
-
-### 로그 형식과 verbosity
-
-| 플래그 | 환경 변수 | 효과 |
-|---|---|---|
-| `--log-colors on\|off\|auto` | `LLAMA_ARG_LOG_COLORS` | ANSI 이스케이프입니다. 기본값인 `auto`는 sink가 터미널일 때만 색을 입히므로, 로그 파일은 이스케이프를 받지 않습니다. 값은 clap의 더 넓은 boolish 집합이 아니라 b10621 자체의 대소문자 구분 어휘로 파싱되며, 그 밖의 것은 시작을 중단합니다. |
-| `--log-prefix` / `--no-log-prefix` | `LLAMA_ARG_LOG_PREFIX` | 줄별 레벨 태그입니다. upstream과 같이 기본적으로 켜져 있습니다. |
-| `--log-timestamps` / `--no-log-timestamps` | `LLAMA_ARG_LOG_TIMESTAMPS` | 줄별 타임스탬프입니다. upstream과 같이 기본적으로 켜져 있습니다. |
-| `-lv N`, `--verbosity N`, `--log-verbosity N` | `LLAMA_ARG_LOG_VERBOSITY` | 임계값이며 기본값은 `3`입니다. 이를 넘는 메시지는 버려지므로, 더 큰 숫자는 항상 최소한 같은 정도로 상세합니다. |
-| `-v`, `--verbose`, `--log-verbose` | 없음 | 모든 mlxcel 메시지를 무조건 출력합니다. |
-
-가운데 두 행의 기본값은 가정이 아니라 고정된 macOS arm64 바이너리에서 읽어 낸 것입니다. 로깅 플래그 없는 `llama-server`는 `0.00.039.303 I cmn common_param: ...`를 출력하며, `--no-log-prefix --no-log-timestamps`는 이를 `cmn common_param: ...`로 줄입니다.
-
-verbosity 우선순위는 높은 것부터: 명령줄의 `--verbose`, 그다음 명령줄의 `--verbosity N`, 그다음 `RUST_LOG`, 그다음 `LLAMA_ARG_LOG_VERBOSITY`, 그다음 컴파일된 기본값입니다. 명령줄 플래그가 항상 환경 변수를 이기며, 이는 b10621이 하는 일이고 #1448 이전에 mlxcel이 하지 않던 일입니다. `EnvFilter::try_from_default_env`가 먼저 실행되어 `RUST_LOG=warn mlxcel-server -v`는 `-v`를 조용히 무시했지만, upstream의 `-v`는 임계값을 `INT_MAX`로 무조건 설정합니다. 환경 변수들 사이에서는 `RUST_LOG`가 이기는데, 대상별 형태로 더 표현력이 풍부하고 mlxcel 운영자의 스크립트에 이미 있는 것이기 때문입니다.
-
-임계값은 mlxcel 자체 레벨에 매핑됩니다. `0`과 `1`은 `error`, `2`는 `warn`, `3`은 `info`, `4`는 `debug`, `5` 이상은 mlxcel 타깃에 대해 `trace`이고 의존성에 대해서는 `debug`입니다. `--verbose`는 최상위 티어와 같은 필터로 해석되므로 `--verbosity 5`보다 덜 상세한 일은 결코 없습니다. 최상위 티어는 의도적으로 의존성을 `trace`로 올리지 않습니다. 단독 `trace` 디렉티브는 hyper와 tokio 내부를 켜서 운영자가 보고 싶어 한 mlxcel 메시지를 묻어 버리기 때문입니다.
-
-### `--cache-list`와 `--completion-bash`
-
-둘 다 모델이 해석되기 전에 실행되고, `-m`이 필요 없으며, upstream의 파서 수준 핸들러처럼 0으로 종료합니다.
-
-`--cache-list`(그리고 llama.cpp의 short 표기 `-cl`)는 mlxcel의 모델 저장소를 b10621의 정확한 출력 형태로 나열합니다. `number of models in cache: N` 헤더 뒤에 항목마다 `%4zu. %s`가 옵니다. 저장소는 `--model-store-root` / `MLXCEL_MODELS_DIR` / `MLXCEL_CACHE_DIR`이 가리키는 디렉터리이며(#1438이 서버 바이너리에서 이름을 바꾸기 전에는 `--models-dir`), llama.cpp의 GGUF 캐시가 아니라 MLX SafeTensors 체크포인트의 `<owner>/<name>` 스냅샷을 담고 있고, 각 항목은 `-m`이 받아들이는 repository id로 출력되므로 출력을 다음 명령에 그대로 붙여 넣을 수 있습니다. 디렉터리는 실제로 체크포인트(`config.json` 또는 `*.safetensors` 파일)를 담고 있을 때만 집계되므로, 반쯤 끝난 다운로드가 로드할 수 없는 모델로 제시되지 않습니다.
-
-`--completion-bash`는 라이브 clap 표면에서 생성된 source 가능한 bash completion 스크립트를 출력합니다. 하나의 completion 함수, `opts` 목록, 경로 값 옵션에 파일 및 디렉터리 completion을 주는 `case "$prev"` 블록, 그리고 `complete -F` 줄입니다. `mlxcel-server`는 이를 `mlxcel-server`에 등록하고, `mlxcel serve`는 `mlxcel`에 등록하며 헤더 주석에서 그렇게 밝힙니다. **보이는** 인자와 **보이는** 별칭만 스크립트에 들어갑니다. mlxcel의 숨겨진 b10621 호환성 표면(`--n-gpu-layers`, `--mlock`, `--control-vector`, `--log-prompts-dir`, preset)과 `--dump-flag-surface` 기계 인터페이스는 의도적으로 제외됩니다. llama.cpp는 어떤 인자도 숨기지 않으므로, upstream에는 내려야 할 동등한 선택이 없습니다. `tests/llama_logging_presets.rs`는 두 바이너리의 출력에 `bash -n`을 실행하고 그 규칙의 양쪽 절반을 단언합니다.
-
-### `--log-prompts-dir`은 거부됩니다
-
-mlxcel은 요청 프롬프트를 디스크에 쓰지 않으며, #1448은 이를 추가하지 않기로 했습니다. 플래그를 no-op으로 받아들이면 운영자는 프롬프트가 캡처된다고 믿는 동안 지정한 디렉터리가 비어 있게 되고, 이를 구현하면 사용자 요청 본문의 평문 사본이 로그 볼륨에 놓이게 되는데, 이는 프로젝트가 디버깅 보조를 위해 만들지 않을 노출 표면입니다. 이 옵션은 파서가 받아들이고, 숨겨져 있으며, 모델 참조가 해석되기 전에 거부되고, 진단은 프롬프트 본문은 기록하지 않고 라우트, 슬롯, 토큰 수, 타이밍을 기록하는 요청 수준 디버깅 경로로 `--log-file`과 `--verbosity 4`를 명시합니다. b10621은 파서 안에서 디렉터리를 생성하지만, 여기서의 거부는 파일 시스템에 아무 흔적도 남기지 않습니다.
-
-### 내장 preset은 MLX 대응을 명시하며 거부됩니다
-
-b10621의 열두 개 preset은 각각 `params.model.hf_repo`를 `ggml-org` 아래의 **GGUF** 저장소로 다시 쓴 뒤 포트, 컨텍스트, 배치, 병렬성, 그리고 (두 gpt-oss preset의 경우) 샘플링 블록을 덮어씁니다. mlxcel은 MLX SafeTensors를 서빙하며 GGUF 리더가 없으므로 어느 절반도 단독으로 적용될 수 없습니다. 체크포인트만 매핑하면 파라미터 블록이 조용히 사라지고, 파라미터 블록만 매핑하면 플래그가 명시하는 것과 다른 양자화를 서빙하게 됩니다.
-
-열두 개 모두 숨겨져 있고, 파서가 받아들이며, 모델 참조가 해석되기 전에 거부됩니다. 그중 열한 개는 가장 가까운 MLX 체크포인트와 그에 도달하는 정확한 두 개의 명령줄을 출력합니다.
-
-| Preset | Upstream GGUF | mlxcel 대응 |
-|---|---|---|
-| `--embd-gemma-default` | `ggml-org/embeddinggemma-300M-qat-q4_0-GGUF` | `mlx-community/embeddinggemma-300m-4bit` |
-| `--fim-qwen-1.5b-default` | `ggml-org/Qwen2.5-Coder-1.5B-Q8_0-GGUF` | `mlx-community/Qwen2.5-Coder-1.5B-8bit` |
-| `--fim-qwen-3b-default` | `ggml-org/Qwen2.5-Coder-3B-Q8_0-GGUF` | `mlx-community/Qwen2.5-Coder-3B-8bit` |
-| `--fim-qwen-7b-default` | `ggml-org/Qwen2.5-Coder-7B-Q8_0-GGUF` | `mlx-community/Qwen2.5-Coder-7B-8bit` |
-| `--fim-qwen-7b-spec` | 동일, 그리고 `0.5B` draft | `mlx-community/Qwen2.5-Coder-7B-8bit`와 `--model-draft mlx-community/Qwen2.5-Coder-0.5B-8bit --draft-kind dflash` |
-| `--fim-qwen-14b-spec` | `ggml-org/Qwen2.5-Coder-14B-Q8_0-GGUF`, 그리고 `0.5B` draft | `mlx-community/Qwen2.5-Coder-14B-8bit`와 같은 draft |
-| `--fim-qwen-30b-default` | `ggml-org/Qwen3-Coder-30B-A3B-Instruct-Q8_0-GGUF` | `mlx-community/Qwen3-Coder-30B-A3B-Instruct-8bit` |
-| `--gpt-oss-20b-default` | `ggml-org/gpt-oss-20b-GGUF` | `mlx-community/gpt-oss-20b-MXFP4-Q8` |
-| `--gpt-oss-120b-default` | `ggml-org/gpt-oss-120b-GGUF` | `mlx-community/gpt-oss-120b-MXFP4-Q8` |
-| `--vision-gemma-4b-default` | `ggml-org/gemma-3-4b-it-qat-GGUF` | `mlx-community/gemma-3-4b-it-qat-4bit` |
-| `--vision-gemma-12b-default` | `ggml-org/gemma-3-12b-it-qat-GGUF` | `mlx-community/gemma-3-12b-it-qat-4bit` |
-
-이 저장소 이름은 진단에만 나타나며 암묵적으로 해석되지 않으므로, 나중에 옮겨진 저장소는 시작 실패나 더 나쁘게는 다른 것의 조용한 다운로드가 아니라 낡은 제안으로 저하됩니다.
-
-`--spec-default`는 열두 번째이며 모델을 전혀 구성하지 않습니다. 컨텍스트 자체에서 이어질 내용을 예측하는 b10621의 n-gram-modulo drafter를 활성화합니다. mlxcel의 drafter는 체크포인트 기반이므로, 거부 진단은 MTP를 지원하는 target에서는 `--draft-kind mtp`를, 그렇지 않으면 `--draft-kind dflash --model-draft <path-or-repo-id>`를 안내합니다. 이 preset이 설정했을 n-gram 튜닝 노브는 speculative shard의 #1433 아래에서 분류됩니다.
+스트리밍 형태도 #1470 이후에는 구분자를 포함하므로, `none`과 `deepseek-legacy`에서 `delta.content`를 이어 붙인 결과가 비스트리밍 `message.content`와 바이트 단위로 같습니다. 이전에는 불가능했습니다. 스트리밍 필터는 thinking 구분자를 일치시키면서 소비하고, 블록을 열린 상태로 준비시키는 generation prompt는 모델이 열기 마커를 전혀 내보내지 않는다는 뜻이기 때문입니�
