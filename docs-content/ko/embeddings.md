@@ -42,7 +42,8 @@ mlxcel은 OpenAI 호환 `POST /v1/embeddings` 엔드포인트와 오프라인 `m
 | `src/server/routes/embeddings.rs` | HTTP 핸들러, 검증 순서, 오류 매핑. |
 | `src/server/types/embeddings.rs` | 요청 및 응답 타입, base64 인코딩. |
 | `src/commands/embed.rs` | `mlxcel embed`. |
-| `src/models/embedding_sanitize.rs` | decoder-backbone 계열이 공유하는 가중치 키 정규화: `{N}_Dense.linear.*` 병합, head 제거, `model.` 접두사 부여. |
+| `src/models/embedding_sanitize.rs` | decoder-backbone 계열이 공유하는 가중치 키 정규화: `{N}_Dense.linear.*` 병합, head 제거, `model.` 접두사 부여(LFM2의 `embedding_norm.` 포함), 그리고 선택적으로 적용하는 `language_model.` 래퍼 제거 및 파생 버퍼 제거. |
+| `src/models/headless_llama.rs` | `HeadlessLlama`: 생성 head가 없는 단일 Llama backbone 조립체로, 양방향 Llama, Llama-Nemotron-VL-Embed, ColIdefics3가 공유합니다. |
 | `src/models/gemma3_embedding.rs` | EmbeddingGemma: 양방향 Gemma 3, mean 풀링, 두 개의 `Dense` projection. |
 | `src/models/embedding_gemma2.rs` | EmbeddingGemma 2: 멀티모달 양방향 Gemma 4, projection 전용 PLE, 512 -> 768 `embedding_projection`, mean 풀링. |
 | `src/models/qwen3_embedding.rs` | Qwen3-Embedding: causal Qwen3, last-token 풀링. |
@@ -74,16 +75,16 @@ mlxcel은 OpenAI 호환 `POST /v1/embeddings` 엔드포인트와 오프라인 `m
 - `modules.json`이 존재하고 `type`이 `.Pooling`으로 끝나는 모듈을 나열합니다(sentence-transformers 레이아웃). 추가 모듈이 `1_LogitScore`뿐인 `modules.json`(Qwen3-VL-Reranker)은 해당되지 않습니다.
 - `1_Pooling/config.json`이 존재합니다.
 
-`architectures[0]`이 `ForSequenceClassification`으로 끝나는 체크포인트는 나머지 레이아웃이 어떻든 임베더가 아니라 reranker입니다. `bert`, `xlm-roberta`, `modernbert`에서는 `ModelType::SequenceClassifier`로 감지되어 `/v1/rerank`에서 서비스되고, 다른 계열에서는 일반적인 `model_type` dispatch로 넘어가 거기서 오류가 보고됩니다.
+`architectures[0]`이 `ForSequenceClassification`으로 끝나는 체크포인트는 나머지 레이아웃이 어떻든 임베더가 아니라 reranker입니다. `bert`, `xlm-roberta`(`xlm_roberta`로 쓰기도 함), `modernbert`에서는 `ModelType::SequenceClassifier`로 감지되어 `/v1/rerank`에서 서비스되고, 다른 계열에서는 일반적인 `model_type` dispatch로 넘어가 거기서 오류가 보고됩니다.
 
 결정된 계열은 `model_type`을 키로 합니다.
 
 | `model_type` | `ModelType` |
 |--------------|-------------|
 | `bert` | `Bert` |
-| `xlm-roberta` | `XlmRoberta` |
+| `xlm-roberta`, `xlm_roberta` | `XlmRoberta` |
 | `modernbert` | `ModernBert` |
-| `siglip` | `SiglipText` |
+| `siglip`, `siglip_text_model` | `SiglipText` |
 | `gemma3_text`, `gemma3` | `Gemma3Embedding` |
 | `embedding_gemma2`, `embedding_gemma2_text` | `EmbeddingGemma2` |
 | `qwen3` | `Qwen3Embedding` |
@@ -122,7 +123,7 @@ hidden state `[B, L, D]`(f32로 캐스팅)와 attention mask `[B, L]`(int32, `1`
 
 ## 길이 제한과 패딩
 
-`max_length`는 다음 중 가장 작은 값입니다. `sentence_bert_config.json`의 `max_seq_length`(있는 경우), `0 < value < 1_000_000`일 때 `tokenizer_config.json`의 `model_max_length`, 절대 위치 인코더(BERT, XLM-RoBERTa, SigLIP)의 경우 `config.json`의 `max_position_embeddings`, 하드 상한 `8192`, 그리고 설정된 경우 `--embedding-max-length`입니다. `max_length`보다 긴 입력은 특수 토큰이 추가된 뒤 오른쪽에서 잘리며, 토크나이저가 끝 특수 토큰을 덧붙이는 경우 그 토큰은 유지됩니다. 따라서 BERT 입력은 `[SEP]`를, Qwen3-Embedding 입력은 `<|endoftext|>`를 유지합니다. token id 입력은 그대로 오른쪽에서 잘립니다.
+`max_length`는 다음 중 가장 작은 값입니다. `sentence_bert_config.json`의 `max_seq_length`(있는 경우), `processor_config.json`의 `max_length` 또는 `p_max_length`(있는 경우), `0 < value < 1_000_000`일 때 `tokenizer_config.json`의 `model_max_length`, 절대 위치 인코더(BERT, XLM-RoBERTa, SigLIP)의 경우 `config.json`의 `max_position_embeddings`, 하드 상한 `8192`, 그리고 설정된 경우 `--embedding-max-length`입니다. `max_length`보다 긴 입력은 특수 토큰이 추가된 뒤 오른쪽에서 잘리며, 토크나이저가 끝 특수 토큰을 덧붙이는 경우 그 토큰은 유지됩니다. 따라서 BERT 입력은 `[SEP]`를, Qwen3-Embedding 입력은 `<|endoftext|>`를 유지합니다. token id 입력은 그대로 오른쪽에서 잘립니다.
 
 `sentence-transformers/all-MiniLM-L6-v2`에서는 `256`으로 결정되며(`sentence_bert_config.json`에서), `Qwen/Qwen3-Embedding-0.6B`에서는 상한인 `8192`로 결정됩니다(`sentence_bert_config.json`이 없고, `model_max_length`는 131072이며, rotary 위치를 사용하므로 `max_position_embeddings`는 참조되지 않습니다).
 
@@ -275,7 +276,7 @@ mlxcel이 이미 실행하는 세 가지 구성 요소를 조합한 것입니다
 
 이미지 항목에는 호출자 텍스트가 없으므로, 계열이 문서 형식을 직접 내보냅니다: `passage: <img>{<IMG_CONTEXT> repeated 256 * tiles}</img> `. 타일 수는 체크포인트 자체의 면적 인식 `find_closest_aspect_ratio`를 사용한 512 px의 InternVL 스타일 동적 타일링에서 오며, `max_input_tiles`(6)로 제한되고 이미지가 실제로 분할된 경우 전체 이미지 썸네일이 하나 추가되므로, 가로 방향 페이지는 `7 * 256`개의 visual token에 이릅니다. 정규화는 ImageNet이 아니라 SigLIP의 것(평균과 표준편차 `0.5`)입니다.
 
-이 체크포인트에 대해 알아 둘 점이 두 가지 있습니다. `modules.json`에는 `2_Normalize` 모듈이 없지만 mlxcel은 어쨌든 L2 정규화합니다(`config.json`에 `normalize: false`가 없습니다). 체크포인트 자체의 `similarity_fn_name`이 cosine이므로 순위는 영향받지 않습니다. 또한 `max_length`는 참조 구현의 문서용 `p_max_length` 4096이나 쿼리용 `q_max_length` 512가 아니라 공유 상한인 8192로 결정되는데, 이 키들이 공유 길이 도출 로직이 읽지 않는 `processor_config.json`에 있기 때문입니다. 참조 구현의 truncation을 재현하려면 `--embedding-max-length 4096`(쿼리 전용 서버라면 `--embedding-max-length 512`)을 지정하십시오.
+이 체크포인트에 대해 알아 둘 점이 두 가지 있습니다. `modules.json`에는 `2_Normalize` 모듈이 없지만 mlxcel은 어쨌든 L2 정규화합니다(`config.json`에 `normalize: false`가 없습니다). 체크포인트 자체의 `similarity_fn_name`이 cosine이므로 순위는 영향받지 않습니다. 또한 `max_length`는 `processor_config.json`의 `p_max_length`에 따라 `4096`으로 결정되며, 이는 `LlamaNemotronVLProcessor.__call__`(Sentence Transformers 진입점) 및 `process_documents`와 일치합니다. `process_queries`의 `q_max_length` truncation을 재현하려면 쿼리 전용 서버에서 `--embedding-max-length 512`를 지정하십시오.
 
 ```sh
 mlxcel embed -m nvidia/llama-nemotron-embed-vl-1b-v2 \
@@ -330,7 +331,7 @@ maxsim(q, d) = sum over query rows i of ( max over document rows j of dot(q_i, d
 
 ### 양방향 Llama, LLM2Vec (`LlamaBidirec`)
 
-LLM2Vec 레시피입니다. 일반적인 Llama 3.2 1B decoder에서 causal 마스크를 제거하여 인코더로 변환한 것입니다. `nvidia/llama-nemotron-embed-1b-v2`는 이를 `model_type: llama_bidirec`, `architectures: ["LlamaBidirectionalModel"]`, `use_bidirectional_attention: true`, 그리고 mean 풀링을 선언하는 `1_Pooling` 모듈로 export합니다. 레이어에 바뀌는 것은 없습니다. factor 32의 동일한 `rope_scaling` `llama3` 스케줄, 동일한 norm, `head_dim` 64의 동일한 GQA 32/8입니다. 마스크와 head의 부재만 다르므로, 이 포트는 `Llama3Model`을 거치지 않고 가중치 맵에서 바로 `llama3::TransformerBlock` 레이어를 구성합니다. `Llama3Model`의 `lm_head` 필드는 선택 사항이 아니어서 이 경로가 적용하지 않는 tied `128256 x 2048` projection을 불필요하게 만들어 내기 때문입니다.
+LLM2Vec 레시피입니다. 일반적인 Llama 3.2 1B decoder에서 causal 마스크를 제거하여 인코더로 변환한 것입니다. `nvidia/llama-nemotron-embed-1b-v2`는 이를 `model_type: llama_bidirec`, `architectures: ["LlamaBidirectionalModel"]`, `use_bidirectional_attention: true`, 그리고 mean 풀링을 선언하는 `1_Pooling` 모듈로 export합니다. 레이어에 바뀌는 것은 없습니다. factor 32의 동일한 `rope_scaling` `llama3` 스케줄, 동일한 norm, `head_dim` 64의 동일한 GQA 32/8입니다. 마스크와 head의 부재만 다르므로, 이 포트는 `Llama3Model`이 아니라 공유 `HeadlessLlama`를 통해 `llama3::TransformerBlock` 레이어를 조립합니다. `Llama3Model`의 `lm_head` 필드는 선택 사항이 아니어서 이 경로가 적용하지 않는 tied `128256 x 2048` projection을 불필요하게 만들어 내기 때문입니다.
 
 공개된 export는 내부의 `LlamaBidirectionalModel`을 저장하므로 루트가 접두사 없이 들어오며(`embed_tokens.weight`, `layers.0.…`, `norm.weight`) 로드 시 `model.` 접두사가 붙습니다. `language_model.` 래퍼 접두사는 먼저 제거되고, 파생된 `rotary_emb.inv_freq`와 `position_ids` 버퍼는 이 트리가 `rope_theta`와 `rope_scaling`에서 주파수 테이블을 다시 만들기 때문에 버려집니다.
 
@@ -349,6 +350,8 @@ mlxcel embed -m nvidia/llama-nemotron-embed-1b-v2 \
 Ministral 3 backbone을 양방향으로 실행합니다. `nvidia/Nemotron-3-Embed-1B-BF16`과 `mlx-community`의 8-bit 변환본은 `model_type: ministral3`, `architectures: ["Ministral3Model"]`, `is_causal: false`를 선언하며, 감지는 이 플래그를 기준으로 합니다. 풀링 모듈은 mean이라고 명시합니다.
 
 포트를 좌우하는 세부 사항이 두 가지 있습니다. 위치별 Llama 4 attention scale(`1 + beta * ln(1 + floor(pos / original_max_position_embeddings))`, `beta` 0.1, window 16384)은 offset 0에서 계산되는데, 임베더는 prefill을 한 번 실행하고 decode하지 않으며, 이는 같은 길이에 대해 생성기의 새 캐시가 보고하는 값과 같기 때문입니다. 그리고 두 체크포인트 모두 `tie_word_embeddings`가 true이므로 `lm_head`가 없고 forward pass는 최종 norm에서 멈춥니다. 공개된 두 체크포인트는 모두 `sliding_window: null`이고 `layer_types`가 없으므로 모든 레이어가 full attention입니다. `sliding_attention` 레이어를 선언하는 체크포인트라면 그 레이어에는 `create_bidirectional_window_mask`가 사용됩니다.
+
+Rotary 주파수는 YaRN입니다. 두 체크포인트 모두 NeMo export 키 `apply_yarn_scaling: false`와 함께 `rope_type: yarn`(`factor` 16, `original_max_position_embeddings` 16384)을 선언합니다. Hugging Face Transformers(5.20에서 확인)는 이 키를 무시하고 YaRN을 적용하며, 이 포트도 `lablup/mlxcel#2345` 이후로 공유 Ministral 3 attention을 통해 그렇게 합니다. 이 변경 이전에는 backbone이 일반 RoPE로 회전했으므로, 이전 mlxcel 버전에서 계산한 임베딩은 현재 값과 다르며 그것으로 만든 인덱스는 다시 임베딩해야 합니다. 이 변경은 이 체크포인트들에 대해 Sentence Transformers와 비교 측정하지 않았습니다.
 
 `max_length`는 하드 상한인 8192이며 이는 체크포인트가 선언한 32768보다 작습니다. 호출자가 적용하는 프롬프트 접두사는 `query: `와 `passage: `입니다.
 

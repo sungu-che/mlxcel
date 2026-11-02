@@ -13,7 +13,7 @@ MkDocs 페이지가 추가되더라도 독립적인 Markdown 파일로 읽을 �
 
 현재 GitHub용 문서:
 
-1. `installation.md` - macOS, CUDA가 있는 Linux, AMD ROCm(실험적)이 있는 Linux의 플랫폼 요구 사항과 빌드 플래그.
+1. `installation.md` - macOS, CUDA가 있는 Linux, AMD ROCm(실험적)이 있는 Linux, NVIDIA CUDA가 있는 Windows(실험적)의 플랫폼 요구 사항과 빌드 플래그.
 2. `environment-variables.md` - `MLXCEL_*` 런타임, 빌드, 다운로더, 캐시, 진단용 설정.
 3. `benchmarks.md` - 벤치마크 방법론과 향후 원시 결과 표에 대한 요구 사항.
 4. `supported-models.md` - 관리되는 아키텍처/체크포인트 지원 매트릭스.
@@ -28,14 +28,19 @@ MkDocs 페이지가 추가되더라도 독립적인 Markdown 파일로 읽을 �
 13. `block-diffusion.md` - DiffusionGemma block-diffusion 생성: 캔버스 denoising 대 autoregressive, CLI 플래그, 처리량, 1단계 제한 사항.
 14. `python-client.md` - OpenAI 호환 서버 위에서 동작하는 `mlxcel` Python 클라이언트: managed 및 connect 모드, 스트리밍, chat, 구조화된 출력, `openai_client` 탈출구, 비동기 사용, 문제 해결.
 15. `audio-preprocessing.md` - 공유 WAV/MP3/FLAC 모델 입력 정규화, 로드된 패밀리 정책, 리소스 제한, 취소, 메트릭, 현재 XLA 기능 경계.
-16. `speculative-acceptance.md` - speculative decoding의 acceptance 규칙, 각 코드 경로가 실행하는 규칙, 분포 보존 보장과 그 RNG 의존성, kill switch, 로그에서 활성 규칙을 읽는 방법.
+16. `speculative-acceptance.md` - speculative decoding의 acceptance 규칙, 각 코드 경로가 실행하는 규칙, 분포 보존 보장, 오프라인 `--draft-model` 라우팅, 요청별 acceptance 보고.
 17. `mla-absorbed-decode.md` - 압축된 latent KV cache 위에서의 DeepSeek 계열 행렬 흡수(matrix-absorbed) MLA decode: 항등식, 캐시 레이아웃, 플래그, 검증된 것과 검증되지 않은 것.
 18. `cascade-attention.md` - 공유 프롬프트 접두사(cascade) decode: 여러 동시 시퀀스가 공유하는 접두사를 시퀀스마다가 아니라 step마다 한 번만 계산하는 방식, 2단계 분해, 플래그, 실행이 어떤 경로를 택했는지 확인하는 방법.
 19. `sparse-paged-decode.md` - fused v2 decode 커널 위의 페이지 간접 참조(page indirection)로 환원된 sparse attention: 주소 지정 논거, MiniMax-M3 라우팅, DeepSeek Sparse Attention이 라우팅되지 않는 이유, 디스패치 하한이 위치하는 곳, kill switch, 벤치마크 하니스.
 20. `mtp-policy-api.md` - 적응형 B=1 MTP 판정에 대한 지원되는 읽기 인터페이스(`GET /v1/internal/mtp-policy`): 응답 본문, 네 가지 상태, unavailable 사유, 스키마 버전 관리 및 호환성 정책.
 21. `code-guidelines.md` - 파일 크기와 모듈 분할 임계값(`<name>_helpers.rs`를 추출해야 하는 시점과 인라인 테스트를 형제 `_tests.rs`로 옮기는 시점 포함), 공유 함수에 대한 `// Used by:` 주석 규약, CUDA가 컴파일된 모듈 캐시를 해당 dtype으로 키잉하므로 변하는 모든 입력 dtype이 `template_args`에 나타나야 한다는 JIT 커널 규칙, 그리고 순서에 민감한 소비자의 범위, 전순서가 아닌 키에 대한 안정 정렬이 결과를 고정하지 못하는 이유, 반복마다 새 맵을 사용하는 테스트 요구 사항, 정적 검사로 이를 강제하지 않는 이유를 다루는 `HashMap` 반복 순서 규칙.
 22. `embeddings.md` - `/v1/embeddings` 및 `/v1/rerank` 엔드포인트와 `mlxcel embed`, `mlxcel rerank`: 임베딩 및 reranker 감지, pooling과 스코어링, 멀티모달 및 late-interaction 입력, 요청/응답 스키마, 서버 플래그, 오류 코드, 패밀리 등록 지침.
-23. `llama-server-compat.md` - 검증된 llama-server b10621 호환성 경계: `compat/llama-server/b10621/` 아래의 기계 판독 가능 매니페스트를 읽는 방법, 호환성 정책 상태, 에픽 #1431에서 사용하는 영역 샤딩, CI 게이트, 결정적 재생성 절차.
+23. `token-classification.md` - `mlxcel tag`와 `mlxcel extract`: 윈도우 방식 스코어링을 사용하는 BIO / BIOES 토큰 분류, span 디코딩과 redaction, span 추출 요청 및 출력 형태, 감지, 로드 시점 오류, 패밀리 추가 방법.
+24. `llama-server-compat.md` - 검증된 llama-server b10621 호환성 경계: `compat/llama-server/b10621/` 아래의 기계 판독 가능 매니페스트를 읽는 방법, 호환성 정책 상태, 에픽 #1431에서 사용하는 영역 샤딩, CI 게이트, 결정적 재생성 절차.
+25. `webui/README.md` - 번들된 브라우저 WebUI(`--webui`): 영어 및 한국어 사용자 가이드(퀵스타트, 키, 원격 접속, 모델, 설정과 개인정보, 문제 해결), 기여자 워크플로, 그 뒤에 있는 API, 상태 머신, UX, 디자인 시스템 계약. `webui-integration-matrix.md`는 릴리스 증거 기록입니다.
+26. `model-triage.md` - 보고된 모델 커버리지 공백에 대한 처리 결과와 각각의 근거, 그리고 남은 후보를 포팅하면 무엇이 추가되는지.
+27. `vision-model-scope.md` - detection, segmentation, 3D body, grounding, 이미지·비디오 생성 패밀리의 범위 기록: 지원되는 것, 포트 이슈와 함께 image-generation 및 dense-prediction 에픽으로 이동한 것, 범위 밖으로 남은 것, 범위를 재설정하는 기준.
+28. `dense-prediction.md` - `mlxcel predict` 이미지/비디오 CLI, 텐서 및 프리뷰 파일 계약, 공유 보간/전처리 API, 패밀리 등록 가이드.
 
 ## mlxcelverse 유지보수
 

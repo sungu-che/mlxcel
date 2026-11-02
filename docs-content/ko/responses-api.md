@@ -16,6 +16,9 @@ OpenAI Responses의 모든 기능을 완전히 구현한 것은 아닙니다.
 | `src/server/responses_store.rs` | 인메모리 응답 저장소. |
 | `src/server/conversation_store.rs` | 인메모리 대화 기록 저장소. |
 | `src/server/routes/responses.rs` | 라우트 핸들러. |
+| `src/server/responses_compaction.rs` | Compaction capsule, replay, 선택, 요약 핵심 로직. |
+| `src/server/routes/responses_compact.rs` | `POST /v1/responses/compact` 핸들러. |
+
 
 ## 구현된 엔드포인트
 
@@ -24,16 +27,18 @@ OpenAI Responses의 모든 기능을 완전히 구현한 것은 아닙니다.
 | POST | `/v1/responses` | 응답을 생성합니다(비스트리밍 또는 스트리밍). |
 | GET | `/v1/responses/{id}` | 저장된 응답을 조회합니다. |
 | DELETE | `/v1/responses/{id}` | 저장된 응답을 삭제합니다. |
-| POST | `/v1/responses/{id}/cancel` | 최선 노력(best-effort) 방식의 취소 / 취소 표시. |
+| POST | `/v1/responses/{id}/cancel` | 진행 중인 스트리밍 응답에 대한 최선 노력(best-effort) 방식의 취소. 저장된(완료된) 응답은 저장된 결과를 바꾸지 않고 `400 invalid_request_error`를 반환합니다. |
+| POST | `/v1/responses/compact` | 오래된 턴을 `compaction` 항목으로 요약합니다. [대화 compaction](#conversation-compaction)을 참조하십시오. |
+| POST | `/v1/responses/input_tokens` | 본문이 prefill할 프롬프트 토큰 수를 집계합니다. `docs/llama-server-compat.md`를 참조하십시오. |
 
 구현된 동일한 라우트에 대해 `/v1`이 없는 별칭도 마운트됩니다:
-`/responses`, `/responses/{id}`, `/responses/{id}/cancel`.
+`/responses`, `/responses/{id}`, `/responses/{id}/cancel`,
+`/responses/compact`, `/responses/input_tokens`.
 
 다음 OpenAI 스타일 인터페이스는 이 구현에서 **마운트되지 않습니다**.
 
 - `GET /v1/responses/{id}/input_items`
-- `POST /v1/responses/compact`
-- `POST /v1/responses/input_tokens`
+
 
 ## 빠른 시작
 
@@ -86,6 +91,8 @@ with client.responses.stream(
 | `background` | `true`이면 거부 | 비동기 폴링은 구현되어 있지 않습니다. |
 | `truncation` | `disabled`만 가능 | `auto`를 포함한 다른 값은 400을 반환합니다. |
 | `service_tier` | 허용 | 그대로 반환되거나 무시됩니다. 스케줄링 티어는 구현되어 있지 않습니다. |
+| `context_management` | 부분집합 지원 | `[{"type":"compaction","compact_threshold":N}]`은 자동 compaction을 활성화합니다. [자동 compaction](#automatic-compaction)을 참조하십시오. `[]` 또는 `null`이면 비활성화합니다. |
+
 
 ## 입력 항목
 
@@ -99,9 +106,14 @@ Phase 1은 다음과 같은 타입 지정 항목을 지원합니다.
   {"type":"function_call", "call_id":"call_abc", "name":"f", "arguments":"{}"},
   {"type":"function_call_output", "call_id":"call_abc", "output":"ok"},
   {"type":"function_call_output", "call_id":"call_img", "output":[{"type":"input_text", "text":"captured"}, {"type":"input_image", "image_url":"data:image/png;base64,..."}]},
-  {"type":"reasoning", "content":[{"type":"reasoning_text", "text":"..."}]}
+    {"type":"reasoning", "content":[{"type":"reasoning_text", "text":"..."}]},
+  {"type":"compaction", "id":"cmp_...", "encrypted_content":"..."}
 ]
 ```
+
+`compaction` 항목은 `POST /v1/responses/compact`가 반환하는 capsule입니다. replay 방식은 [대화 compaction](#conversation-compaction)을 참조하십시오.
+
+
 
 `developer` 역할은 `system`과 동일하게 취급됩니다. Reasoning 입력 항목은 허용되어 전달됩니다. 텍스트 내용은 버퍼링되어 뒤따르는 assistant 턴의 병렬 `reasoning` 필드에 첨부됩니다. `message.get('reasoning')`을 렌더링하는 채팅 템플릿(예: Gemma 4)은 그 위치에서 이를 받습니다. `preserve_thinking` kwarg는 이 필드가 rolling-checkpoint 제거 과정에서 살아남는지 여부를 제어합니다. `false`(프롬프트 캐시가 켜져 있지 않은 경우의 기본값)이면 이전 턴의 reasoning을 인라인 `<think>` 블록과 함께 제거하고, `true`이면 유지합니다.
 
@@ -191,9 +203,16 @@ Phase 1은 다음과 같은 이벤트를 내보냅니다.
 - `response.reasoning_text.delta`
 - `response.reasoning_text.done`
 - `response.completed`
+- `mlx.compaction.started`, `mlx.compaction.completed` (MLX 확장. 자동 compaction 이후에만 발생. [자동 compaction](#automatic-compaction) 참조)
 - 오류 경로의 실패/미완료/오류 이벤트
 
+
 Reasoning은 message 항목보다 앞선 `reasoning` 출력 항목 안에서 `response.reasoning_text.delta` 이벤트로 스트리밍되며, `output_text`로는 절대 전송되지 않습니다. 이는 채팅 템플릿이 열린 thinking 블록을 미리 시작하는 경우(예: `<think>\n`으로 끝나는 generation 프롬프트)에도 마찬가지입니다. 이 경우 모델은 닫는 마커만 작성하며, 비스트리밍 분리와 마찬가지로 스트림은 reasoning 항목 안에서 시작됩니다.
+
+Harmony(GPT-OSS) 응답은 tool call 유무와 관계없이 `analysis` 채널을 동일한 `reasoning` 출력 항목으로 드러내며, `usage.output_tokens_details.reasoning_tokens`는 그 reasoning 텍스트의 토큰 수로 스트리밍과 비스트리밍 요청에서 동일합니다. 여러 analysis 또는 `<think>` 구간은 두 응답 모드 모두에서 같은 스트리밍 필터를 통해 누적되며, 파서가 추가하는 구분자나 누락된 뒤쪽 구간이 없습니다. reasoning이 없는 응답에서는 0입니다.
+
+Function call은 `/v1/chat/completions`가 점진적으로 스트리밍하는 형식(Hermes / Qwen JSON, Mistral `[ARGS]` 및 JSON 리스트, Llama 3 JSON, Qwen3-Coder XML. `docs/server-features.md` 참조)에 대해 생성되는 동안 스트리밍됩니다. 호출의 이름이 완성되면 열려 있는 reasoning 또는 message 항목이 닫히고 `status: "in_progress"`와 빈 `arguments`를 가진 `function_call` 항목이 추가되며, 이후 `response.function_call_arguments.delta` 이벤트가 인자 조각을 실어 나릅니다. 생성이 끝나면 `response.function_call_arguments.done`과 `response.output_item.done`이 신뢰할 수 있는 파싱된 인자를 담고, 호출은 완료된 응답에서도 스트리밍된 `call_id`를 유지합니다. tool call을 파싱하는 스트리밍 요청에서 `response.completed`(그리고 `previous_response_id`를 위해 저장되는 사본)는 스트림이 보낸 항목들로 만들어집니다. 같은 항목 id와 `output_index` 순서, 각 message 구간은 자신만의 `message` 항목(호출 앞뒤의 산문은 두 항목), function call은 스트리밍된 `fc_` id, `call_id`, 파싱된 인자를 갖고, `output_text`는 message 구간들을 이어 붙인 것입니다. 스트리머가 조각 처리 중 panic하면 이를 격리하고 나머지 인자는 최종 파싱에서 전달됩니다. 비스트리밍 응답은 변하지 않습니다. Hermes, Granite, Mistral, Llama 3에서 객체 `arguments`는 재직렬화한 것이 아니라 모델이 출력한 원본 JSON 텍스트입니다. 최종 파싱이 확인하지 못한 스트리밍 호출은 응답 id와 함께 `warn` 수준으로 기록되고 `incomplete`로 닫히며, 이후 파싱된 호출은 별도 항목으로 내보내집니다. 다른 형식은 이전처럼 생성 이후 호출마다 `output_item.added` 하나, 인자 delta 하나, `.done`, `output_item.done`을 내보냅니다.
+
 
 ## 응답 및 대화 저장소
 
@@ -218,8 +237,90 @@ Reasoning은 message 항목보다 앞선 `reasoning` 출력 항목 안에서 `re
 - `conversation`은 id로 인메모리 기록을 로드하고 여기에 추가합니다.
 - 두 필드는 함께 사용할 수 없습니다.
 - 참조된 이전 응답의 `instructions`는 이어받지 않습니다.
+- 결합된 이력(저장된 입력, 저장된 출력, 또는 새 입력) 어디에든 있는 `compaction` 항목은 이력이 조립된 뒤 확장됩니다. 이력에 capsule이 들어 있던 응답은 자신의 instructions, 그 capsule, 그 이후의 모든 것을 입력으로 저장하므로 이후의 `previous_response_id` 연결도 요약을 계속 replay합니다. 자동으로 compaction된 응답은 자신의 instructions를 입력으로, capsule을 첫 번째 출력 항목으로 저장하며, 이는 같은 방식으로 replay됩니다.
+
+
+## 대화 compaction
+
+`POST /v1/responses/compact`(별칭 `/responses/compact`)는 오래된 턴을 모델이 작성한 요약으로 대체하여 긴 agent 세션이 다시 컨텍스트 윈도우에 들어가도록 합니다. 비스트리밍이며 아무것도 저장하지 않습니다.
+
+요청 본문: `model`, `input`(문자열 또는 항목 배열), 그리고 선택적으로 `instructions`, `tools`, `max_output_tokens`(요약 예산, 기본값 1024, 1에서 16384), `keep_tokens`(그대로 유지할 턴의 예산, 기본값은 슬롯별 컨텍스트 윈도우의 1/16, 최대 8192). 샘플링 필드는 `/v1/responses`에서와 같이 허용됩니다. `stream: true`, `previous_response_id`, `conversation`은 400을 반환합니다. 전체 이력을 `input`에 보내십시오.
+
+```jsonc
+{
+  "id": "resp_...",
+  "object": "response.compaction",
+  "created_at": 1760000000,
+  "model": "...",
+  "output": [
+    {"type":"message", "role":"system", "content":"..."},
+    {"type":"message", "role":"user", "content":"latest question"},
+    {"type":"compaction", "id":"cmp_...", "encrypted_content":"eyJ2IjoxLC..."}
+  ],
+  "usage": {"input_tokens": 1830, "output_tokens": 212, "total_tokens": 2042, ...}
+}
+```
+
+`output`은 system 및 developer 메시지, 유지된 턴, 그리고 정확히 하나의 `compaction` 항목을 담습니다. 버전 1은 유지된 턴도 capsule 안에 저장하므로, 반환되는 본문이 원래 미디어 payload보다 커질 수 있습니다. 서버는 replay 요청 크기 제한에 맞지 않는 출력을 거부하므로 새 항목을 위한 여유를 남겨 두십시오. `usage`는 요약 생성 한 번을 집계합니다. 세션을 이어 가려면 `[...output, <새 항목>]`을 `/v1/responses`에 보내십시오. 요청 수준의 `instructions`는 compaction pass에 적용되므로, 필요하면 연속 요청에 다시 보내거나 지속적인 instructions를 system/developer 입력 메시지에 넣으십시오. 유지된 턴이 `output`에도, capsule 안에도 나타나므로 그 본문은 이를 두 번 담습니다. 클라이언트는 system 및 developer 메시지와 `compaction` 항목, 그리고 새 항목만 보내면 더 작은 본문 크기로 같은 replay를 얻을 수 있습니다.
+
+**선택.** system 및 developer 메시지는 항상 자신의 역할로 유지됩니다. 가장 최근 user 메시지는 항상 유지됩니다. `keep_tokens`에 들어가는 가장 최근의 온전한 턴들이 유지되며, 가장 최근 턴은 그것만으로 예산을 초과하더라도 유지됩니다. 예산은 렌더링된 유지 컨텍스트에서 측정되므로 system 및 developer 메시지, `instructions`, 템플릿 오버헤드도 포함합니다. 이것만으로 `keep_tokens`를 초과하면 이전 턴이 하나도 들어가지 않아 가장 최근 턴(그리고 최근 user 메시지)만 유지됩니다. 이력은 user 메시지 직전 또는 마지막으로 열려 있던 function call을 닫는 출력 바로 뒤에서만 분할되므로, `function_call`이 자신의 `function_call_output`과 분리되는 일은 없습니다. 출력 없이 호출로 끝나는 이력은 그 tool 그룹 전체를 유지합니다. 분할 이전의 모든 것이 요약됩니다.
+
+**요약.** 요약될 접두부(system 및 developer 메시지와 `instructions` 포함)는 모델의 채팅 템플릿을 통해 렌더링되고 고정된 handoff 지시가 user 턴으로 덧붙으며, `/v1/responses`와 같은 worker 경로에서 temperature 0, thinking 끈 상태, 도구 없이 생성이 한 번 실행됩니다. 토큰 수는 `/v1/responses/input_tokens` 경로를 사용합니다. 성공적으로 가져온 이미지 URL은 compaction마다 캐시되어 모든 집계와 요약 프롬프트에 재사용됩니다. 미디어 지원 여부와 이미지 개수 검사는 prefetch 전에 실행되며, 읽기에 실패한 경우에는 일반 렌더러가 오류를 내도록 맡겨집니다. 미디어가 있는 본문은 여전히 worker에서 집계되므로, 각 집계는 `/v1/responses/input_tokens`처럼 worker 슬롯을 하나 사용합니다.
+
+**실패.** 다음 경우 어느 것도 컨텍스트를 대체하지 않습니다.
+
+| 조건 | 상태 | 오류 |
+|-----------|--------|-------|
+| 컨텍스트 윈도우 하나보다 긴 입력(다단계 요약은 구현되어 있지 않음) | 400 | `type: exceed_context_size_error`, `code: context_length_exceeded` |
+| 요약 프롬프트와 `max_output_tokens`의 합이 윈도우를 초과 | 400 | 동일 |
+| 요약된 컨텍스트가 입력보다 짧지 않음 | 400 | 동일 |
+| compaction된 출력이 replay 시 요청 본문 제한을 초과 | 400 | `invalid_request_error`. 유지되는 미디어 또는 `keep_tokens`를 줄이십시오 |
+| 최근 턴 이전에 안전한 분할 지점이 없음 | 400 | `invalid_request_error` |
+| 요약이 비어 있거나 `max_output_tokens`에서 멈춤 | 502 | `server_error` |
+
+오류 타입은 서버의 기존 컨텍스트 초과 오류와 일치하고, 코드는 OpenAI의 것이므로 어느 쪽 클라이언트든 이를 인식합니다.
+
+**Capsule.** `encrypted_content`는 `{"v":1,"summary":"...","retained":[<입력 항목>]}`의 base64url(패딩 없음)입니다. OpenAI 필드 이름과 달리 설계상 암호화되어 있지 않습니다. 클라이언트가 요약된 대화를 이미 가지고 있으므로 기밀성이 더해 주는 것이 없고, 암호화나 HMAC 키는 새 키 저장소 없이는 서버 재시작 후에 유지되지 않기 때문입니다. 따라서 capsule은 클라이언트 데이터로 취급됩니다. 요청 본문 제한으로 한정되고, 유지된 항목은 일반 `input` 항목과 같은 파서와 검증을 거치며, 다른 capsule을 중첩하는 capsule은 거부됩니다. 디코딩되지 않거나 `v`가 1이 아닌 capsule은 400 `invalid_request_error`를 반환합니다.
+
+**Replay.** `input`(또는 연결된 이력)에 `compaction` 항목이 들어 있으면, 가장 최신 항목 이전의 모든 것이 버려지되 system 및 developer 메시지는 예외이며(그대로 다시 보낸 중복은 한 번만 유지), capsule의 요약(assistant 메시지로)과 유지된 항목이 그 자리를 차지하고, 이어서 그 이후의 항목이 옵니다. 이는 `/v1/responses`, `/v1/responses/input_tokens`, `/v1/responses/compact` 자신에 적용되므로, 이미 compaction된 세션을 다시 compaction하면 이전 요약이 새 요약에 합쳐집니다.
+
+알려진 제한:
+
+- 분할이 가장 최근에 완료된 tool 그룹을 요약 속으로 넘길 수 있습니다. upstream mlx-vlm은 그 그룹을 항상 그대로 유지합니다.
+- 요약은 system 및 developer 메시지 바로 뒤에 assistant 턴으로 replay되므로, system 이후 첫 턴이 user 턴이어야 하는 채팅 템플릿(Gemma, 오래된 Mistral)은 replay된 프롬프트를 거부할 수 있습니다. upstream mlx-vlm도 같은 순서를 사용합니다.
+
+### 자동 compaction
+
+`/v1/responses` 요청(`/responses`도 해당)은 다음으로 옵트인합니다.
+
+```json
+{"context_management": [{"type": "compaction", "compact_threshold": 24000}]}
+```
+
+생성 전에 서버는 `/v1/responses/input_tokens` 경로로 렌더링된 입력의 토큰 수를 세어냅니다. 입력은 연결된 `previous_response_id` 또는 `conversation` 항목과 `input`을 합친 전체 이력이며, 이미 존재하는 capsule은 확장된 상태입니다. 토큰 수가 `compact_threshold`에 도달하거나 컨텍스트 윈도우에 출력을 위한 여유가 남지 않으면, 이력은 `POST /v1/responses/compact`와 정확히 같은 방식(같은 선택, 기본 `keep_tokens`, 실패 처리)으로 compaction되고, 생성은 compaction된 컨텍스트에서 실행됩니다. 요약 예산은 컨텍스트 윈도우의 1/16이며 128에서 1024 토큰 사이입니다. 사용하지 않은 `max_output_tokens`는 임계값에 산입되지 않습니다. compaction은 생성 도중에는 실행되지 않습니다.
+
+이후 응답 `output`은 `compaction` 항목으로 시작하고 생성된 항목이 뒤따릅니다. `usage`는 요약 pass가 아니라 최종 생성만 집계합니다. 저장된 응답은 system 및 developer 메시지를 입력으로, capsule을 첫 번째 출력 항목으로 유지하므로, `previous_response_id` 이어가기는 요약과 유지된 턴을 replay하고 그 이어가기가 임계값에 도달할 때에만 다시 compaction합니다. `conversation` 기록은 새 입력과 capsule을 포함한 출력을 추가하며 같은 방식으로 replay됩니다. 이력을 다시 보내는 클라이언트는 출력을 그대로 추가하거나, 가장 최신 `compaction` 항목과 그 이후의 모든 것만 유지할 수 있습니다.
+
+`context_management`를 포함하는 모든 요청에서(compaction 여부와 관계없이), 생성은 출력 한도(`max_output_tokens` 또는 서버 기본값)와 프롬프트 이후 남은 컨텍스트 중 작은 쪽으로 제한됩니다. 그 상한이나 `max_output_tokens`에서 멈춘 응답은 `status: "incomplete"`, `incomplete_details: {"reason": "max_output_tokens"}`, `completed_at` 없음, 그리고 중단된 message 항목에 `status: "incomplete"` 표시를 반환합니다(스트리밍은 `response.incomplete`로 끝남). 제한된 상한보다 높은 제한적 reasoning 예산은 그 한도보다 토큰 하나 아래로 낮춰지므로, thinking을 강제로 끝내더라도 보이는 출력을 위한 여유가 남습니다. 여유 슬롯이 없는 서버는 어떤 집계도 하기 전에 503으로 응답합니다. `context_management`가 없는 요청은 변하지 않습니다. 추가 집계도, 상한도 없고 `length` 중단도 여전히 `completed`로 보고됩니다.
+
+compaction된 스트리밍 요청은 `response.in_progress` 이후, compaction 항목의 `response.output_item.added`(`output_index` 0. 생성된 항목은 인덱스 1부터 이어지며 `response.completed`도 같은 항목을 나열함) 이전에 두 개의 MLX 확장 이벤트를 보냅니다.
+
+```text
+event: mlx.compaction.started
+data: {"type":"mlx.compaction.started","sequence_number":2,"response_id":"resp_...","input_tokens":5786}
+
+event: mlx.compaction.completed
+data: {"type":"mlx.compaction.completed","sequence_number":3,"response_id":"resp_...","input_tokens_before":5786,"input_tokens_after":854}
+```
+
+이 숫자는 compaction 전후의 렌더링된 입력을 설명합니다. compaction은 스트림이 열리기 전에 끝나므로 두 이벤트는 그 뒤에 함께 도착하며, 실시간 진행 상황이 아니라 숫자만 전달합니다. compaction이 없으면 이벤트도 없습니다.
+
+**실패.** compaction 실패는 어떤 출력이 생성되기 전에 `POST /v1/responses/compact`와 같은 HTTP 오류(위 표 참조)를 반환합니다. 스트림이 아직 열리지 않았으므로 스트리밍 요청도 마찬가지입니다. 예를 들어 이력이 윈도우 하나를 넘거나 요약이 이를 줄이지 못하면 400 `exceed_context_size_error`(코드 `context_length_exceeded`)입니다. 넘칠 컨텍스트에서는 아무것도 생성하지 않습니다. 이력에 안전한 분할 지점이 없으면(턴 하나이거나 끝나지 않은 tool 그룹 하나) upstream mlx-vlm처럼, 입력이 출력을 위한 여유를 여전히 남기면 compaction 없이 요청을 진행하고, 그렇지 않으면 `context_length_exceeded`로 실패합니다. 잘못된 `context_management`(배열이 아님, 항목이 둘 이상, `compaction`이 아닌 `type`, 또는 1에서 100000000 범위의 정수가 아닌 `compact_threshold`)는 400 `invalid_request_error`를 반환합니다.
+
+구현되지 않은 것: `/v1/chat/completions`와 `/v1/messages`의 자동 compaction, Codex `compaction_trigger` 입력 항목, 그리고 윈도우 하나보다 긴 이력의 다단계 요약.
 
 ## Tool choice 강제
+
 
 `tool_choice`는 chat-completions 파이프라인으로 변경 없이 전달되므로,
 네 가지 모드는 `/v1/chat/completions`에서와 정확히 동일하게 동작합니다.
@@ -258,8 +359,7 @@ function 도구만 허용됩니다. `web_search`, `file_search`, `computer_use_p
 
 - 백그라운드 작업 모드 없음;
 - input-items 페이지네이션 엔드포인트 없음;
-- 서버 측 compaction 엔드포인트 없음;
-- 토큰 수 계산 엔드포인트 없음;
+
 - 내장 도구 또는 MCP 커넥터 실행 없음;
 - 디스크에 영속화되는 응답 저장소 없음;
 - 업로드 저장소를 통한 `input_file` 수집 또는 `file_id` 해석 없음.
