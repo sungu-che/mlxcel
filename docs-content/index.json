@@ -3,8 +3,8 @@
     "repo": "lablup/mlxcel",
     "ref": "main",
     "dir": "docs",
-    "commit": "79b031001c903b56b0773ec73bc556935b251d3a",
-    "commitDate": "2026-11-01T06:54:00Z"
+    "commit": "9ff22456df216894c4c2412eb96cdb427ab4c55a",
+    "commitDate": "2026-11-02T08:51:38Z"
   },
   "files": [
     {
@@ -29,7 +29,7 @@
       "name": "benchmarks.md",
       "slug": "benchmarks",
       "title": "Benchmarks",
-      "size": 101588
+      "size": 102140
     },
     {
       "name": "block-diffusion.md",
@@ -65,7 +65,7 @@
       "name": "distributed.md",
       "slug": "distributed",
       "title": "Distributed inference",
-      "size": 57419
+      "size": 57431
     },
     {
       "name": "embeddings.md",
@@ -77,7 +77,7 @@
       "name": "environment-variables.md",
       "slug": "environment-variables",
       "title": "Environment variables",
-      "size": 259673
+      "size": 260570
     },
     {
       "name": "sparse-paged-decode.md",
@@ -173,7 +173,7 @@
       "name": "server-features.md",
       "slug": "server-features",
       "title": "Server features and deployment guide",
-      "size": 25175
+      "size": 25941
     },
     {
       "name": "speculative-acceptance.md",
@@ -185,7 +185,7 @@
       "name": "supported-models.md",
       "slug": "supported-models",
       "title": "Supported models",
-      "size": 283368
+      "size": 286884
     },
     {
       "name": "f32-attention-widen-audit.md",
