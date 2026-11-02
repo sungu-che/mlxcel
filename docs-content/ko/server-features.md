@@ -56,6 +56,15 @@ mlxcel-server -m mlx-community/Qwen3.5-0.8B-4bit \
 두 가지 별칭은 마이그레이션 시 중요한 예외입니다. `/completions`와 `/embeddings`는 이제 네이티브 `llama-server` 스키마를 반환합니다.
 OpenAI 객체를 기대하는 클라이언트는 `/v1/completions`와 `/v1/embeddings`를 사용해야 합니다.
 
+`POST /v1/completions`는 `prompt`를 문자열 또는 정확히 문자열 하나를 담은 배열로 받습니다.
+예를 들어 `"prompt": ["Hello"]`는 스트리밍과 비스트리밍 요청 모두에서 `"prompt": "Hello"`와 똑같이 처리됩니다.
+빈 배열이나 프롬프트가 여러 개인 배열은 `invalid_request_error` JSON 본문과 함께 HTTP 400을 반환하므로, 요청마다 프롬프트를 하나씩 보내십시오.
+토큰 ID 배열과 그 밖의 JSON 타입은 지원되지 않습니다.
+빈 문자열은 무조건 생성을 위한 유효한 요청으로 남지만, 공백만으로 이루어진 비어 있지 않은 문자열은 거부됩니다.
+이 정책은 단일 노드 HTTP 서버, 분리형(disaggregated) HTTP 라우터, 직접 Rust 호출을 포함한 `InProcessServer::complete`가 공유합니다.
+검증은 디스패치나 스트리밍 설정 이전에 수행됩니다.
+프롬프트 배칭, 토큰 ID 입력, 여러 선택지(`n > 1`)는 별도의 후속 작업으로 남아 있습니다.
+
 `compat/llama-server/b10621/` 아래에 체크인된 b10621 매니페스트가 공식 호환성 목록입니다.
 고정된(pinned) 모든 옵션, 라우트, 네이티브 completion 필드를 지원(supported), 별칭(aliased), 해당 없음(not applicable),
 설계상 다름(different by design) 중 하나로 분류하며, 보류된 항목은 없습니다.
@@ -81,7 +90,7 @@ mlxcel-server -m Qwen3.5-0.8B-4bit \
 네이티브 `cache_prompt` 요청 필드를 사용하면 요청별로 조회와 기증(donation)을 모두 끌 수 있습니다.
 캐시 히트 시 prefill이 두 부분으로 나뉘어 수행되어 반올림 결과가 달라질 수 있으므로,
 greedy 출력이 캐시 상태에 의존하면 안 되는 경우에는 `cache_prompt: false`를 보내십시오
-([`llama-server-compat.md`](llama-server-compat.md#reproducible-greedy-output-send-cache_prompt-false) 참조).
+([`llama-server-compat.md`](llama-server-compat.md#재현-가능한-greedy-출력-cache_prompt-false를-보내십시오) 참조).
 `/v1/cache/stats`는 캐시 상태를 보고하며, `POST /v1/cache/reset`은 캐시를 비웁니다.
 컨텍스트 시프팅(context shifting)은 b10621과 일치하도록 기본적으로 비활성화되어 있습니다.
 애플리케이션이 너무 긴 대화의 일부를 의도적으로 유지하려면 `--context-shift`를 활성화하고 `--keep`을 설정하십시오.
@@ -226,6 +235,7 @@ Hermes(그리고 이를 통해 파싱하는 Granite), Mistral, Llama 3에서 객
 강제된 `tool_choice`는 `response_format` 스키마와 함께 사용할 수 없습니다(400).
 Anthropic의 `tool_choice` 값 `{"type": "any"}`와 `{"type": "tool", "name": "f"}`는
 각각 `required`와 이름을 지정한 형식에 매핑되므로, `/v1/messages`에도 동일한 규칙이 적용됩니다.
+`name`이 없는 `{"type": "tool"}`이거나, `type`이 `auto`, `any`, `none`, `tool` 중 하나가 아니면 400으로 거부됩니다.
 
 ## 관측성, 영속성, 재개 가능한 스트림
 
@@ -274,6 +284,8 @@ GET은 타입이 지정된 스키마, 현재 값, 안정적인 fingerprint를 �
 읽기 전용이거나 잘못된 이름은 `rejected`로 반환됩니다.
 변경 가능한 그룹에는 요청 타임아웃, 생성 기본값, DRY, 언어 bias, 추론 예산,
 chat-template kwargs, 루프 감지, diffusion 기본값이 포함됩니다.
+
+읽기 전용 항목은 시작 시점의 값을 일반 JSON으로 보고합니다. 값이 없으면 `null`이고, enum은 CLI 표기 그대로(`preemption_policy: "longest-first"`, `decode_storage_backend: "auto"`, `serving_mode: "hybrid"`)입니다. `tensor_parallel`, `prompt_cache`, `batch_kv_quant`, `cors_policy`와 같은 구조화된 값은 이름이 있는 필드를 가진 평탄한(flat) 객체입니다. 스키마 타입은 `object`이며, `gcp`, `pipeline_parallel_runtime`, `remote_pipeline_stage`에는 `object_or_null`이 적용됩니다. `kv_cache_budget`은 `--kv-cache-budget` 표기(`auto`, `disabled`, 또는 바이트 수)이거나 `null`입니다.
 
 ## 전송 및 접근 제어
 

@@ -10,13 +10,11 @@ Speculative decoding(추측 디코딩)은 가벼운 draft 모델로 토큰을 �
 
 드래프트된 토큰이 `p`에서 새로 추출한 값과 같을 때에 한해 수용하며, 두 분기 모두에서 그 추출값을 내보냅니다. **무손실(lossless)**: 내보낸 모든 토큰이 target에서 새로 추출한 조건부 샘플이므로, 스트림은 정확히 target 단독 샘플과 같습니다. 수용 확률은 `sum_x p(x) q(x)`입니다.
 
-
-
 ### Greedy argmax (`temperature == 0`)
 
 샘플러가 우연히 `argmax`인 경우의 sampler-match입니다. 같은 논거로 무손실이며, 정확히 greedy target 디코딩입니다.
 
-### Argmax-against-argmax (MTP, DFlash, DSpark, Muse Glimmer assistant)
+### Argmax-against-argmax (MTP, DFlash, DSpark 및 Muse Glimmer assistant)
 
 온도와 관계없이 드래프트된 토큰이 `argmax(target_logits)`와 같을 때 수용하고, 불일치하면 argmax를 내보냅니다. `temperature > 0`에서는 **무손실이 아닙니다**. 서빙되는 스트림은 `p`의 샘플이 아니라 target의 greedy 스트림입니다. 수용 확률은 `q(argmax p)`입니다.
 
@@ -25,8 +23,6 @@ Muse Glimmer assistant drafter(#1343)는 이 규칙 아래 동일한 DFlash 라�
 이 drafter의 verify 폭은 DFlash 루프에서 유일한 적응형 폭이므로 프로브가 한 번 이상 실행됩니다. 라운드 루프는 drafter가 선언한 깊이인 4개 행으로 워밍업하고, 측정 윈도우가 그만한 가치가 있음을 보일 때만 요청된 상한까지 넓히며, 게이트는 버스트가 시작되기 전에 두 폭을 모두 통과시킵니다. 상한만 프로브하면 워밍업 폭이 측정되지 않은 채 허용되는데, 이는 형식적인 문제가 아닙니다. forward 폭이 MLX가 디스패치하는 양자화 matmul 커널을 선택하며, `docs/benchmarks.md`는 동일한 비교가 폭 8에서 20.6퍼센트, 폭 32에서 0.0퍼센트의 불일치를 보인다고 기록합니다.
 
 LFM2 DSpark drafter는 DFlash 라운드 루프 위에서 실행되므로 이 규칙을 따르며, 디스패치에 한 가지 차이가 있습니다. greedy 전용이라는 점입니다. drafter의 Markov 헤드는 greedy target에 대해 학습된 체인을 제안하며, 서버는 샘플러가 argmax가 아닌 요청(`top_k != 1`인 `temperature > 0`)을 편향된 greedy 스트림으로 서빙하는 대신 경고 한 번과 함께 클래식 디코드로 보냅니다. `temperature == 0`에서는 아래의 block-versus-chain 정확성 프로브를 전제로 정확히 greedy target 디코딩입니다.
-
-
 
 ## 수용 상한
 
@@ -47,7 +43,7 @@ Modified rejection sampling(Leviathan et al. 2023, Chen et al. 2023)은 이 상�
 |------|--------------------|-------------------|
 | 엔진의 토큰 전용 루프에서의 `PromptLookupDrafter`(`mlxcel generate --prompt-lookup`) | greedy argmax (무손실) | **sampler-match** (무손실이며 여기서는 수용 최적) |
 | 서버 스케줄러에서의 `PromptLookupDrafter`(`--draft-kind prompt-lookup`, 동일한 `Engine::verify_round`) | greedy argmax (무손실) | **sampler-match** (무손실이며 여기서는 수용 최적) |
-| 엔진의 토큰 전용 루프에서의 `FullModelDrafter`(`mlxcel generate --draft-model <일반 모델>`, `mlxcel-server --draft-model <일반 모델>`, #2757) | greedy argmax. 프로브 게이트 없음. plain decode와 바이트 단위로 동일하다고 보장되지 않음(prompt lookup과 같은 부류이며 같은 스트림. [오프라인 라우팅](#오프라인-라우팅) 참고) | **sampler-match** (무손실): drafter는 자신의 argmax를 제안하고, target의 추출이 결정 |
+| 엔진의 토큰 전용 루프에서의 `FullModelDrafter`(`mlxcel generate --draft-model <ordinary model>`, `mlxcel-server --draft-model <ordinary model>`, #2757) | greedy argmax. 프로브 게이트 없음. plain decode와 바이트 단위로 동일하지 않음(prompt lookup과 같은 부류이며 같은 스트림. [오프라인 라우팅](#오프라인-라우팅) 참고) | **sampler-match** (무손실): drafter는 자신의 argmax를 제안하고, target의 추출이 결정 |
 | Gemma 4 MTP 라운드 루프 | argmax (여기서는 무손실) | argmax-against-argmax (**편향됨**) |
 | DFlash 라운드 루프(Qwen 3.5 DFlash drafter) | argmax (여기서는 무손실) | argmax-against-argmax (**편향됨**) |
 | DFlash 라운드 루프(LFM2 DSpark drafter) | argmax (여기서는 무손실, 프로브 게이트) | 클래식 디코드로 전환 |
@@ -59,13 +55,11 @@ Prompt lookup은 결정적으로 제안하므로 `q`는 드래프트된 토큰 `
 
 CUDA 서버의 prompt-lookup 거버너는 추가로, 수용된 제안 수에 1을 더한 값의 EMA가 4 토큰 아래로 내려가고, 최소 두 번의 드래프트 라운드 이후이며 가장 최근 라운드도 하한 미만일 때 수확이 낮은 행을 일시 중지합니다. 하한을 충족한 최근 라운드는 일시 중지 없이 초기 EMA 부채를 상환할 수 있습니다. 수용된 토큰 EMA가 하한 이상이었던 후에 발생한 고립된 수용 0 라운드는 한 라운드의 유예를 받으며, 부분적인 저수확 수용은 그렇지 않습니다. 유예는 연속된 첫 번째 저수확 라운드를 넘어 연장되지 않으며, 일시 중지에는 여전히 내보낸 토큰 EMA가 하한 미만이어야 합니다. 이 측정된 필드 경계 휴리스틱은 수용 규칙 자체를 바꾸지 않습니다. 이는 제안 비용에 대한 결정이지 sampler-match 수용 규칙의 변경이 아닙니다. 일시 중지된 행도 여전히 내보낸 토큰을 관찰하고 섀도 룩업을 실행하며, 일치하는 섀도 토큰 일곱 개가 verify를 복원합니다. 단순 요청(plain ask), 철회된 제안, 게이트로 제외된 행은 verify 증거를 추가하지 않습니다. CLI에는 손익분기 하한이 없으며 두 토큰 섀도 확인을 유지합니다. `adaptive = false`는 하한을 무시하고, graded 정책은 변경되지 않습니다.
 
-
-
 ## 오프라인 라우팅
 
-`mlxcel generate --draft-model <dir>`은 세 가지 라운드 루프 중 하나를 실행합니다. MTP(명시적 `--draft-kind mtp` 또는 MTP `model_type`), DFlash(오프라인 DFlash arm이 있는 target(현재는 Laguna)에서의 DFlash drafter 디렉터리, 명시적이거나 자동 감지됨), 또는 full-model drafter(#2757)입니다. full-model drafter는 DFlash 계열 마커도 MTP `model_type`도 없는 디렉터리에서 자동 감지되거나 `--draft-kind full-model`로 선택되는 일반적인 더 작은 체크포인트입니다. full-model drafter는 엔진의 토큰 전용 루프, 즉 `--prompt-lookup`이 실행하는 것과 같은 루프이며, draft 모델 자체의 KV cache를 target의 것 옆에서 되감습니다. target의 tokenizer를 공유하는 drafter가 필요하고, target보다 큰 draft 어휘는 로드 전에 거부됩니다. 그 밖의 경우는 drafter를 로드하기 전에 `--draft-kind mtp`, `--draft-kind dflash`, `--draft-kind full-model`, `--prompt-lookup`을 명시하는 오류로 실패합니다. 캐시 trim으로 되감을 수 없는 상태를 가진 target 또는 drafter(순환, 하이브리드, 모델 소유 패밀리)는 prompt lookup에 적용되는 `Engine::verify_rounds_unsupported`의 같은 규칙으로 거부되며(#2495), `mlxcel-server`에서도 마찬가지입니다. CLI는 실행 후 stderr에 drafter의 수용 및 draft-forward 횟수를 출력합니다.
+`mlxcel generate --draft-model <dir>`은 세 가지 라운드 루프 중 하나를 실행합니다. MTP(명시적 `--draft-kind mtp`, 또는 MTP `model_type`), DFlash(DFlash drafter 디렉터리. 명시적으로 지정하거나 자동 감지되며, 오프라인 DFlash arm이 있는 target에서 동작합니다. 현재는 Laguna), 또는 full-model drafter(#2757): DFlash 계열 마커도 MTP `model_type`도 없는 디렉터리에서 자동 감지되거나 `--draft-kind full-model`로 선택되는 일반적인 더 작은 체크포인트입니다. full-model drafter는 엔진의 토큰 전용 루프, 즉 `--prompt-lookup`이 실행하는 것과 같은 루프이며, draft 모델 자체의 KV cache를 target의 것 옆에서 되감습니다. target의 tokenizer를 공유하는 drafter가 필요하며, target보다 큰 draft 어휘는 로드 전에 거부됩니다. 그 밖의 경우는 drafter를 로드하기 전에, `--draft-kind mtp`, `--draft-kind dflash`, `--draft-kind full-model`, `--prompt-lookup`을 명시하는 오류로 실패합니다. 캐시 trim으로 되감을 수 없는 상태를 가진 target 또는 drafter(recurrent, hybrid 및 model-owned 계열)는 prompt lookup에 적용되는 한 가지 규칙인 `Engine::verify_rounds_unsupported`로 거부되며(#2495), `mlxcel-server`에서도 마찬가지입니다. CLI는 실행 후 stderr에 drafter의 수용 횟수와 draft-forward 횟수를 출력합니다.
 
-greedy 정확성은 토큰 전용 루프의 것이며, MTP와 DFlash 경로가 block-versus-chain 프로브를 통해 도달하는 수준에는 미치지 못합니다. temperature 0에서 스트림은 모든 위치에서 target 자신의 argmax이지만 plain decode와 바이트 단위로 동일하다고 보장되지 않으며, 그 차이를 기준으로 게이트하지도 않습니다. #2757의 M1 Ultra 기록에서 실제 쌍 실행 36회 중 32회가 plain decode와 일치했습니다. 나머지 네 번은 target 단독에서 비롯됩니다. draft 모델도 draft 캐시도 없는 `--prompt-lookup`이 같은 프롬프트에서 같은 다른 스트림을 내보내며, target을 자신의 plain 스트림에 대해 teacher-forced로 재생하면 그 KV 히스토리가 멀티 토큰 forward로 구축될 때 같은 뒤집힘이 재현됩니다. #2757의 pull request가 그 증거를 담고 있습니다. drafter의 제안만으로는 스트림을 움직일 수 없습니다. target이 모든 위치를 자신의 캐시로부터 결정하기 때문이며, 정렬이 어긋난 draft 캐시는 수용률만 잃습니다. 샘플링된 스트림은 카이제곱 및 Markov 가드를 통과합니다.
+greedy 정확성은 토큰 전용 루프의 것이며, MTP와 DFlash 경로가 block-versus-chain 프로브를 통해 도달하는 수준에는 미치지 못합니다. temperature 0에서 스트림은 모든 위치에서 target 자신의 argmax이지만, plain decode와 바이트 단위로 동일하다고 보장되지 않으며, 그 차이를 기준으로 게이트하지도 않습니다. #2757의 M1 Ultra 기록에서 실제 쌍 실행 36회 중 32회가 plain decode와 일치했습니다. 나머지 네 번은 target 자체에서 비롯됩니다. draft 모델도 draft 캐시도 없는 `--prompt-lookup`이 같은 프롬프트에서 같은 다른 스트림을 내보내며, target을 자신의 plain 스트림에 대해 teacher-forced 방식으로 재생하면 그 KV 히스토리가 멀티 토큰 forward로 구축될 때 같은 뒤집힘이 재현됩니다. #2757의 pull request가 그 증거를 담고 있습니다. drafter의 제안만으로는 스트림을 움직일 수 없습니다. target이 모든 위치를 자신의 캐시로부터 결정하기 때문이며, 정렬이 어긋난 draft 캐시는 수용률만 잃습니다. 샘플링된 스트림은 카이제곱 및 Markov 가드를 통과합니다.
 
 오프라인 arm이 없는 target의 DFlash 또는 DSpark drafter는 같은 거부와 함께, 더 많은 target에 대해 DFlash 라운드 루프를 구동하는 `mlxcel-server`로의 안내를 받습니다(#1168). 이 체크포인트들은 `embed_tokens`도 `lm_head`도 제공하지 않으며, 바인딩할 때 둘 다 target에서 빌려 오기 때문입니다. LFM2 DSpark drafter(#1339)와 Muse Glimmer assistant(#1343)도 같은 형태입니다.
 
@@ -73,10 +67,7 @@ greedy 정확성은 토큰 전용 루프의 것이며, MTP와 DFlash 경로가 b
 
 ## 실행 읽어내기
 
-
 `RUST_LOG`를 설정하면 오프라인 CLI 명령에 subscriber가 설치되어(stderr에 기록하므로 파이프된 stdout은 깨끗하게 유지됨) drafter 자동 감지 줄이 나타납니다. `RUST_LOG`가 설정되지 않으면 기본 출력은 변하지 않습니다. `mlxcel serve`는 자체 subscriber를 설치하므로 영향을 받지 않습니다. `mlxcel generate --prompt-lookup`은 실행 후 stderr에 drafter 통계를 출력합니다.
-
-
 
 ### 응답 자체에 담기는 요청별 수용 정보
 
@@ -96,7 +87,7 @@ greedy 정확성은 토큰 전용 루프의 것이며, MTP와 DFlash 경로가 b
 
 `finish_reason` 청크만 이를 싣습니다. 카운터는 실행의 총계이며, 스트림 중간 프레임이 진행 중인 `draft_n`을 보고하면 아직 총계가 아닌 값을 보고하는 셈이 되기 때문입니다. 같은 이유로 네이티브 라우트의 토큰별 `timings_per_token` 프레임은 아홉 개의 기본 키를 싣고 네 개는 싣지 않습니다.
 
-기본 키는 드래프트된 요청에서도 클래식 요청과 같은 의미를 가집니다(#1592). `prompt_ms`는 큐 대기와 target prefill을 포함하고, `predicted_ms`는 prefill이 끝난 순간부터의 모든 verify 라운드를 포함하므로, `predicted_per_second`는 드래프트된 디코드 속도이며 같은 프롬프트에 대한 클래식 수치와 비교할 수 있습니다. 버스트는 스트리밍 전에 끝까지 실행되므로, 완료된 토큰이 재생되는 시점이 아니라 prefill이 끝나는 시점에 첫 토큰 시각을 찍습니다. 수정 전에는 그 재생 시점이 기준이었고, `prompt_ms`가 버스트 전체를 흡수하며 `predicted_ms`는 1밀리초 미만의 재생 시간을 보고했습니다(96 토큰 요청에서 초당 95000 토큰). 시작 후 첫 번째 드래프트 요청은 drafter의 디스크 로드 비용도 부담하는데, 이는 프로세스당 한 번의 비용이며 모든 `timings` 필드에서 제외되고 `Drafter loaded` 로그 줄에 남습니다. [`docs/llama-server-compat.md`](llama-server-compat.md#completions-and-embeddings-are-native-routes-not-openai-aliases-1441)의 `timings` 참고 사항을 확인하십시오.
+기본 키는 드래프트된 요청에서도 클래식 요청과 같은 의미를 가집니다(#1592). `prompt_ms`는 큐 대기와 target prefill을 포함하고, `predicted_ms`는 prefill이 끝난 순간부터의 모든 verify 라운드를 포함하므로, `predicted_per_second`는 드래프트된 디코드 속도이며 같은 프롬프트에 대한 클래식 수치와 비교할 수 있습니다. 버스트는 스트리밍 전에 끝까지 실행되므로, 완료된 토큰이 재생되는 시점이 아니라 prefill이 끝나는 시점에 첫 토큰 시각을 찍습니다. 수정 전에는 그 재생 시점이 기준이었고, `prompt_ms`가 버스트 전체를 흡수하며 `predicted_ms`는 1밀리초 미만의 재생 시간을 보고했습니다(96 토큰 요청에서 초당 95000 토큰). 시작 후 첫 번째 드래프트 요청은 drafter의 디스크 로드 비용도 부담하는데, 이는 프로세스당 한 번의 비용이며 모든 `timings` 필드에서 제외되고 `Drafter loaded` 로그 줄에 남습니다. [`docs/llama-server-compat.md`](llama-server-compat.md#completions와-embeddings는-openai-별칭이-아니라-네이티브-라우트입니다-1441)의 `timings` 참고 사항을 확인하십시오.
 
 라운드당 평균 수용 길이는 `(draft_n_accepted + draft_rounds) / draft_rounds`입니다. 모든 라운드가 수용된 드래프트와 보너스 토큰 하나를 내보내기 때문입니다. 이는 보고하지 않고 클라이언트에 맡겨져 있으므로, 다른 집계를 원하는 클라이언트가 이 값에 묶이지 않습니다. `draft_kind`는 `--draft-kind` 이름을 담습니다. `dflash`, `mtp`, `prompt-lookup` 중 하나입니다.
 
@@ -104,51 +95,15 @@ greedy 정확성은 토큰 전용 루프의 것이며, MTP와 DFlash 경로가 b
 
 분리형(disaggregated) 라우터 프런트도 아무것도 보고하지 않습니다. 이는 완료된 `GenerationResult`가 아니라 prefill/decode 핸드오프 프로토콜에서 스트림을 조립하는데, 그 프로토콜은 생성된 토큰 수만 싣고 수용 카운터는 싣지 않으므로, 그곳에 블록을 노출하는 것은 응답 형태의 변경이 아니라 핸드오프 프로토콜의 변경입니다.
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 ## 회귀 방지 장치
 
 `src/lib/mlxcel-core/src/engine/speculative_distribution_tests.rs`에 있으며, 모두 엔진의 토큰 전용 verify 루프에 대한 것입니다.
 
-* `speculative_stream_matches_the_target_distribution`(및 `_at_block_size_one`): 12000 토큰에 대해(`MLXCEL_SPEC_DIST_SAMPLES`로 재정의 가능) 내보낸 스트림이 target의 정확한 categorical과 일치하는지에 대한 카이제곱 적합도 검정이며, 자유도 5, 25.7448 초과 시 기각(alpha = 1e-4). target이 컨텍스트에 독립적이므로 이 두 테스트는 샘플러 경로가 스트림에 들어가는 것을 지키지만 잘못된 수용/거부 결정은 볼 수 없습니다.
+* `speculative_stream_matches_the_target_distribution`(및 `_at_block_size_one`): 12000 토큰에 대해(`MLXCEL_SPEC_DIST_SAMPLES`로 재정의 가능) 내보낸 스트림이 target의 정확한 categorical과 일치하는지에 대한 카이제곱 적합도 검정이며, 자유도 5, 25.7448 초과 시 기각(alpha = 1e-4). target이 컨텍스트에 독립적(context-free)이므로 이 두 테스트는 샘플러 경로가 스트림에 들어가는 것을 지키지만 잘못된 수용/거부 결정은 볼 수 없습니다.
 * `markov_stream_keeps_the_target_conditional`: 분포가 이전 토큰에 의존하는 target에서 `(previous, next)`에 대한 같은 통계량, 자유도 30. 이것이 수용/거부 결정에 대한 확률적 가드입니다.
 * `chi_square_rejects_known_wrong_acceptance_rules`: 호스트 추출에 대한 검정력(power) 보정. 같은 통계량이 제안을 검사 없이 그대로 내보내는 규칙과 argmax-against-argmax 규칙을 기각해야 합니다.
 * `filtered_target_support_is_never_violated`: 허용 오차 0. `top_k = 2` target의 지지집합(support) 밖의 토큰이 하나라도 내보내지면 실패합니다.
 * `temperature_zero_stream_is_byte_identical_to_greedy_target_only`: greedy 출력에 대한 허용 오차 0.
 * `acceptance_accounting_is_exact_in_both_deterministic_regimes`: 전부 거부 및 전부 수용 체제에서의 `SpeculativeRounds` 카운터.
 
-`engine/verify_round_rollback_tests.rs`(`kv_cache_length_is_exact_in_both_acceptance_regimes`, `kv_cache_stays_consistent_across_mixed_accept_reject_rounds`)는 모든 라운드 후에 모든 레이어에서 상태가 프롬프트에 보류 중인 토큰을 제외한 모든 내보낸 토큰을 더한 것을 담고 있음을 고정합니다. `src/lib/mlxcel-core/src/cache/kv_trim_tests.rs`는 `KVCache::trim`을, `src/commands/generate_tests.rs`는 오프라인 라우팅 매트릭스를 고정합니다.
-
+`engine/verify_round_rollback_tests.rs`(`kv_cache_length_is_exact_in_both_acceptance_regimes`, `kv_cache_stays_consistent_across_mixed_accept_reject_rounds`)는 모든 라운드 뒤에 상태가 프롬프트와, 보류 중인 토큰 하나를 제외한 내보낸 모든 토큰을 담고 있음을 모든 레이어에서 고정합니다. `src/lib/mlxcel-core/src/cache/kv_trim_tests.rs`는 `KVCache::trim`을, `src/commands/generate_tests.rs`는 오프라인 라우팅 매트릭스를 고정합니다.

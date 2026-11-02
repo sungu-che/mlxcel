@@ -1,10 +1,10 @@
 # 임베딩 및 리랭킹 API와 CLI
 
-mlxcel은 OpenAI 호환 `POST /v1/embeddings` 엔드포인트와 오프라인 `mlxcel embed` 명령으로 임베딩 체크포인트를 서비스합니다. 이 페이지는 모든 임베딩 계열이 공통으로 사용하는 기반, 즉 감지, 풀링, 정규화, 길이 제한, 요청 및 응답 스키마, 서버 플래그, CLI를 다룹니다. 계열별 프롬프트 접두사, instruction 형식, 이미지 지원은 아래에 문서화되어 있으며, 관리되는 계열 표는 [supported-models.md](supported-models.md#embedding-models)에 있습니다.
+mlxcel은 OpenAI 호환 `POST /v1/embeddings` 엔드포인트와 오프라인 `mlxcel embed` 명령으로 임베딩 체크포인트를 서비스합니다. 이 페이지는 모든 임베딩 계열이 공통으로 사용하는 기반, 즉 감지, 풀링, 정규화, 길이 제한, 요청 및 응답 스키마, 서버 플래그, CLI를 다룹니다. 계열별 프롬프트 접두사, instruction 형식, 이미지 지원은 아래에 문서화되어 있으며, 관리되는 계열 표는 [supported-models.md](supported-models.md#임베딩-모델)에 있습니다.
 
-관련성 점수 계산은 같은 페이지의 [리랭킹](#reranking-v1rerank-and-mlxcel-rerank)에서 다룹니다. `POST /v1/rerank`와 `mlxcel rerank`는 이 서브시스템의 토크나이저, 길이 제한, worker 구성을 공유하며, 세 가지 reranker 종류 중 두 가지는 임베딩 계열이 이미 보유한 인코더 위에서 동작합니다.
+관련성 점수 계산은 같은 페이지의 [리랭킹](#리랭킹-v1rerank과-mlxcel-rerank)에서 다룹니다. `POST /v1/rerank`와 `mlxcel rerank`는 이 서브시스템의 토크나이저, 길이 제한, worker 구성을 공유하며, 세 가지 reranker 종류 중 두 가지는 임베딩 계열이 이미 보유한 인코더 위에서 동작합니다.
 
-**현재 상태.** 두 엔드포인트, 전용 worker 스레드, 배칭, 오프라인 명령, 그리고 임베딩 및 reranker 지원 표에 있는 모든 forward pass가 구현되어 있습니다. [임베딩](supported-models.md#embedding-models) 표와 [reranker](supported-models.md#reranker-models) 표가 서비스되는 계열과 체크포인트별 제약 사항에 대한 공식 기준입니다.
+**현재 상태.** 두 엔드포인트, 전용 worker 스레드, 배칭, 오프라인 명령, 그리고 임베딩 및 reranker 지원 표에 있는 모든 forward pass가 구현되어 있습니다. [임베딩](supported-models.md#임베딩-모델) 표와 [reranker](supported-models.md#reranker-모델) 표가 서비스되는 계열과 체크포인트별 제약 사항에 대한 공식 기준입니다.
 
 ## 구현된 엔드포인트
 
@@ -12,7 +12,7 @@ mlxcel은 OpenAI 호환 `POST /v1/embeddings` 엔드포인트와 오프라인 `m
 |--------|------|-------------|
 | POST | `/v1/embeddings` | 문자열, 문자열 목록, token id 배열, token id 배열의 목록, 또는 타입이 지정된 part 목록을 임베딩합니다. |
 | POST | `/embeddings` | `/v1` 접두사가 없는 별칭입니다. |
-| POST | `/v1/rerank` | 쿼리를 문서 목록과 비교하여 점수를 매깁니다. Cohere 및 Jina와 호환되며, [리랭킹](#reranking-v1rerank-and-mlxcel-rerank)을 참고하십시오. |
+| POST | `/v1/rerank` | 쿼리를 문서 목록과 비교하여 점수를 매깁니다. Cohere 및 Jina와 호환되며, [리랭킹](#리랭킹-v1rerank과-mlxcel-rerank)을 참고하십시오. |
 | POST | `/rerank` | `/v1` 접두사가 없는 별칭입니다. |
 | POST | `/v1/reranking` | `/v1/rerank`에 대한 llama-server 별칭입니다. |
 | POST | `/reranking` | `/rerank`에 대한 llama-server 별칭입니다. |
@@ -165,7 +165,7 @@ b10621의 나머지 두 `--pooling` 값은 풀링 커널이 아닙니다. `rank`
 
 양자화되지 않은 f32 체크포인트는 f32로 실행됩니다. `all-MiniLM-L6-v2`는 f16에서 underflow되는 `layer_norm_eps: 1e-12`와 함께 f32로 배포되므로, 공유 텍스트 bf16-to-f16 규칙은 bf16 export에만 적용됩니다. 양자화된 체크포인트(`config.quantization`)는 모든 projection과 word-embedding 테이블을 `UnifiedLinear` / `UnifiedEmbedding`을 통해 로드합니다.
 
-`BertForSequenceClassification` 및 `XLMRobertaForSequenceClassification` 체크포인트(`BAAI/bge-reranker-v2-m3`, `cross-encoder/ms-marco-MiniLM-L6-v2`)는 reranker입니다. 감지는 이를 임베딩 변형이 아니라 `ModelType::SequenceClassifier`로 라우팅하며, `src/models/bert_heads.rs`의 `BertSequenceClassifier::load(dir)`가 경로로 하나를 로드합니다. 같은 trunk를 재사용하고, 임베더 경로에서 버려지는 `pooler.` 텐서를 유지하며, `tanh(dense(h[:, 0, :]))`에 이어 label projection(BERT는 `pooler.dense`와 `classifier`, XLM-RoBERTa는 `classifier.dense`와 `classifier.out_proj`)을 적용한 `[B, num_labels]` logit을 반환합니다. `num_labels`는 config의 주장이 아니라 해당 projection 텐서의 행 수입니다. [리랭킹](#reranking-v1rerank-and-mlxcel-rerank)이 이들을 서비스합니다.
+`BertForSequenceClassification` 및 `XLMRobertaForSequenceClassification` 체크포인트(`BAAI/bge-reranker-v2-m3`, `cross-encoder/ms-marco-MiniLM-L6-v2`)는 reranker입니다. 감지는 이를 임베딩 변형이 아니라 `ModelType::SequenceClassifier`로 라우팅하며, `src/models/bert_heads.rs`의 `BertSequenceClassifier::load(dir)`가 경로로 하나를 로드합니다. 같은 trunk를 재사용하고, 임베더 경로에서 버려지는 `pooler.` 텐서를 유지하며, `tanh(dense(h[:, 0, :]))`에 이어 label projection(BERT는 `pooler.dense`와 `classifier`, XLM-RoBERTa는 `classifier.dense`와 `classifier.out_proj`)을 적용한 `[B, num_labels]` logit을 반환합니다. `num_labels`는 config의 주장이 아니라 해당 projection 텐서의 행 수입니다. [리랭킹](#리랭킹-v1rerank과-mlxcel-rerank)이 이들을 서비스합니다.
 
 ### ModernBERT (`modernbert`)
 
@@ -598,6 +598,6 @@ mlxcel rerank -m Qwen/Qwen3-VL-Reranker-2B -q "a chart of quarterly revenue" \
 1. `src/models/` 아래에 `EmbeddingModel` 구현을 가진 계열 모듈을 추가합니다. 가중치는 `crate::embeddings::loader::load_embedding_weights`(모듈 하위 폴더 포함, 텍스트 bf16 규칙 적용)로 읽고, 풀링 모드는 `crate::embeddings::resolve_pooling_mode(model_dir, family_default)`로 결정합니다. attention 마스크는 위의 빌더를 사용해 `EmbeddingBatch::attention_mask`로부터 만듭니다. 풀링된 `[B, D]` 벡터를 반환합니다(multi-vector 계열은 패딩 행이 0인 `[B, L, D]`). 정규화와 truncation은 엔진이 수행합니다. 프롬프트에 이미지 placeholder가 있는 vision-language 계열은 `EmbeddingModel::expand_image_tokens`도 구현해야 하며, 엔진은 패딩 전에 이를 호출하여 보고되는 token 수가 forward pass가 보는 시퀀스와 일치하도록 합니다.
 2. `build_family_model`(`src/embeddings/loader.rs`)에서 해당 계열의 `not yet supported` arm을 생성자로 교체합니다.
 3. 양자화된 체크포인트(`config.quantization = {group_size, bits}`)는 `.scales`가 있든 없든 텐서를 받아들이는 `UnifiedLinear::from_weights` / `UnifiedEmbedding::from_weights`를 거치며, `quantization_params(config)`가 해당 블록을 읽습니다.
-4. 실제 체크포인트에 대해 `mlxcel embed`로 검증하고 [supported-models.md](supported-models.md#embedding-models)에 해당 계열 행을 추가합니다.
+4. 실제 체크포인트에 대해 `mlxcel embed`로 검증하고 [supported-models.md](supported-models.md#임베딩-모델)에 해당 계열 행을 추가합니다.
 
 감지(`src/models/detection.rs`), `ModelType` 변형, `mlxcel arch` 항목, 그리고 `src/model_metadata.rs`의 `ModelKind::Embedding` 등록은 위 표의 모든 계열에 대해 이미 존재합니다.

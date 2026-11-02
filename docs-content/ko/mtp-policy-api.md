@@ -45,7 +45,7 @@
 
 | 필드 | 타입 | 의미 |
 |-------|------|---------|
-| `schema_version` | integer | 이 본문의 와이어 스키마 버전. [버전 관리 및 호환성](#versioning-and-compatibility)을 참조하십시오. |
+| `schema_version` | integer | 이 본문의 와이어 스키마 버전. [버전 관리 및 호환성](#버전-관리-및-호환성)을 참조하십시오. |
 | `state` | string | `"settled"`, `"profiling"`, `"forced"`, `"unavailable"`, 또는 `"exactness_declined"`. |
 | `reason` | string 또는 null | 정책을 사용할 수 없는 이유. `state`가 `"unavailable"`일 때만 null이 아닙니다. |
 | `decline_detail` | string 또는 null | 정확성(exactness) 프로브의 한 줄 이유. `state`가 `"exactness_declined"`일 때만 null이 아니며, 부팅 시 WARN 로그에 남는 문장과 같습니다. |

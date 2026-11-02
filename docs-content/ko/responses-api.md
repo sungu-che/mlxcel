@@ -28,7 +28,7 @@ OpenAI Responses의 모든 기능을 완전히 구현한 것은 아닙니다.
 | GET | `/v1/responses/{id}` | 저장된 응답을 조회합니다. |
 | DELETE | `/v1/responses/{id}` | 저장된 응답을 삭제합니다. |
 | POST | `/v1/responses/{id}/cancel` | 진행 중인 스트리밍 응답에 대한 최선 노력(best-effort) 방식의 취소. 저장된(완료된) 응답은 저장된 결과를 바꾸지 않고 `400 invalid_request_error`를 반환합니다. |
-| POST | `/v1/responses/compact` | 오래된 턴을 `compaction` 항목으로 요약합니다. [대화 compaction](#conversation-compaction)을 참조하십시오. |
+| POST | `/v1/responses/compact` | 오래된 턴을 `compaction` 항목으로 요약합니다. [대화 compaction](#대화-compaction)을 참조하십시오. |
 | POST | `/v1/responses/input_tokens` | 본문이 prefill할 프롬프트 토큰 수를 집계합니다. `docs/llama-server-compat.md`를 참조하십시오. |
 
 구현된 동일한 라우트에 대해 `/v1`이 없는 별칭도 마운트됩니다:
@@ -74,7 +74,7 @@ with client.responses.stream(
 | `input` | 지원 | 문자열 또는 타입이 지정된 입력 항목 배열. |
 | `instructions` | 지원 | system 스타일 메시지로 앞에 추가됩니다. `previous_response_id`를 통해 상속되지 않습니다. |
 | `tools` | function 전용 | `{"type":"function", ...}`만 허용됩니다. |
-| `tool_choice` | 지원 | `auto`, `none`, `required` 또는 이름이 지정된 함수. `required`와 이름 지정 형식은 단순히 허용되는 것이 아니라 강제됩니다. [Tool choice 강제](#tool-choice-enforcement)를 참조하십시오. |
+| `tool_choice` | 지원 | `auto`, `none`, `required` 또는 이름이 지정된 함수. `required`와 이름 지정 형식은 단순히 허용되는 것이 아니라 강제됩니다. [Tool choice 강제](#tool-choice-강제)를 참조하십시오. |
 | `parallel_tool_calls` | 허용 | 기존 tool-call 처리로 전달됩니다. |
 | `text.format` | 부분집합 지원 | `text`와 `json_schema` 형태는 기존 구조화 출력 코드를 통해 처리됩니다. |
 | `reasoning` | 부분집합 지원 | `reasoning.effort`는 변경 없이 그대로 반환되며 chat-completions `reasoning_effort`와 동일한 템플릿 제어에 반영됩니다. `none`, `off`, `disabled`, `false`, `0`(앞뒤 공백 제거 후 대소문자 구분 없음)은 `enable_thinking`을 비활성화하고, 그 외 값은 thinking을 활성화하며 `reasoning_effort`로 그대로 전달되거나, 로드된 템플릿이 읽는 식별자가 `reasoning_strength`이면 그것으로 전달됩니다. 도출된 제어는 서버 전체 템플릿 기본값을 키별로 재정의합니다. `summary`는 계속 모델/런타임에 따라 달라집니다. |
@@ -91,7 +91,7 @@ with client.responses.stream(
 | `background` | `true`이면 거부 | 비동기 폴링은 구현되어 있지 않습니다. |
 | `truncation` | `disabled`만 가능 | `auto`를 포함한 다른 값은 400을 반환합니다. |
 | `service_tier` | 허용 | 그대로 반환되거나 무시됩니다. 스케줄링 티어는 구현되어 있지 않습니다. |
-| `context_management` | 부분집합 지원 | `[{"type":"compaction","compact_threshold":N}]`은 자동 compaction을 활성화합니다. [자동 compaction](#automatic-compaction)을 참조하십시오. `[]` 또는 `null`이면 비활성화합니다. |
+| `context_management` | 부분집합 지원 | `[{"type":"compaction","compact_threshold":N}]`은 자동 compaction을 활성화합니다. [자동 compaction](#자동-compaction)을 참조하십시오. `[]` 또는 `null`이면 비활성화합니다. |
 
 
 ## 입력 항목
@@ -106,12 +106,12 @@ Phase 1은 다음과 같은 타입 지정 항목을 지원합니다.
   {"type":"function_call", "call_id":"call_abc", "name":"f", "arguments":"{}"},
   {"type":"function_call_output", "call_id":"call_abc", "output":"ok"},
   {"type":"function_call_output", "call_id":"call_img", "output":[{"type":"input_text", "text":"captured"}, {"type":"input_image", "image_url":"data:image/png;base64,..."}]},
-    {"type":"reasoning", "content":[{"type":"reasoning_text", "text":"..."}]},
+  {"type":"reasoning", "content":[{"type":"reasoning_text", "text":"..."}]},
   {"type":"compaction", "id":"cmp_...", "encrypted_content":"..."}
 ]
 ```
 
-`compaction` 항목은 `POST /v1/responses/compact`가 반환하는 capsule입니다. replay 방식은 [대화 compaction](#conversation-compaction)을 참조하십시오.
+`compaction` 항목은 `POST /v1/responses/compact`가 반환하는 capsule입니다. replay 방식은 [대화 compaction](#대화-compaction)을 참조하십시오.
 
 
 
@@ -137,7 +137,7 @@ Phase 1은 다음과 같은 타입 지정 항목을 지원합니다.
 메시지가 되기 때문입니다. 동일한 검사가 `/v1/chat/completions`에도 적용됩니다. `/v1/completions`(raw 프롬프트 레거시 엔드포인트)는
 의도적인 예외입니다. 공백뿐인 프롬프트는 동일한 400
 `invalid_request_error`로 거부하지만, 완전히 빈 프롬프트는 통과시킵니다.
-BOS에서의 무조건 생성은 base 모델의 정당한 사용 사례이며, 이 라우트에는 비어 있을 수 있는 chat-template 골격이 없기 때문입니다(issue #806).
+BOS에서의 무조건 생성은 base 모델의 정당한 사용 사례이며, 빈 입력을 둘러쌀 chat-template 골격이 없는 라우트이기 때문입니다(issue #806).
 
 ## 응답 형태
 
@@ -203,7 +203,7 @@ Phase 1은 다음과 같은 이벤트를 내보냅니다.
 - `response.reasoning_text.delta`
 - `response.reasoning_text.done`
 - `response.completed`
-- `mlx.compaction.started`, `mlx.compaction.completed` (MLX 확장. 자동 compaction 이후에만 발생. [자동 compaction](#automatic-compaction) 참조)
+- `mlx.compaction.started`, `mlx.compaction.completed` (MLX 확장. 자동 compaction 이후에만 발생. [자동 compaction](#자동-compaction) 참조)
 - 오류 경로의 실패/미완료/오류 이벤트
 
 
@@ -261,7 +261,7 @@ Function call은 `/v1/chat/completions`가 점진적으로 스트리밍하는 �
 }
 ```
 
-`output`은 system 및 developer 메시지, 유지된 턴, 그리고 정확히 하나의 `compaction` 항목을 담습니다. 버전 1은 유지된 턴도 capsule 안에 저장하므로, 반환되는 본문이 원래 미디어 payload보다 커질 수 있습니다. 서버는 replay 요청 크기 제한에 맞지 않는 출력을 거부하므로 새 항목을 위한 여유를 남겨 두십시오. `usage`는 요약 생성 한 번을 집계합니다. 세션을 이어 가려면 `[...output, <새 항목>]`을 `/v1/responses`에 보내십시오. 요청 수준의 `instructions`는 compaction pass에 적용되므로, 필요하면 연속 요청에 다시 보내거나 지속적인 instructions를 system/developer 입력 메시지에 넣으십시오. 유지된 턴이 `output`에도, capsule 안에도 나타나므로 그 본문은 이를 두 번 담습니다. 클라이언트는 system 및 developer 메시지와 `compaction` 항목, 그리고 새 항목만 보내면 더 작은 본문 크기로 같은 replay를 얻을 수 있습니다.
+`output`은 system 및 developer 메시지, 유지된 턴, 그리고 정확히 하나의 `compaction` 항목을 담습니다. 버전 1은 유지된 턴도 capsule 안에 저장하므로, 반환되는 본문이 원래 미디어 payload보다 커질 수 있습니다. 서버는 replay 요청 크기 제한에 맞지 않는 출력을 거부하므로 새 항목을 위한 여유를 남겨 두십시오. `usage`는 요약 생성 한 번을 집계합니다. 세션을 이어 가려면 `[...output, <new items>]`을 `/v1/responses`에 보내십시오. 요청 수준의 `instructions`는 compaction pass에 적용되므로, 필요하면 연속 요청에 다시 보내거나 지속적인 instructions를 system/developer 입력 메시지에 넣으십시오. 유지된 턴이 `output`에도, capsule 안에도 나타나므로 그 본문은 이를 두 번 담습니다. 클라이언트는 system 및 developer 메시지와 `compaction` 항목, 그리고 새 항목만 보내면 더 작은 본문 크기로 같은 replay를 얻을 수 있습니다.
 
 **선택.** system 및 developer 메시지는 항상 자신의 역할로 유지됩니다. 가장 최근 user 메시지는 항상 유지됩니다. `keep_tokens`에 들어가는 가장 최근의 온전한 턴들이 유지되며, 가장 최근 턴은 그것만으로 예산을 초과하더라도 유지됩니다. 예산은 렌더링된 유지 컨텍스트에서 측정되므로 system 및 developer 메시지, `instructions`, 템플릿 오버헤드도 포함합니다. 이것만으로 `keep_tokens`를 초과하면 이전 턴이 하나도 들어가지 않아 가장 최근 턴(그리고 최근 user 메시지)만 유지됩니다. 이력은 user 메시지 직전 또는 마지막으로 열려 있던 function call을 닫는 출력 바로 뒤에서만 분할되므로, `function_call`이 자신의 `function_call_output`과 분리되는 일은 없습니다. 출력 없이 호출로 끝나는 이력은 그 tool 그룹 전체를 유지합니다. 분할 이전의 모든 것이 요약됩니다.
 
@@ -280,7 +280,7 @@ Function call은 `/v1/chat/completions`가 점진적으로 스트리밍하는 �
 
 오류 타입은 서버의 기존 컨텍스트 초과 오류와 일치하고, 코드는 OpenAI의 것이므로 어느 쪽 클라이언트든 이를 인식합니다.
 
-**Capsule.** `encrypted_content`는 `{"v":1,"summary":"...","retained":[<입력 항목>]}`의 base64url(패딩 없음)입니다. OpenAI 필드 이름과 달리 설계상 암호화되어 있지 않습니다. 클라이언트가 요약된 대화를 이미 가지고 있으므로 기밀성이 더해 주는 것이 없고, 암호화나 HMAC 키는 새 키 저장소 없이는 서버 재시작 후에 유지되지 않기 때문입니다. 따라서 capsule은 클라이언트 데이터로 취급됩니다. 요청 본문 제한으로 한정되고, 유지된 항목은 일반 `input` 항목과 같은 파서와 검증을 거치며, 다른 capsule을 중첩하는 capsule은 거부됩니다. 디코딩되지 않거나 `v`가 1이 아닌 capsule은 400 `invalid_request_error`를 반환합니다.
+**Capsule.** `encrypted_content`는 `{"v":1,"summary":"...","retained":[<input items>]}`의 base64url(패딩 없음)입니다. OpenAI 필드 이름과 달리 설계상 암호화되어 있지 않습니다. 클라이언트가 요약된 대화를 이미 가지고 있으므로 기밀성이 더해 주는 것이 없고, 암호화나 HMAC 키는 새 키 저장소 없이는 서버 재시작 후에 유지되지 않기 때문입니다. 따라서 capsule은 클라이언트 데이터로 취급됩니다. 요청 본문 제한으로 한정되고, 유지된 항목은 일반 `input` 항목과 같은 파서와 검증을 거치며, 다른 capsule을 중첩하는 capsule은 거부됩니다. 디코딩되지 않거나 `v`가 1이 아닌 capsule은 400 `invalid_request_error`를 반환합니다.
 
 **Replay.** `input`(또는 연결된 이력)에 `compaction` 항목이 들어 있으면, 가장 최신 항목 이전의 모든 것이 버려지되 system 및 developer 메시지는 예외이며(그대로 다시 보낸 중복은 한 번만 유지), capsule의 요약(assistant 메시지로)과 유지된 항목이 그 자리를 차지하고, 이어서 그 이후의 항목이 옵니다. 이는 `/v1/responses`, `/v1/responses/input_tokens`, `/v1/responses/compact` 자신에 적용되므로, 이미 compaction된 세션을 다시 compaction하면 이전 요약이 새 요약에 합쳐집니다.
 
@@ -344,6 +344,8 @@ JSON 와이어 형식이 없는 템플릿(ATEM, Gemma 4, Qwen3-Coder 및 GLM 같
 지시문과 좁혀진 도구 목록만 받으며, 강제된 선택이 호출 없이 끝나면 `warn` 수준으로 기록됩니다.
 문법 엔진이 표현할 수 없는 도구 스키마는 요청을 실패시키는 대신 동일한 지시문 전용 경로로 폴백합니다.
 
+모델이 호출과 함께 내보낸 `call_id`는 `function_call` 항목(및 그 스트리밍 이벤트)으로 그대로 전달됩니다. 서버는 모델이 id를 내보내지 않은 경우에만 `call_` id를 발급합니다.
+
 강제된 `tool_choice`는 `json_schema` 타입의 `text.format`과 함께 사용할 수 없습니다.
 두 제약이 각각 생성 전체를 차지하려 하기 때문에 요청은 400을 반환합니다.
 
@@ -359,7 +361,6 @@ function 도구만 허용됩니다. `web_search`, `file_search`, `computer_use_p
 
 - 백그라운드 작업 모드 없음;
 - input-items 페이지네이션 엔드포인트 없음;
-
 - 내장 도구 또는 MCP 커넥터 실행 없음;
 - 디스크에 영속화되는 응답 저장소 없음;
 - 업로드 저장소를 통한 `input_file` 수집 또는 `file_id` 해석 없음.

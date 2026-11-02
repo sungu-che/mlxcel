@@ -23,11 +23,19 @@
 
 측정하기 전에 바이너리가 소스 트리와 일치하는지 확인하십시오. `bench_decode.sh`는 실행 파일이 아니라 git에서 `mlxcel_commit`을 기록하므로, pull이나 rebase 이후 다시 빌드하지 않고 sweep을 실행하면 바이너리가 갖지 않은 출처 정보가 기록됩니다. 이제 하니스(harness)는 이 상태에서 실행을 거부하며, bisect 용도로는 `BENCH_ALLOW_STALE_BINARY=1`로 이를 우회할 수 있습니다.
 
+## `benchmark_results/data/` 아래에 보관할 항목
+
+보고서를 확인하거나 반복 재현하는 데 독자에게 필요한 것을 보관하십시오. 요약, 기계 판독 가능한 결과, 드라이버, 계측(instrumentation) 패치, 출처 정보가 여기에 해당합니다. 실행별 서버 로그, 빌드·포맷·린트 로그, 빈 캡처는 커밋하지 마십시오. `make verify-benchmark-raw-logs`가 이들을 실패로 처리합니다. 보고서가 이름으로 인용하거나 매니페스트에 색인하는 로그는 `scripts/ci/benchmark_raw_logs_allowlist.txt`에 넣으십시오. 실패한 시도의 증거는 32 KB 이하의 `.7z`로 저장할 수 있으며, 결론은 그 옆에 평문으로 적으십시오.
+
 ## 현재 결과 스냅샷
 
 종합 수치가 문서마다 어긋나지 않도록 공개 결과 요약은 한 곳에 모아 둡니다. 현재 Apple Silicon 벤치마크 보고서는 다음과 같습니다.
 
 - [Benchmark Report - 2026-05-19](benchmark_results/benchmark-report.md)
+- [Native batched decode on M3 Ultra — 2026-10-27](benchmark_results/native-batched-decode-m3ultra-2026-10-27.md): 체크포인트 21개, 구성 23개, 원본 trace와 serving 증거 포함.
+- [CUDA quantized matmul batch fold on RTX Spark N1X, 2026-10-31](benchmark_results/cuda-qmm-fold-batch-n1x-2026-10-31.md)
+- [MoE expert overlap in batched decode on RTX Spark N1X, 2026-10-31](benchmark_results/moe-distinct-experts-n1x-2026-10-31.md)
+- [Few-row quantized matmul for batched decode on M1 Ultra, 2026-10-30](benchmark_results/few-row-qmm-batched-decode-m1ultra-2026-10-30.md): Llama 3.1 8B 4-bit 8-row decode step이 56.5 ms에서 39 ms로, B=8/B=1 serving 비율이 1.35x에서 1.95x로 변경됨.
 
 이 통합 보고서는 하드웨어 간 비교를 위한 자료이지만, 요약 대상인 호스트별 표보다 오래되었습니다. 가장 최신의 전체 sweep은 mlxcel 0.6.0 (2026-09-03/04)에서 측정한 M5 Max 결과로, 텍스트, VLM, speculative 및 batched serving을 다루며 [model_tests_m5max.md](benchmark_results/model_tests_m5max.md)에 있습니다. M1 Ultra와 GB10은 아직 0.4.0-rc.1이므로 현재 하드웨어 간 비율에는 서로 다른 버전이 섞여 있습니다. 다른 호스트를 다시 측정하기 전까지는 호스트별 수치는 하드웨어별 표에서 가져오고, 통합 보고서는 비교의 형태를 파악하는 용도로만 사용하십시오.
 
@@ -312,7 +320,7 @@ MTP speculative decoding은 decode 타깃을 작은 assistant drafter와 짝지�
 mlxcel serve -m <target> --draft-model <drafter> --draft-kind mtp
 ```
 
-오프라인 `mlxcel generate` 명령도 Gemma 4 텍스트, VLM, Unified 타깃에 대해 MTP round-loop 경로를 지원합니다(issue #166). `--draft-model <drafter> --draft-kind mtp`를 명시적으로 전달하십시오. `--draft-kind mtp`가 없으면 drafter가 MTP로 자동 감지되더라도 이 명령은 하위 호환성을 위해 기존 speculative 경로를 유지합니다.
+오프라인 `mlxcel generate` 명령도 Gemma 4 텍스트, VLM, Unified 타깃에 대해 MTP round-loop 경로를 지원합니다(issue #166). `--draft-model <drafter>`를 전달하십시오. drafter의 `model_type`이 이를 알려 주지 않으면 `--draft-kind mtp`를 함께 전달하십시오. 타깃에 대해 오프라인 round loop가 없는 drafter는 로드되기 전에 거부됩니다.
 
 동등성(Parity): `temperature 0`이고 repetition, frequency, presence, DRY 페널티가 없는 경우, 오프라인 MTP 출력은 문서화된 f16 / #203 batched-kernel 지터 범위 내에서 비 speculative 경로와 일치합니다(일부 하드웨어, 특히 M1 Ultra에서는 거의 동점인 토큰 선택이 달라질 수 있습니다). 샘플링 페널티가 활성화되면 첫 번째 보너스 토큰만 페널티가 적용된 분포에서 샘플링되고, 각 verify 윈도우의 이후 토큰은 greedy하게 수락되거나 거부되므로, 비 greedy 또는 페널티가 적용된 요청은 비 speculative 경로와 바이트 단위로 동일하지 않습니다. 이는 서버 burst 경로의 알려진 제한과 일치합니다.
 
@@ -321,6 +329,21 @@ mlxcel serve -m <target> --draft-model <drafter> --draft-kind mtp
 바이트 동일성은 한 가지 질문, 즉 이 산술 경로가 기준과 비트 단위로 같은가에는 잘 답하지만 그 밖의 것에는 답하지 못합니다. 답이 아니오가 되고, Apple GPU 세대 15 이상에서는 호출자가 선택하지 않은 이유로 그렇게 되는 순간, 이 도구는 소진됩니다. Perplexity는 다른 질문, 즉 코퍼스에서 모델의 예측 분포가 나빠졌는지에 답하며, 커널 재배열은 사용자가 보는 greedy 토큰의 수 퍼센트를 뒤집으면서도 이 값은 그대로 둘 수 있습니다.
 
 `examples/logit_trace`가 그 틈을 메웁니다. 이 도구는 teacher-forced 방식이므로 두 arm이 같은 토큰 스트림에서 평가되어 divergence 때문에 비교가 사라지지 않습니다. free-running 비교는 첫 번째로 뒤집힌 토큰에서 무너지며, 실제 조합에서는 250개 중 비교 가능한 위치가 16개만 남았습니다. 각 구성이 자체 trace를 기록하므로 `MLXCEL_QMV_WIDE`와 같은 프로세스 전역 스위치도 비교할 수 있고, `scripts/compare_logit_traces.py`가 두 trace를 읽습니다.
+
+native batched decode를 위해서는 `MLXCEL_TRACE_BATCH_ROWS=N`을 설정하십시오. 하니스는 새로운 시퀀스 id를 할당하고, 서로 다른 context 길이를 가진 독립적인 코퍼스 행 N개를 prefill하며, 추적되는 모든 위치를 폭 1짜리 `forward_batched_with_ids` 호출을 통해 진행시키고, row 0만 출력합니다. 이렇게 하면 `N=1`과 `N=4`를 직접 비교할 수 있으면서 serving decode 형태를 실행하게 됩니다. `MLXCEL_TRACE_IMAGE`와 함께 사용하면 row 0은 실제 이미지 임베딩 prefill(MRoPE delta 포함)을 수행하고, 나머지 행은 텍스트 전용 prefix를 사용하므로 혼합된 Qwen-VL serving 형태를 다루게 됩니다.
+
+tensor-parallel decode에는 추가로 `MLXCEL_TRACE_TP_SIZE=N`을 설정하십시오. 그러면 하니스는 B=1과 B=4 arm 모두에 대해 프로덕션 TP 로더를 사용하며, batch 폭만 바꾼 단일 장치 모델을 추적하지 않습니다. TP 선택기는 표준 텍스트 arm을 지원하며 `MLXCEL_TRACE_LORA`와 함께 사용할 수 없습니다.
+
+```bash
+MLXCEL_TRACE_TP_SIZE=2 MLXCEL_TRACE_BATCH_ROWS=1 ./target/release/examples/logit_trace MODEL CORPUS.txt 64 4 8 512 > tp2-b1.tsv
+MLXCEL_TRACE_TP_SIZE=2 MLXCEL_TRACE_BATCH_ROWS=4 ./target/release/examples/logit_trace MODEL CORPUS.txt 64 4 8 512 > tp2-b4.tsv
+python3 scripts/compare_logit_traces.py tp2-b1.tsv tp2-b4.tsv
+
+# Omit MLXCEL_TRACE_TP_SIZE to keep the existing single-device trace.
+MLXCEL_TRACE_BATCH_ROWS=1 ./target/release/examples/logit_trace MODEL CORPUS.txt 64 4 8 512 > b1.tsv
+MLXCEL_TRACE_BATCH_ROWS=4 ./target/release/examples/logit_trace MODEL CORPUS.txt 64 4 8 512 > b4.tsv
+python3 scripts/compare_logit_traces.py b1.tsv b4.tsv
+```
 
 ```bash
 cargo build --release --features metal,accelerate --example logit_trace
@@ -343,6 +366,62 @@ done
 python3 scripts/compare_logit_traces.py chain.tsv block.tsv --decided 2
 python3 scripts/compare_logit_traces.py chain.tsv verify.tsv --decided 2
 ```
+
+vision tower 변경에는 이미지 조건부 텍스트가 필요합니다. 그 밖의 것으로는 아무것도 움직이지 않기 때문입니다. `MLXCEL_TRACE_IMAGE=PATH`는 체크포인트의 chat template을 이미지 하나를 감싸도록 렌더링하고, `MLXCEL_TRACE_IMAGE_PROMPT`(기본값 `Describe the image.`)는 `mlxcel generate`가 사용하는 것과 같은 `prepare_vlm_embeddings` 경로를 통해 프롬프트를 준비하며, 텍스트 파일의 처음 `CHUNK_TOKENS`개 토큰을 응답으로 teacher-forced하여 chunk 0으로 기록합니다. `scripts/mlx_vlm_image_logit_trace.py`는 reference arm을 위해 mlx-vlm으로 같은 타깃 토큰을 채점합니다(`--float32`는 가중치를 역양자화하여 float32로 실행하며, CPU 전용 `mlx`에서 현실적인 모드입니다). 이 스크립트의 `# prompt_tokens`와 `# prompt_ids` 줄은 mlxcel trace의 것과 일치해야 하며, 그렇지 않다면 tower가 실행되기 전에 두 프로세서가 어긋난 것입니다. 의도적으로 어긋나는 경우(아래의 계열들)에는 `--mlxcel-prompt`가 reference로 하여금 mlxcel trace 자신의 `# prompt_ids`를 mlx-vlm이 전처리한 픽셀과 함께 채점하게 하므로, 두 arm은 forward pass에서만 차이가 납니다. 이때 mlx-vlm 자신의 길이는 `# mlx_vlm_prompt_tokens`로 출력하며, 이미지 토큰 수가 mlx-vlm과 다른 프롬프트는 거부합니다.
+
+```bash
+MLXCEL_TRACE_IMAGE=tests/fixtures/test_image_shapes.png \
+./target/test-fast/examples/logit_trace MODEL reply.txt 128 1 8 > fixed.tsv
+python3 scripts/mlx_vlm_image_logit_trace.py MODEL tests/fixtures/test_image_shapes.png fixed.tsv --float32 > ref.tsv
+python3 scripts/compare_logit_traces.py ref.tsv fixed.tsv --decided 2
+# A family listed below as a deliberate divergence: score mlxcel's prompt.
+python3 scripts/mlx_vlm_image_logit_trace.py MODEL tests/fixtures/test_image_shapes.png fixed.tsv --float32 --mlxcel-prompt > ref.tsv
+```
+
+`tests/fixtures/test_image_shapes.png`(448x448)와 `Describe the image.`에 대한 mlx-vlm 0.7.8 및 transformers와의 이미지 프롬프트 비교(#2547)입니다:
+
+| 체크포인트 | mlxcel | mlx-vlm | transformers | 남은 차이 |
+|---|---|---|---|---|
+| internvl3-1b | 292 (이전 262) | 268 | 체크포인트 템플릿 사용 시 292 | 템플릿 |
+| `chat_template.jinja`가 없는 로컬 복사본 minicpm-v-4.6-bf16 | 82 (이전 78) | 76 | 없음 (템플릿 없음) | 템플릿 |
+| 업스트림 `chat_template.jinja`를 사용하는 minicpm-v-4.6-bf16 | 84 | 84 | 86 | 템플릿과 thinking 기본값 |
+| 업스트림 `chat_template.jinja`를 사용하고 thinking을 끈 minicpm-v-4.6-bf16 | 86 | 84 | 86 | transformers와는 없음(ID 동일); mlx-vlm은 마커의 괄호를 유지하고 빈 think 블록을 제거함 |
+| gemma-3-4b-it-4bit | 272 (이전 273) | 274 | 272 | BOS와 이미지 순서 |
+| paligemma2-3b-6bit | 1030 | 1030 | | 없음 |
+| gemma-4-e2b-it-4bit | 278 | 271 | | `enable_thinking` 기본값(유지, 아래 참조) |
+| gemma-4-e2b-it-4bit, thinking 끔 | 271 | 271 | | 없음(ID 동일) |
+| minicpm-o-4.5-4bit, 템플릿 없는 복사본 | 78 | | | 내장 ChatML 템플릿; `mlxcel-server`의 `prompt_tokens`는 78로, `mlxcel generate`와 같음 |
+
+thinking을 끈 행은 mlxcel trace에서 `MLXCEL_TRACE_ENABLE_THINKING=0`을, `scripts/mlx_vlm_image_logit_trace.py`에서 `--enable-thinking false`를 설정합니다. mlx-vlm과 transformers는 인자를 전달하지 않으면 `enable_thinking`이 꺼진 상태로 렌더링하므로, 그 열들은 움직이지 않습니다. MiniCPM-o 행은 `mlx-community/MiniCPM-o-4_5-4bit` 체크포인트에서 `chat_template.jinja`와 `tokenizer_config.json`의 `chat_template` 키를 제거한 것이므로, 내장 fallback이 턴을 렌더링합니다. `mlxcel generate`와 `mlxcel-server`의 `/v1/chat/completions` 요청 하나는 같은 78 토큰 프롬프트(ChatML 사용자 턴 하나와 어시스턴트 시작 토큰 하나)를 만들었고, 서버 usage 블록은 `prompt_tokens` 78을 보고합니다. 기본 64 토큰에서는 두 응답 모두 추론 내용만 있었는데, thinking이 기본으로 켜져 있어 모델이 추론 채널을 먼저 열기 때문입니다. `-n 400`을 준 CLI는 빨간 사각형, 파란 원, 초록 삼각형을 정확히 답했습니다(#2761).
+
+mlxcel에서 수정한 내용으로, `prepare_vlm_embeddings`에 적용되어 `mlxcel generate`, `mlxcel-server`, trace 모두에 같은 방식으로 반영됩니다:
+
+- InternVL: 체크포인트는 image 분기가 없는 Qwen2 ChatML 템플릿을 제공하는데, 이미지 블록이 첫 토큰 뒤, `<|im_start|>`와 `system` 사이에 삽입되고 있었습니다. 이제 마지막 user 턴을 열고 그 뒤에 `\n`이 오도록 합니다. 이는 InternVL의 `model.chat`(`'<image>\n' + question`), transformers의 InternVL 템플릿(`<IMG_CONTEXT>\n`), mlx-vlm(`<image>\n`)이 모두 배치하는 위치입니다. 줄바꿈으로 시작하는 질문도 같은 위치를 유지합니다. Qwen2는 턴을 여는 토큰의 `\n`과 질문 앞의 줄바꿈들을 하나의 토큰으로 합치므로, 여는 토큰 뒤의 텍스트는 블록 뒤에서 `"\n" + question`으로 다시 인코딩되며, 이것이 참조 렌더링이 만들어 내는 id입니다(`\n\nLeading newlines`에 대해 291 토큰). trace는 목록 형태의 턴도 이 템플릿으로 렌더링했는데, 그 과정이 실패하여 채팅 턴 없이 질문만 남는 fallback으로 떨어졌습니다. 이제는 `mlxcel generate`와 같은 방식으로 렌더링합니다.
+- MiniCPM-V 4.6: MiniCPM-o 확장에서 `<image_id>0</image_id>` 접두사(`use_image_id: true`)와 이미지 항목과 질문 사이의 `\n`이 빠져 있었고, 블록을 `<|image_pad|>` 대신 `<unk>`로 채웠습니다. 업스트림 템플릿을 사용하면 템플릿 자체의 `<|image_pad|>` 마커도 프롬프트에 남았을 것입니다. 이제 4.6 확장은 `MiniCPMV4_6Processor`를 따릅니다. 템플릿이 없는 체크포인트에서 `mlxcel-server`는 일반적인 `User: ...\n\nAssistant: ` 프롬프트를 렌더링했고, 확장 과정이 이것을 다시 ChatML 턴으로 감쌌습니다(88 토큰). 이제 MiniCPM-V 4.6과 MiniCPM-o는 내장 ChatML 템플릿으로 fallback하므로, 서버는 CLI가 만드는 것과 같은 턴을 렌더링합니다(82). 자체 템플릿을 제공하는 체크포인트는 그것을 그대로 유지합니다.
+- Gemma 3: transformers는 토큰화 전에 텍스트에서 `<start_of_image>`를 확장하므로, 래퍼의 `\n\n`이 템플릿의 `user\n`과 합쳐져 `\n\n\n` 토큰 하나가 됩니다. 토큰 단위 확장은 `\n`과 `\n\n`을 따로 유지하여 토큰이 하나 많았습니다. 이제 인접한 줄바꿈 연속은 다시 인코딩합니다. OpenXLA 호스트 전처리기는 #2761 이후 같은 헬퍼로 같은 병합을 수행하며(273을 만들어 냄), 줄바꿈 연속 테이블은 모든 이미지 요청마다가 아니라 모델당 한 번 조사합니다.
+
+mlx-vlm과의 의도적인 차이이며, 각각 transformers 또는 체크포인트를 따릅니다:
+
+- InternVL 템플릿: mlx-vlm은 체크포인트의 템플릿을 자체 plain-text `User: ...\nAssistant:\n`로 대체하는데, 이는 체크포인트의 ChatML 템플릿도 InternVL의 대화 템플릿도 아닙니다. mlxcel은 `tokenizer.apply_chat_template`가 하듯 체크포인트의 템플릿(Qwen system 턴 포함)을 유지합니다.
+- 템플릿 없는 MiniCPM-V 4.6: mlx-vlm은 채팅 턴 없이 `(<image>./</image>)\nQUESTION`을 그대로 보냅니다. mlxcel은 `mlxcel generate`와 `mlxcel-server` 모두에서 턴을 체크포인트 계열의 ChatML user 및 assistant 시작 토큰으로 감쌉니다. 업스트림 템플릿을 사용하면, mlx-vlm은 `(<image>./</image>)` 마커의 괄호를 유지하고 빈 think 블록을 제거하며, transformers는 이미지 항목을 괄호 없이 렌더링하고 빈 `<think>` 블록을 닫으며, mlxcel은 `enable_thinking=true`(서버 전역 think 마커 기본값, `server::chat_front`)로 템플릿을 렌더링하고 `<think>`를 엽니다. mlx-community 저장소는 `chat_template.jinja`를 제공하며, 모델 저장소의 로컬 복사본에는 이것이 없습니다.
+- Thinking 기본값: mlxcel은 이미지 프롬프트를 텍스트 프롬프트와 같은 `enable_thinking` 기본값으로 렌더링하며, 토크나이저에 think 마커가 있으면 켜집니다(`server::chat_front::apply_thinking_default`). transformers와 mlx-vlm은 이를 꺼 둡니다. 이는 의도적인 설계입니다(#2761). 계열별 또는 이미지 전용 기본값을 두면 같은 체크포인트가 이미지 유무에 따라 다르게 렌더링되며, 클라이언트는 요청마다 `chat_template_kwargs.enable_thinking`으로 이를 끌 수 있습니다. 이 기본값은 위 gemma-4-e2b 격차 전체와 MiniCPM-V 4.6 격차의 템플릿 부분을 설명합니다. 양쪽 모두 thinking을 끄면 프롬프트는 reference의 id와 같아집니다.
+- Gemma 3: mlx-vlm은 이미 `<bos>`로 시작하는 렌더링을 special token을 켠 상태로 토큰화하므로 프롬프트에 BOS 토큰이 두 개 들어갑니다. transformers의 `apply_chat_template`와 mlxcel은 하나만 둡니다. mlx-vlm은 또한 이미지를 질문 뒤에 배치하지만, mlxcel은 이미지를 앞에 둡니다. 이는 Gemma 3 모델 카드와 mlxcel의 다른 이미지 경로의 순서이기도 합니다(#797).
+
+각 계열의 응답에 대해 teacher-forced 방식으로 채점했습니다(`examples/logit_trace MODEL REPLY 64 1 8`, 따라서 60~64개 위치). CPU에서 float32로 실행한 mlx-vlm reference와 비교했으며, decided 위치는 격차 2 logit 기준입니다. Before는 수정 전 빌드를 mlx-vlm 자체 프롬프트와 비교한 것이고, After는 수정된 빌드를 같은 reference가 mlxcel의 프롬프트(`--mlxcel-prompt`)를 채점하는 방식으로 비교한 것입니다. InternVL과 MiniCPM-V는 mlx-vlm이 CPU에서 float32로 생성한 greedy 응답을 사용했고, Gemma 3는 InternVL 응답을 사용했습니다(스트림은 arm 사이에서 공유되기만 하면 됩니다):
+
+| 체크포인트 | 이전: top-1, decided, perplexity (mlxcel 대 reference) | 이후 |
+|---|---|---|
+| internvl3-1b | 8 / 64, 0 / 38, 1.7881 vs 1.3916 | 0 / 64, 0 / 39, 1.5853 vs 1.5869 |
+| minicpm-v-4.6-bf16 (로컬 복사본) | 17 / 60, 2 / 39, 4.6649 vs 1.2230 | 2 / 60, 0 / 47, 4.2442 vs 4.2325 |
+| gemma-3-4b-it-4bit | 21 / 64, 5 / 40, 4.2819 vs 3.9110 | 4 / 64, 0 / 48, 6.2651 vs 6.0156 (#2760, 두 arm 모두 transformers mask 사용; 이전 20 / 64, 5 / 43, 4.8500 vs 5.1620) |
+
+InternVL과 MiniCPM-V의 앞선 격차는 forward pass가 아니라 프롬프트 때문이었습니다. 두 arm이 같은 토큰을 읽도록 하자 decided 위치의 불일치는 0이 되었고 perplexity는 0.3% 이내로 일치합니다. reference 자신의 perplexity도 프롬프트에 따라 움직입니다(MiniCPM-V의 응답은 mlx-vlm의 템플릿 없는 프롬프트 아래에서 생성되었으므로, 채팅 턴 뒤에서는 가능성이 낮습니다). Gemma 3는 프롬프트가 동일한데도 decided 위치 43개 중 5개에서 여전히 불일치했으며, 원인은 양쪽의 attention mask였습니다. mlxcel은 이미지 프롬프트를 모든 레이어에서 완전 양방향 mask로 prefill했지만, reference는 causal로 실행했습니다. transformers(`create_masks_for_vision_model`)는 full-attention 레이어에서 causal attention에 각 이미지 블록 내부의 양방향 attention을 더하고, sliding 레이어에서는 같은 것을 sliding window와 교차시켜 사용합니다. #2760 이후 mlxcel은 그 mask를 구성합니다(PaliGemma는 prefix-LM mask를 유지합니다). OpenXLA 경로(`MLXCEL_BACKEND=xla`)는 호스트에서 같은 mask를 구성하고 그래프 안에서 sliding 레이어에 대해 band 처리하며(#2781), reference arm은 이를 mlx-vlm의 language model에 전달합니다. 추적된 시퀀스(335 토큰)는 1024 토큰 window보다 짧으므로, mlx-vlm이 모든 레이어에 적용하는 단일 mask가 정확합니다. 이 reference 대비, #2760 이전 빌드는 64개 위치 중 18개와 decided 위치 48개 중 7개에서 불일치했고(4.8500 vs 6.0156), 수정된 빌드는 decided 위치 0 / 48에서 불일치합니다. 남은 top-1 차이 4개는 모두 reference의 격차가 1 logit 미만인 위치이며, 이때 선택은 rank 2에 있었습니다.
+
+KV cache 저장 방식 변경에는 테스트 대상 저장 방식과 그 저장 방식에 도달하는 cache 상태가 필요합니다. `MLXCEL_TRACE_KV_CACHE_MODE`는 `--kv-cache-mode` 값(예: `fp16+turbo4`)을 받고, 서버가 결정했을 레이어별 모드를 모델 자체의 cache에 주입합니다. 이는 Gemma 3와 Gemma 4 같은 모델 소유 계열에 적용되며, cache에 도달할 수 없는 모델에서는 실패합니다. `MLXCEL_TRACE_DECODE_STEP=1`은 마지막 context 토큰을 자체 단일 토큰 forward로 실행하여, 추적되는 다중 토큰 append 전에 sliding `RotatingKVCache`를 `offset`보다 앞서 키웁니다(speculative verify 블록이 실행되는 상태, #1793). 이 설정은 0이 아닌 `PREFILL`이 필요하며 `MLXCEL_TRACE_GEMMA4` 모드와는 함께 쓸 수 없습니다. 런타임 경고는 stderr로 출력되므로(`RUST_LOG`가 `warn` 기본값을 덮어씁니다), fallback 분기에 도달한 arm은 이를 드러냅니다.
+
+audio tower 변경에는 audio 프롬프트가 필요합니다. `MLXCEL_TRACE_AUDIO=CLIP.wav`와 `MLXCEL_TRACE_AUDIO_PROMPT=PROMPT.txt`를 함께 쓰면, 청크로 나눈 코퍼스 대신 클립 하나 뒤에 놓인 Gemma 4 체크포인트를 추적합니다. `PROMPT.txt`는 `<|audio|>` placeholder가 있고 모델 턴이 열린 상태로 렌더링된 chat template 프롬프트이며, 코퍼스 인자는 그 뒤에 오는 transcript입니다. 클립은 서버 자체 경로(16 kHz 리샘플링, 길이 기반 placeholder 개수, mel extractor, audio tower, embedder)를 거치고, 프롬프트와 transcript는 하나의 단일 패스 prefill로 실행되며, transcript 행만 chunk 0으로 기록됩니다.
+
+모든 chunk는 토크나이저의 BOS로 시작하며, chunk 0도 예외가 아닙니다. `PREFILL`이 없으면 BOS가 추적되는 forward 앞에 붙고, `PREFILL`이 있으면 BOS가 context pass의 맨 앞에 옵니다(이력이 없는 chunk라면 BOS만 단독으로). 그래서 추적되는 forward는 chunk의 폭을 유지합니다. trace는 이를 `# bos_anchor` 메타데이터 줄로 기록합니다. #1785 이전에 작성된 trace에는 그 줄이 없으며 chunk 0이 anchor되지 않은 상태였습니다. 문서 구분자 뒤에서 학습된 모델에서는 이것이 첫 chunk를 무너뜨립니다(Laguna XS 2.1은 여기서 perplexity 약 1000을 보였고, anchor된 chunk에서는 약 18이었습니다). 따라서 chunk 0에서는 오래된 trace와 새 trace를 비교하지 마십시오. 두 arm을 같은 빌드의 하니스로 다시 생성하십시오. `scripts/laguna_oracle_trace.py`도 같은 규칙을 따릅니다.
 
 기준으로 삼을 지표는 **decided 위치에서의 불일치**입니다. 기준(reference) 자신의 상위 두 후보가 명시된 격차보다 더 크게 벌어져 있었는데도 후보(candidate)가 다른 것을 선택한 위치의 비율입니다. 기준이 어느 쪽이든 상관하지 않았던 위치에는 틀릴 만한 정답이 없으며, 이를 decided 위치와 합쳐 버리면 유일하게 중요한 구분이 가려집니다. 바이트 동일성은 모든 격차에서 불일치가 0인 극한의 경우입니다.
 

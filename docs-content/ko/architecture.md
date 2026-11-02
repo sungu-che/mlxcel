@@ -64,7 +64,7 @@ src/
   벤치마크, 추론 세션 실행이 사용합니다(ADR 0007, #2176). `engine/speculative.rs`는 prompt lookup 같은 drafter를 위한
   토큰 전용 speculative 루프입니다.
 - `src/lib/mlxcel-core/src/drafter/` 및 `src/lib/mlxcel-core/src/speculative/` — speculative decoding 지원. 각 경로가 어떤 규칙을 실행하는지는
-    [`speculative-acceptance.md`](speculative-acceptance.md)를 참조하십시오.
+  [`speculative-acceptance.md`](speculative-acceptance.md)를 참조하십시오.
 - `src/lib/mlxcel-core/src/layers.rs`, `src/lib/mlxcel-core/src/weights.rs`, `src/lib/mlxcel-core/src/utils.rs` — 모델 구성 요소,
   SafeTensors 로딩, 마스크, 헬퍼 연산.
 - `src/lib/mlxcel-core/src/autotune/`: shape 버킷 기반 커널 autotuner(issue #906). `TunableOp` 계약,
@@ -77,7 +77,7 @@ src/
 
 `src/lib/mlxcel-core/build.rs`는 `src/lib/mlxcelverse/`를 통해 고정된 MLX 커밋을 빌드하고 브리지 코드를 컴파일합니다.
 업스트림 MLX 위에 무엇이 얹혀 있는지는
-[mlxcelverse](#mlxcelverse-the-mlx-side-layer)를 참조하십시오.
+[mlxcelverse](#mlxcelverse-mlx-측-계층)를 참조하십시오.
 
 ## mlxcelverse: MLX 측 계층
 
@@ -135,7 +135,6 @@ model path
   `mlxcel detect`가 소비하는 공통 `Detector` 결과를 노출합니다. PP-DocLayoutV3는
   모델이 예측한 읽기 순서를 제공하며, RT-DETRv2는 이를 비워 두므로 CLI가 기하학적
   폴백을 유지합니다.
-
 - `src/backend/`는 compute-backend seam입니다. CLI와 서버의 로드 지점은 `loading::load_model`을 직접 호출하는 대신
   `select_backend().load_model(...)`을 호출하므로, `LanguageModel::forward`를 실행하는 엔진은
   로드 경계에서 선택됩니다. 기본 기능 하에서는 seam이 컴파일 시점에 MLX 백엔드로 접히며 런타임 디스패치가 추가되지 않습니다.
@@ -194,7 +193,7 @@ model path
   위의 fused launcher는 Metal을 사용할 수 없을 때마다 CUDA를 선택하므로, ROCm에서는 MLX 그래프 폴백이 있는 경우
   그 폴백을 사용합니다. 백엔드 종류별 라우팅은 lablup/mlxcel#1803입니다.
   상태와 알려진 공백은
-  [Linux with AMD ROCm](installation.md#linux-with-amd-rocm-experimental)을 참조하십시오.
+  [Linux with AMD ROCm](installation.md#amd-rocm-기반-linux-실험적)을 참조하십시오.
 
 ## 분산 및 멀티 디바이스
 
