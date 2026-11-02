@@ -150,7 +150,7 @@ Muse Glimmer가 이 규칙의 현재 예시입니다. 첫 번째 베이스라인
    - 비표준 어댑터 경로는 `load_model_from_weights()`를 직접 키우는 대신 `src/loading/special.rs`를 확장해야 합니다.
 8. 패밀리가 `switch_layers::SwitchLinear`를 사용하지 않고 **자체 양자화 MoE 전문가 타입**을 가진다면, 로더가 이를 저장하는 시점에서 선언된 양자화 쌍의 범위를 제한하십시오:
    `switch_layers::validate_expert_quantization_params(prefix, group_size, bits)?`.
-   공유 로더는 이를 대신 수행해 주지만, 패밀리 로컬 `SwitchLinear` / `SwitchGLU` / `ExpertLinear`는 이를 상속하지 않습니다. [양자화 파라미터 범위](#quantization-parameter-bounds)를 참조하십시오.
+   공유 로더는 이를 대신 수행해 주지만, 패밀리 로컬 `SwitchLinear` / `SwitchGLU` / `ExpertLinear`는 이를 상속하지 않습니다. [양자화 파라미터 범위](#양자화-파라미터-범위)를 참조하십시오.
 
 ## VLM 체크리스트
 
@@ -184,7 +184,6 @@ Muse Glimmer가 이 규칙의 현재 예시입니다. 첫 번째 베이스라인
      마지막 차원이 아니라 config에서 가져옵니다.
    - 서로 다른 사용 패턴마다 합성 양자화 회귀 테스트를 추가하고, dense 호환 케이스와
      잘못된 레이아웃 오류 케이스도 함께 추가합니다.
-
 
 ## 새 패밀리 모듈을 만들어야 하는 경우
 

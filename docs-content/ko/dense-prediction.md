@@ -74,7 +74,7 @@ Sapiens2는 모든 백엔드에서 공개된 BF16 가중치 dtype을 유지합�
 | `depth.png` | 16-bit grayscale. 유한한 맵의 min/max가 0과 65535가 되고, NaN과 무한대는 0이 됨. |
 | `normal.png` | `(normal + 1) / 2`를 `[0, 1]`로 clamp한 뒤의 8-bit RGB. |
 | `mask.png` | 8-bit grayscale. 0.5 이하는 0, 0.5 초과는 255. |
-| `segmentation.png` | 8-bit class ID. |
+| `segmentation.png` | 8-bit 클래스 ID 값. |
 
 Sapiens2는 다음 텐서 키와 shape을 사용합니다.
 
@@ -225,7 +225,7 @@ mlxcel predict -m models/sam-3d-body-dinov3-bf16 --image person.png \
   --opts '{"bbox":[100,50,400,500]}' -o outputs/body
 ```
 
-body 전용 predictor는 DINOv3, 카메라 조건이 있는 6개의 decoder 레이어, MHR body 모델을 실행합니다. 공개된 설정은 512x512 affine crop을 명시적으로 지정하며 이 런타임은 그것을 요구합니다. upstream dataclass 기본값인 512x384는 공개 체크포인트와 별개이며 crop 크기가 없을 때 선택되지 않습니다. dense 체크포인트 설정 읽기는 JSON 파싱 전에 8 MiB로 제한됩니다. 저장된 backbone은 BF16을 유지하고, decoder와 MHR 텐서는 F32를 유지하며, 정수 topology는 정수로 유지됩니다. F32 입력 활성화는 upstream 그래프의 자연스러운 promotion을 따릅니다.
+body 전용 predictor는 DINOv3, 카메라 조건이 있는 6개의 decoder 레이어, MHR body 모델을 실행합니다. 공개된 설정은 512×512 affine crop을 명시적으로 지정하며 이 런타임은 그것을 요구합니다. upstream dataclass 기본값인 512×384는 공개 체크포인트와 별개이며 crop 크기가 없을 때 선택되지 않습니다. dense 체크포인트 설정 읽기는 JSON 파싱 전에 8 MiB로 제한됩니다. 저장된 backbone은 BF16을 유지하고, decoder와 MHR 텐서는 F32를 유지하며, 정수 topology는 정수로 유지됩니다. F32 입력 활성화는 upstream 그래프의 자연스러운 promotion을 따릅니다.
 
 `bbox`는 원본 픽셀 단위 `[x1,y1,x2,y2]` box이며 기본값은 전체 이미지입니다. 일부가 밖으로 나간 box는 clip 없이 검은색 padding을 받고, 유한하지 않거나 퇴화했거나 완전히 밖에 있는 box는 실패합니다. `cam_int`는 아홉 개의 row-major 숫자 또는 3x3 행을 받으며, 값은 유한하고 초점 거리는 양수이며 행렬은 가역이어야 합니다. 기본값은 이미지 대각선을 초점 거리로, 이미지 중심을 principal point로 사용합니다. Grayscale과 RGBA 입력은 RGB로 변환됩니다. 사람 box는 호출자가 제공하며, 사람 detection과 별도의 손 refinement pass는 이 런타임의 범위 밖입니다.
 

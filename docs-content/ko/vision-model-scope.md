@@ -49,7 +49,7 @@ probe가 인식하지 못하는 체크포인트는 위에서 설명한 `model_ty
 | `ideogram4` | `lablup/mlxcel#2427` | Ideogram 4: 외부 LLM 텍스트 encoder를 사용하는, VAE latent 위의 34층 DiT. FP8이며 라이선스가 게이트된 체크포인트로 `model_index.json`을 키로 사용합니다. | 등록됨: `mlxcel generate-image`와 `mlxcel-server --image-model`이 text-to-image를 실행합니다(생성 전용). |
 | `qwen_image` | `lablup/mlxcel#2342` | Qwen-Image-2.1: Qwen3-VL conditioner(pre-norm hidden state), 3축 RoPE를 사용하는 32블록 single-stream DiT, Qwen-Image VAE(Ming-Image와 공유). | 등록됨: `mlxcel generate-image`와 `mlxcel-server --image-model`이 text-to-image와 하나 이상의 참조 이미지를 사용하는 편집을 실행합니다(RGBA 유지). |
 | `ming_image` | `lablup/mlxcel#2347` | Ming-Image-0.1-Design: 256개 query token에 대한 token별 이미지 router를 가진 BailingMoeV2 conditioner, 양방향 Qwen2 connector, 두 번째 caption 스트림을 가진 Z-Image NextDiT, 4채널을 디코딩하는 Qwen-Image VAE. | 등록됨: `mlxcel generate-image`와 `mlxcel-server --image-model`이 RGBA 출력의 text-to-image를 실행합니다(생성 전용, guidance 1.0). |
-| `bonsai` | `lablup/mlxcel#2428` | Prism Bonsai: ternary 2-bit FLUX.2 text-to-image. [model-triage.md](model-triage.md)에도 기록되어 있습니다. | 인식됨, 등록되지 않음. |
+| `bonsai` | `lablup/mlxcel#2428` | Prism Bonsai: ternary 2-bit FLUX.2 기반 text-to-image. [model-triage.md](model-triage.md)에도 기록되어 있습니다. | 인식됨, 등록되지 않음. |
 | `ernie_image` | `lablup/mlxcel#2345` | ERNIE-Image / ERNIE-Image-Turbo: single-stream DiT, Ministral 3 텍스트 encoder 및 프롬프트 enhancer, FLUX.2 VAE. | 등록됨: `mlxcel generate-image`와 `mlxcel-server --image-model`이 text-to-image와 SDEdit img2img를 실행합니다. |
 
 ### Dense prediction, segmentation, 3D, 에픽 `lablup/mlxcel#2382`
