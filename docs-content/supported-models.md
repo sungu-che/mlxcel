@@ -315,6 +315,7 @@ contract; only PP-DocLayoutV3 includes `reading_order`.
 | RT-DETRv2 | `rt_detr_v2` | converted MLX | geometric CLI fallback | supported on Metal and CUDA; ROCm partial |
 | PP-DocLayoutV3 | `pp_doclayout_v3` | raw Paddle/Hugging Face `model.*` and converted MLX | GlobalPointer page order | supported on Metal and CUDA; ROCm partial |
 | RF-DETR Base / Seg Small | `rf-detr` (alias `rfdetr`) | released Hugging Face `model.*` and idempotently converted MLX | geometric CLI fallback | supported on ROCm; Metal and CUDA unverified |
+| YOLO11 (OmniParser v2 icon detect) | `yolo11` | converted MLX (`axiom-of-choice/OmniParser-v2-icon-detect`) | geometric CLI fallback | supported on Metal and CUDA |
 
 RF-DETR uses a windowed DINOv2 backbone, C2f projector, two-stage deformable
 decoder, and an optional instance-segmentation head. Base and segmentation
@@ -330,6 +331,34 @@ finiteness contract before constructing HGNetV2-L, the hybrid encoder,
 mask-enhanced query initialization, and its six decoder layers. Raw checkpoint
 convolution kernels are transposed only when the global `model.` namespace
 proves their provenance; mixed layouts and rename collisions are rejected.
+
+YOLO11 implements the fixed OmniParser v2 `icon_detect` topology: three C3k2
+backbone stages, SPPF, the C2PSA attention neck, and an anchor-free DFL head at
+strides 8, 16, and 32. The converted checkpoint stores MLX NHWC kernels and
+BatchNorm running statistics, so no conversion is needed at load time. A
+checkpoint whose `ch` or `stride` differs from the OmniParser topology is
+rejected at load. `--threshold` defaults to 0.05, `--size` sets the longest side
+before the stride-32 letterbox (unset keeps the native resolution), and `--iou`
+sets the class-aware NMS threshold (default 0.1, at most 300 boxes). Detections
+use the class name from `config.json` (`icon`) and original-image pixels.
+
+### OmniParser v2 icon detection
+
+OmniParser v2 detects interactable icons with this detector and captions each
+crop with Florence-2. Both halves run natively:
+
+```bash
+mlxcel detect -m axiom-of-choice/OmniParser-v2-icon-detect \
+  -i ui.png --size 1280 --format json > icons.json
+mlxcel generate -m models/mlx/Florence-2-base \
+  --image crop.png --prompt "<CAPTION>"
+```
+
+The detector emits `icon` boxes in the screenshot's own pixel coordinates, so a
+crop for the captioner is the printed `l, t, r, b` rectangle. `--threshold`
+filters low-confidence icons and `--iou` controls overlap suppression; boxes of
+different classes are never merged. A combined pipeline command is not part of
+this family.
 
 ## Standalone vision and dense prediction
 
@@ -440,6 +469,45 @@ collapses same-box entries to one region rather than OCRing the text once per
 label. The label it keeps is the highest-confidence one that maps to an OCR
 category, so a box detected as both `picture` and `text` is still read as text
 instead of being skipped on the un-OCRable label.
+
+### IndicOCR page pipeline
+
+IndicOCR (`indic_ocr`, Bodhan AI) parses a page in English and 22 Indian
+languages in two stages: IndicDocLayout, a PP-DocLayoutV3 fine-tune that finds
+regions and reading order, then IndicBlockOCR, a Qwen3.5-0.8B fine-tune that
+transcribes each region as text, LaTeX, or an HTML table. Both stages load from
+one repository and the page runs through `generate`:
+
+```bash
+mlxcel generate -m HashNuke/indic-ocr-mlx --image page.png --output-json page.json
+```
+
+Markdown goes to stdout in reading order; `--output-json PATH` writes
+`{image, width, height, blocks: [{order, label, type, bbox_xyxy, conf, text}]}`
+with zero-based `order` and pixel boxes. `-p/--prompt` is unused because every
+region's instruction comes from its class; `--table-format markdown` switches
+tables from HTML to GitHub-flavored Markdown, and `-n/--max-tokens` overrides
+the 2048-token per-block default. Greedy decoding is the only reproducible
+setting and is always used.
+
+The layout stage does not use the Hugging Face post-processing that
+`mlxcel detect` uses for PP-DocLayoutV3. It resizes the page to 1024 square,
+takes one argmax label per query, keeps `score > 0.5`, and decodes the order
+matrix over the retained sub-block only, which is what the fine-tune was
+trained against. Boxes are then clamped to the page, nested duplicates and
+all-but-large headers/footers are dropped, and the reading order is renumbered
+0..N-1. Equations nested in a paragraph (70% containment) are not transcribed
+again and keep `text: ""`, as do figures, pictures, headers, footers, and
+charts.
+
+Crops are rounded, clamped, and scaled with Lanczos so their area lands in
+[256², 1536²] pixels. Each crop is transcribed with its class instruction
+through the OCR stage's own chat template. The separate stage directories
+(`weights/layout`, `weights/ocr`) are used directly; a root `weight_mapping`
+index is not needed. `--layout-detections FILE` skips the detector and replays
+the same detection JSON `mlxcel detect --format json` prints, so a page can be
+inspected or its layout replaced without rerunning stage 1. Point `-m` at
+`weights/ocr` to transcribe a single crop, or at the root for the whole page.
 
 ### Phi-3 / Phi-4 LongRoPE position scaling
 
