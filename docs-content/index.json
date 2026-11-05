@@ -3,8 +3,8 @@
     "repo": "lablup/mlxcel",
     "ref": "main",
     "dir": "docs",
-    "commit": "9487b1cbcbaca1f182070168542a07038010188d",
-    "commitDate": "2026-11-03T07:27:43Z"
+    "commit": "f2e82a31d82d427b1594a3627077a701d5d7d622",
+    "commitDate": "2026-11-05T05:33:12Z"
   },
   "files": [
     {
@@ -29,7 +29,7 @@
       "name": "benchmarks.md",
       "slug": "benchmarks",
       "title": "Benchmarks",
-      "size": 102933
+      "size": 104307
     },
     {
       "name": "block-diffusion.md",
@@ -53,7 +53,7 @@
       "name": "CONTINUOUS_BATCHING.md",
       "slug": "CONTINUOUS_BATCHING",
       "title": "Continuous batching and disaggregated serving",
-      "size": 83980
+      "size": 84484
     },
     {
       "name": "dense-prediction.md",
@@ -77,7 +77,7 @@
       "name": "environment-variables.md",
       "slug": "environment-variables",
       "title": "Environment variables",
-      "size": 261418
+      "size": 262576
     },
     {
       "name": "sparse-paged-decode.md",
@@ -113,7 +113,7 @@
       "name": "mla-absorbed-decode.md",
       "slug": "mla-absorbed-decode",
       "title": "MLA matrix-absorbed decode",
-      "size": 8771
+      "size": 9538
     },
     {
       "name": "README.md",
@@ -185,7 +185,7 @@
       "name": "supported-models.md",
       "slug": "supported-models",
       "title": "Supported models",
-      "size": 290649
+      "size": 296262
     },
     {
       "name": "f32-attention-widen-audit.md",
