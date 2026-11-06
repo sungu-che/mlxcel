@@ -5,8 +5,16 @@
     "feed_url": "https://www.backend.ai/en/rss/blog-feed.json",
     "home_page_url": "https://www.backend.ai/blog"
   },
-  "syncedAt": "2026-11-05T10:27:39.274Z",
+  "syncedAt": "2026-11-06T10:29:20.970Z",
   "items": [
+    {
+      "id": "2026-11-mlxcel-version-0.8-released",
+      "title": "MLxcel 0.8 \"Eyes Wide Open\" – Eyes on AMD Strix Halo",
+      "summary": "MLxcel 0.8, the LLM/VLM infere...",
+      "url": "https://www.backend.ai/blog/releases/2026-11-mlxcel-version-0.8-released",
+      "image": "https://cdn.lablup.com/mlxcel0_8_en_935b0ed49d.jpg",
+      "date_modified": "2026-11-06T00:00:00.000Z"
+    },
     {
       "id": "2026-10-introducing-backend.ai-slurm-frontend",
       "title": "Backend.AI Slurm Frontend: Keep Slurm, Gain a Modern AI Platform",
@@ -94,14 +102,6 @@
       "url": "https://www.backend.ai/blog/engineering/2026-06-installing-backend-ai-on-nvidia-dgx-spark",
       "image": "https://cdn.lablup.com/backend_ai_spark_en_86377f6eaf.jpg",
       "date_modified": "2026-06-22T00:00:00.000Z"
-    },
-    {
-      "id": "2026-06-heterogeneous-gpu-operation",
-      "title": "The era of diverse AI accelerators: Backend.AI's heterogeneous GPU operation strategy",
-      "summary": "When purchasing GPUs, selectin...",
-      "url": "https://www.backend.ai/blog/engineering/2026-06-heterogeneous-gpu-operation",
-      "image": "https://cdn.lablup.com/heterogeneous_gpus_en_ff30b8eba4.jpg",
-      "date_modified": "2026-06-19T00:00:00.000Z"
     }
   ]
 }

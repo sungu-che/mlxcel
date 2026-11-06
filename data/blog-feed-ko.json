@@ -5,8 +5,16 @@
     "feed_url": "https://www.backend.ai/ko/rss/blog-feed.json",
     "home_page_url": "https://www.backend.ai/blog"
   },
-  "syncedAt": "2026-11-05T10:27:37.486Z",
+  "syncedAt": "2026-11-06T10:29:20.930Z",
   "items": [
+    {
+      "id": "2026-11-mlxcel-version-0.8-released",
+      "title": "MLxcel 0.8 \"Eyes Wide Open\" - AMD Strix Halo에 눈을 뜨다",
+      "summary": "래블업이 개발하는 LLM/VLM 추론 엔진 MLxcel...",
+      "url": "https://www.backend.ai/ko/blog/releases/2026-11-mlxcel-version-0.8-released",
+      "image": "https://cdn.lablup.com/mlxcel0_8_ko_7c055b33b8.jpg",
+      "date_modified": "2026-11-06T00:00:00.000Z"
+    },
     {
       "id": "2026-10-introducing-backend.ai-slurm-frontend",
       "title": "Backend.AI Slurm Frontend: Slurm을 유지한 채 사용하는 현대적인 AI 플랫폼",
@@ -94,14 +102,6 @@
       "url": "https://www.backend.ai/ko/blog/engineering/2026-06-installing-backend-ai-on-nvidia-dgx-spark",
       "image": "https://cdn.lablup.com/backend_ai_spark_ko_17bd1a34eb.jpg",
       "date_modified": "2026-06-22T00:00:00.000Z"
-    },
-    {
-      "id": "2026-06-heterogeneous-gpu-operation",
-      "title": "다양한 AI 가속기의 시대: Backend.AI의 이기종 GPU 운영 전략",
-      "summary": "GPU를 구매할 때 한 가지 벤더만 고르면 간단하겠지만...",
-      "url": "https://www.backend.ai/ko/blog/engineering/2026-06-heterogeneous-gpu-operation",
-      "image": "https://cdn.lablup.com/heterogeneous_gpus_ko_b559d649a3.jpg",
-      "date_modified": "2026-06-19T00:00:00.000Z"
     }
   ]
 }
