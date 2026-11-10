@@ -3,15 +3,15 @@
     "repo": "lablup/mlxcel",
     "ref": "main",
     "dir": "docs",
-    "commit": "8224641eed1e732cc1033910fe93962378f0ae3f",
-    "commitDate": "2026-11-09T10:40:35Z"
+    "commit": "0ba1b50b77467d76d5557a0bff207b9969e97066",
+    "commitDate": "2026-11-10T08:59:58Z"
   },
   "files": [
     {
       "name": "mtp-policy-api.md",
       "slug": "mtp-policy-api",
       "title": "Adaptive MTP policy API (`/v1/internal/mtp-policy`)",
-      "size": 13621
+      "size": 14154
     },
     {
       "name": "architecture.md",
@@ -29,7 +29,7 @@
       "name": "benchmarks.md",
       "slug": "benchmarks",
       "title": "Benchmarks",
-      "size": 104807
+      "size": 105749
     },
     {
       "name": "block-diffusion.md",
@@ -65,7 +65,7 @@
       "name": "distributed.md",
       "slug": "distributed",
       "title": "Distributed inference",
-      "size": 57518
+      "size": 57748
     },
     {
       "name": "embeddings.md",
@@ -77,7 +77,7 @@
       "name": "environment-variables.md",
       "slug": "environment-variables",
       "title": "Environment variables",
-      "size": 264852
+      "size": 269383
     },
     {
       "name": "sparse-paged-decode.md",
@@ -101,13 +101,19 @@
       "name": "installation.md",
       "slug": "installation",
       "title": "Installation",
-      "size": 114082
+      "size": 114400
     },
     {
       "name": "llama-server-compat.md",
       "slug": "llama-server-compat",
       "title": "llama-server compatibility boundary (b10621)",
       "size": 150944
+    },
+    {
+      "name": "macos-memory.md",
+      "slug": "macos-memory",
+      "title": "macOS memory guardrails",
+      "size": 4370
     },
     {
       "name": "mla-absorbed-decode.md",
@@ -119,7 +125,7 @@
       "name": "README.md",
       "slug": "README",
       "title": "mlxcel documentation layout",
-      "size": 8405
+      "size": 8575
     },
     {
       "name": "adding-models.md",
@@ -161,7 +167,7 @@
       "name": "responses-api.md",
       "slug": "responses-api",
       "title": "OpenAI Responses API subset (`/v1/responses`)",
-      "size": 30431
+      "size": 48741
     },
     {
       "name": "python-client.md",
@@ -173,7 +179,7 @@
       "name": "server-features.md",
       "slug": "server-features",
       "title": "Server features and deployment guide",
-      "size": 26857
+      "size": 27882
     },
     {
       "name": "speculative-acceptance.md",
@@ -185,7 +191,7 @@
       "name": "supported-models.md",
       "slug": "supported-models",
       "title": "Supported models",
-      "size": 296262
+      "size": 304572
     },
     {
       "name": "temperature-0-block-history-flip.md",
