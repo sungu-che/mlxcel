@@ -3,8 +3,8 @@
     "repo": "lablup/mlxcel",
     "ref": "main",
     "dir": "docs",
-    "commit": "0ba1b50b77467d76d5557a0bff207b9969e97066",
-    "commitDate": "2026-11-10T08:59:58Z"
+    "commit": "ce6855bc8049e0bf4fa805b84107814bf77806b6",
+    "commitDate": "2026-11-11T09:09:41Z"
   },
   "files": [
     {
@@ -29,7 +29,7 @@
       "name": "benchmarks.md",
       "slug": "benchmarks",
       "title": "Benchmarks",
-      "size": 105749
+      "size": 110375
     },
     {
       "name": "block-diffusion.md",
@@ -53,7 +53,7 @@
       "name": "CONTINUOUS_BATCHING.md",
       "slug": "CONTINUOUS_BATCHING",
       "title": "Continuous batching and disaggregated serving",
-      "size": 85369
+      "size": 88620
     },
     {
       "name": "dense-prediction.md",
@@ -77,7 +77,7 @@
       "name": "environment-variables.md",
       "slug": "environment-variables",
       "title": "Environment variables",
-      "size": 269383
+      "size": 271631
     },
     {
       "name": "sparse-paged-decode.md",
@@ -89,7 +89,7 @@
       "name": "gelu-call-sites.md",
       "slug": "gelu-call-sites",
       "title": "GELU call sites and the upstream activation each one ports",
-      "size": 80707
+      "size": 80723
     },
     {
       "name": "image-generation.md",
@@ -101,7 +101,7 @@
       "name": "installation.md",
       "slug": "installation",
       "title": "Installation",
-      "size": 114400
+      "size": 114768
     },
     {
       "name": "llama-server-compat.md",
@@ -191,7 +191,7 @@
       "name": "supported-models.md",
       "slug": "supported-models",
       "title": "Supported models",
-      "size": 304572
+      "size": 305123
     },
     {
       "name": "temperature-0-block-history-flip.md",
@@ -233,7 +233,7 @@
       "name": "webui-integration-matrix.md",
       "slug": "webui-integration-matrix",
       "title": "WebUI integration requirement matrix (#1848)",
-      "size": 24846
+      "size": 25124
     }
   ]
 }
