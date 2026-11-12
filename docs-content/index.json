@@ -3,8 +3,8 @@
     "repo": "lablup/mlxcel",
     "ref": "main",
     "dir": "docs",
-    "commit": "ce6855bc8049e0bf4fa805b84107814bf77806b6",
-    "commitDate": "2026-11-11T09:09:41Z"
+    "commit": "c3395d91aaf4099daaae6d1c5a2da9fab010ba2b",
+    "commitDate": "2026-11-12T09:09:09Z"
   },
   "files": [
     {
@@ -53,7 +53,7 @@
       "name": "CONTINUOUS_BATCHING.md",
       "slug": "CONTINUOUS_BATCHING",
       "title": "Continuous batching and disaggregated serving",
-      "size": 88620
+      "size": 91274
     },
     {
       "name": "dense-prediction.md",
@@ -77,7 +77,7 @@
       "name": "environment-variables.md",
       "slug": "environment-variables",
       "title": "Environment variables",
-      "size": 271631
+      "size": 272951
     },
     {
       "name": "sparse-paged-decode.md",
