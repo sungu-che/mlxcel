@@ -3,8 +3,8 @@
     "repo": "lablup/mlxcel",
     "ref": "main",
     "dir": "docs",
-    "commit": "651aaefca18f154caaa67f91e9e964963b8a11b5",
-    "commitDate": "2026-11-12T19:16:35Z"
+    "commit": "a1694f6df5aaa43c1d083492f6bd358a5e9442f6",
+    "commitDate": "2026-11-14T08:52:00Z"
   },
   "files": [
     {
@@ -53,7 +53,7 @@
       "name": "CONTINUOUS_BATCHING.md",
       "slug": "CONTINUOUS_BATCHING",
       "title": "Continuous batching and disaggregated serving",
-      "size": 91274
+      "size": 94788
     },
     {
       "name": "dense-prediction.md",
@@ -71,13 +71,13 @@
       "name": "embeddings.md",
       "slug": "embeddings",
       "title": "Embeddings and reranking APIs and CLI",
-      "size": 63048
+      "size": 63127
     },
     {
       "name": "environment-variables.md",
       "slug": "environment-variables",
       "title": "Environment variables",
-      "size": 272951
+      "size": 274942
     },
     {
       "name": "sparse-paged-decode.md",
@@ -107,7 +107,7 @@
       "name": "llama-server-compat.md",
       "slug": "llama-server-compat",
       "title": "llama-server compatibility boundary (b10621)",
-      "size": 150944
+      "size": 151733
     },
     {
       "name": "macos-memory.md",
@@ -179,7 +179,7 @@
       "name": "server-features.md",
       "slug": "server-features",
       "title": "Server features and deployment guide",
-      "size": 27882
+      "size": 28418
     },
     {
       "name": "speculative-acceptance.md",
