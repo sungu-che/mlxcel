@@ -3,8 +3,8 @@
     "repo": "lablup/mlxcel",
     "ref": "main",
     "dir": "docs",
-    "commit": "a1694f6df5aaa43c1d083492f6bd358a5e9442f6",
-    "commitDate": "2026-11-14T08:52:00Z"
+    "commit": "9c5ea4df3e568956dff96ff26e6cfba552016f84",
+    "commitDate": "2026-11-15T10:23:17Z"
   },
   "files": [
     {
@@ -29,7 +29,7 @@
       "name": "benchmarks.md",
       "slug": "benchmarks",
       "title": "Benchmarks",
-      "size": 110375
+      "size": 111806
     },
     {
       "name": "block-diffusion.md",
@@ -41,7 +41,7 @@
       "name": "cascade-attention.md",
       "slug": "cascade-attention",
       "title": "Cascade attention (shared prompt prefixes)",
-      "size": 9332
+      "size": 9954
     },
     {
       "name": "code-guidelines.md",
@@ -53,7 +53,7 @@
       "name": "CONTINUOUS_BATCHING.md",
       "slug": "CONTINUOUS_BATCHING",
       "title": "Continuous batching and disaggregated serving",
-      "size": 94788
+      "size": 97141
     },
     {
       "name": "dense-prediction.md",
@@ -77,7 +77,7 @@
       "name": "environment-variables.md",
       "slug": "environment-variables",
       "title": "Environment variables",
-      "size": 274942
+      "size": 278805
     },
     {
       "name": "sparse-paged-decode.md",
@@ -89,7 +89,7 @@
       "name": "gelu-call-sites.md",
       "slug": "gelu-call-sites",
       "title": "GELU call sites and the upstream activation each one ports",
-      "size": 80723
+      "size": 80797
     },
     {
       "name": "image-generation.md",
@@ -173,7 +173,7 @@
       "name": "python-client.md",
       "slug": "python-client",
       "title": "Python client",
-      "size": 12651
+      "size": 12652
     },
     {
       "name": "server-features.md",
