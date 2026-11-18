@@ -53,7 +53,7 @@
     {
       "name": "dense-prediction.md",
       "slug": "dense-prediction",
-      "titleKo": "Dense prediction"
+      "titleKo": "밀집 예측"
     },
     {
       "name": "distributed.md",
@@ -191,4 +191,4 @@
       "titleKo": "WebUI 통합 요구사항 매트릭스 (#1848)"
     }
   ]
-}
+}
