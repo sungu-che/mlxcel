@@ -5,9 +5,9 @@
 
 | 모드 | 목적 | 성숙도 |
 |------|---------|----------|
-| Tensor parallelism (TP) | 프로세스 내 rank들에 걸쳐 텐서 연산을 샤딩합니다. | 선택된 dense 텍스트 패밀리에 구현되어 있으며, 모델별로 검증해야 합니다. |
-| Pipeline parallelism (PP) | 레이어 범위를 스테이지별로 분할합니다. | Llama 계열 텍스트 모델과 2-스테이지 토폴로지에서 가장 잘 검증되었습니다. |
-| Disaggregated inference (DI) | 각 노드가 모델을 보유한 채 prefill/decode 역할을 분리합니다. | 인프라는 존재하며, 사용자의 토폴로지에서 검증하기 전까지는 실험적인 것으로 취급하십시오. |
+| 텐서 병렬화 (TP) | 프로세스 내 rank들에 걸쳐 텐서 연산을 샤딩합니다. | 선택된 dense 텍스트 패밀리에 구현되어 있으며, 모델별로 검증해야 합니다. |
+| 파이프라인 병렬화 (PP) | 레이어 범위를 스테이지별로 분할합니다. | Llama 계열 텍스트 모델과 2-스테이지 토폴로지에서 가장 잘 검증되었습니다. |
+| 분리형 추론 (DI) | 각 노드가 모델을 보유한 채 prefill/decode 역할을 분리합니다. | 인프라는 존재하며, 사용자의 토폴로지에서 검증하기 전까지는 실험적인 것으로 취급하십시오. |
 
 세 모드 모두 네이티브 Windows에서는 실행되지 않습니다. `mlxcel generate`와 `mlxcel-server`는
 모델을 resolve하기 전인 시작 단계에서 플래그 이름을 포함한 오류와 함께 종료됩니다. 두 명령 모두에서
@@ -28,7 +28,7 @@ Model fits on one device?
     └── multi-host / uneven memory            → PP with explicit layer ranges
 ```
 
-## Tensor parallelism
+## 텐서 병렬화
 
 TP는 트랜스포머 레이어 내부의 가중치를 샤딩하고 row-parallel 출력을 동기화합니다.
 공개된 옵션은 다음과 같습니다.
@@ -61,7 +61,7 @@ ERNIE 4.5, Hunyuan v1 Dense가 포함되어 있으며, 다른 패밀리를 위�
 - 일부 서버 배칭 및 VLM 경로는 TP에서 의도적으로 보수적입니다.
 - 실행하려는 모든 모델 패밀리와 rank 수에 대해 벤치마크와 정확성 검증을 반복해야 합니다.
 
-## Pipeline parallelism
+## 파이프라인 병렬화
 
 PP는 모델을 레이어 범위로 분할합니다. 모델이 단일 디바이스의 메모리를 초과하거나
 호스트 간 메모리 용량이 고르지 않을 때 유용합니다.
@@ -127,7 +127,7 @@ mlxcel-server -m models/<checkpoint> \
 위 두 명령 모두 [클러스터 인증](#cluster-authentication) 섹션에서 설명하는 클러스터 시크릿이 필요합니다.
 시크릿이 없으면 각 프로세스는 시작 시 플래그, 환경 변수, TOML 필드 이름을 포함한 오류와 함께 종료됩니다.
 
-### Zero-config bring-up
+### 설정 없는 기동
 
 `--pp-auto N`과 `--pp-peer`는 N개 스테이지 파이프라인을 손으로 작성한 TOML 대신 사용합니다. 코디네이터
 (`--pp-auto N`)는 N개의 피어 프로세스를 찾아내고, 클러스터를 계획하며, 인증된 클러스터 핸드셰이크를 통해
@@ -237,7 +237,7 @@ commit하는 할당에 의해 덮어쓰이기 때문입니다. 이 파일들은 
 중 어느 쪽이든 단일 호스트 loopback 리허설은 `tests/zero_config_cluster_init.rs`(`zero_config_cli_*`)이며, 이
 테스트는 `--cluster-discovery-target 127.0.0.1`로 실제 바이너리를 구동합니다.
 
-### Cluster authentication
+### 클러스터 인증
 
 모든 분산 역할은 클러스터별로 미리 공유된 시크릿 하나로 피어를 인증합니다. 파이프라인 역할은 issue #2637부터,
 disaggregated의 prefill, decode, router 역할은 issue #2655부터 적용됩니다. 코디네이터, 모든 원격 스테이지,
@@ -419,8 +419,7 @@ Fail-closed 범위: `--pp-auto`, `--pp-peer`, `pipeline_parallel_size`가 2 이�
 핸드셰이크 와이어 프로토콜은 버전이 붙어 있습니다(`PROTOCOL_VERSION` 5. 3은 #2656에서 프레임 보호 suite와
 프레임별 파생 키를 추가했고, 4는 #2692에서 용량 초과 판정을 추가했으며, 5는 #2714에서 판정 authenticator를
 추가했습니다). 서로 다른 버전으로 빌드된 프로세스 쌍은 혼란스러운 I/O 오류 대신 명시적인 버전 메시지와 함께
-실패합니다. 한 클러스터 안의 혼합 버전은 지원되지 않습니다. 모든 노드를 함께 업그레이드해야 합니다. 지금까지의
-모든 버전 상향은 v0.8.0-beta.1 이후에 들어갔으므로, v0.8.0과 그 베타는 같은 클러스터를 공유할 수 없습니다.
+실패합니다. 한 클러스터 안의 혼합 버전은 지원되지 않습니다. 모든 노드를 함께 업그레이드해야 합니다. 탐색 비콘(discovery beacons)과 스테이지 할당 모두 `CARGO_PKG_VERSION`을 고정하므로, 이 규칙은 프로토콜 버전뿐만 아니라 릴리스 버전에도 적용되며 v0.8.0과 v0.8.1은 같은 클러스터를 공유할 수 없습니다.
 
 잔여 위험:
 
@@ -456,7 +455,7 @@ Fail-closed 범위: `--pp-auto`, `--pp-peer`, `pipeline_parallel_size`가 2 이�
 - 연결하는 쪽에서 서버 identity는 소켓 IP에 바인딩되지 않으므로, NAT이나 포트 포워드를 통해 도달하는 스테이지 주소도
   시크릿만으로 인증됩니다.
 
-### Threat model and per-frame protection
+### 위협 모델과 프레임별 보호
 
 클러스터 transport는 두 가지 네트워크 중 하나를 가정합니다.
 
@@ -589,7 +588,7 @@ fallback인 후보 1은 위의 모든 페이로드 크기에서 AES-256-GCM보�
 
 ## Transports
 
-| Transport | 참고 |
+| 전송 | 참고 |
 |-----------|-------|
 | TCP | 기본 IP transport입니다. |
 | Thunderbolt | 공유 TCP 코어 위에서의 macOS Thunderbolt Bridge 선택입니다. |
@@ -599,7 +598,7 @@ fallback인 후보 1은 위의 모든 페이로드 크기에서 AES-256-GCM보�
 UDP 브로드캐스트를 버리는 네트워크에서는 정적 탐색을 선택하십시오. mdns는 피어의 비콘이 코디네이터의
 `--cluster-discovery-port`에 도달해야 합니다.
 
-## Disaggregated inference
+## 분리형 추론
 
 DI는 prefill과 decode 역할을 분리합니다. PP와 달리 노드당 모델 메모리를 줄이지 **않습니다**.
 각 역할이 여전히 모델을 로드해야 합니다. 의도된 사용 사례는 용량 초과 모델을 맞추는 것이 아니라 처리량 튜닝입니다.
@@ -627,6 +626,8 @@ router는 다운으로 표시된 노드를 다시 probe합니다(500 ms connect 
 남습니다. `GET /router/stats`는 노드별 부하 분포와 노드 상태를 보고합니다.
 플래그와 동작은 [continuous batching 및 disaggregated serving](CONTINUOUS_BATCHING.md#다중-노드-라우팅-부하-분산-failover)을
 참조하십시오.
+
+프런트는 채팅 및 텍스트 completion만 서비스합니다. `POST /v1/responses`는 백그라운드 모드를 포함하여 Responses API 요청을 서빙 노드로 보내라는 안내와 함께 400을 반환합니다. [`responses-api.md`](responses-api.md#서빙-역할)를 참고하십시오.
 
 ### 보안 및 신뢰 모델
 

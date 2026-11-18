@@ -44,7 +44,7 @@ mlxcel-server -m mlx-community/Qwen3.5-0.8B-4bit \
 | 인터페이스 | 주요 라우트 | 참고 |
 | --- | --- | --- |
 | OpenAI | `/v1/chat/completions`, `/v1/completions`, `/v1/responses`, `/v1/responses/compact`, `/v1/embeddings`, `/v1/models` | Responses는 id로 조회(retrieve), 삭제(delete), 취소(cancel)와 대화 compaction(명시적으로, 또는 `context_management`를 통한 자동 방식)도 지원합니다. |
-| Anthropic | `/v1/messages`, `/v1/messages/count_tokens` | 로드된 채팅 템플릿과 공유 토큰 계산 경로를 사용합니다. |
+| Anthropic | `/v1/messages`, `/v1/messages/count_tokens` | 로드된 채팅 템플릿과 공유 토큰 계산 경로를 사용합니다. Claude Code의 요청별 청구 스탬프(billing stamp)는 고정(pin)되어 프롬프트가 캐시된 접두사를 유지할 수 있습니다. [컨텍스트, 배치 및 캐싱](#컨텍스트-배치-및-캐싱)을 참조하십시오. |
 | Retrieval | `/v1/rerank`, `/v1/reranking` | Cohere/Jina 호환 리랭킹 인터페이스입니다. |
 | Audio | `/v1/audio/speech`, `/v1/audio/transcriptions`, `/v1/audio/translations` | Kokoro TTS, 오디오를 지원하는 채팅 모델, Whisper는 [`audio-api.md`](audio-api.md)에 설명되어 있습니다. |
 | Native llama-server | `/completion`, `/completions`, `/embedding`, `/embeddings`, `/tokenize`, `/detokenize`, `/infill`, `/apply-template` | 네이티브 응답 스키마는 OpenAI `/v1/...` 스키마와 의도적으로 구분됩니다. |
@@ -64,6 +64,8 @@ OpenAI 객체를 기대하는 클라이언트는 `/v1/completions`와 `/v1/embed
 이 정책은 단일 노드 HTTP 서버, 분리형(disaggregated) HTTP 라우터, 직접 Rust 호출을 포함한 `InProcessServer::complete`가 공유합니다.
 검증은 디스패치나 스트리밍 설정 이전에 수행됩니다.
 프롬프트 배칭, 토큰 ID 입력, 여러 선택지(`n > 1`)는 별도의 후속 작업으로 남아 있습니다.
+
+`/v1/chat/completions`, `/v1/responses`, `/v1/messages`, 그리고 `/v1/messages/count_tokens`는 `/v1`이 없는 해당 별칭들과 함께, 파싱할 수 없는 요청 본문에 대해 `/v1/completions`와 동일한 방식으로 응답합니다. 가용성 확인, 디스패치 또는 스트리밍 설정 전에 파서의 메시지를 담은 1 KiB로 잘린 `invalid_request_error` JSON 본문으로 응답합니다. 잘못되었거나 빈 JSON, 그리고 `model`과 같이 누락되거나 타입이 잘못된 필드는 HTTP 400을 반환하며, 누락되었거나 JSON이 아닌 `Content-Type`은 HTTP 415를 반환합니다. Anthropic 라우트는 자체 오류 엔벌로프인 `{"type": "error", "error": {...}}`를 사용하며, `count_tokens`는 `/v1/messages`와 정확히 동일하게 응답합니다. 분리형(disaggregated) HTTP 라우터의 `/v1/chat/completions`도 크기 제한을 초과한 본문에 대한 HTTP 413을 포함하여 동일하게 동작합니다. 단일 노드 서버에서는 서버 전반의 단일 계층이 Anthropic 라우트를 포함한 모든 HTTP 413에 대해 OpenAI 엔벌로프로 응답합니다.
 
 `compat/llama-server/b10621/` 아래에 체크인된 b10621 매니페스트가 공식 호환성 목록입니다.
 고정된(pinned) 모든 옵션, 라우트, 네이티브 completion 필드를 지원(supported), 별칭(aliased), 해당 없음(not applicable),
@@ -95,6 +97,8 @@ greedy 출력이 캐시 상태에 의존하면 안 되는 경우에는 `cache_pr
 컨텍스트 시프팅(context shifting)은 b10621과 일치하도록 기본적으로 비활성화되어 있습니다.
 애플리케이션이 너무 긴 대화의 일부를 의도적으로 유지하려면 `--context-shift`를 활성화하고 `--keep`을 설정하십시오.
 
+Claude Code는 시스템 프롬프트를 `x-anthropic-billing-header` 스탬프로 시작하는데, 이 스탬프의 `cch` 값은 매 요청마다 바뀌고 네 번째 `cc_version` 부분은 매 세션마다 바뀝니다. Anthropic Messages 라우트에서 서버는 렌더링 전에 이 두 값을 동일한 길이의 `f` 문자로 대체하므로, 턴이 스탬프에서 멈추지 않고 이전 프롬프트 전체를 재사용할 수 있습니다. 정확한 헤더로 시작하는 최상위 `system` 텍스트만 처리됩니다. 클라이언트의 텍스트를 수정 없이 그대로 전달하려면 `MLXCEL_ANTHROPIC_PIN_BILLING_STAMP=0`을 설정하십시오.
+
 스케줄러와 분리형(disaggregated) 서빙에 대한 자세한 내용은 [`CONTINUOUS_BATCHING.md`](CONTINUOUS_BATCHING.md)를,
 KV cache 모드는 [`turbo-kv-cache.md`](turbo-kv-cache.md)를 참조하십시오.
 
@@ -118,6 +122,8 @@ mlxcel-server --models-dir /srv/models \
 `--models-max`는 LRU 방식의 축출(eviction)로 상주 모델 집합의 크기를 제한합니다.
 자동 로드(autoload)는 기본적으로 켜져 있으며, `--no-models-autoload`로 전역적으로 끄거나
 관리 요청의 `autoload`로 제어할 수 있습니다.
+
+ID로 응답을 지정하는 Responses API 호출(`GET` 및 `DELETE /v1/responses/{id}`, `POST /v1/responses/{id}/cancel`)에는 `model`이 필요하지 않습니다. 라우터가 해당 ID를 보유한 로드된 모델을 찾아냅니다. 실행 중인 백그라운드 응답이 있는 모델은 축출되지 않습니다. [`responses-api.md`](responses-api.md#서빙-역할)를 참조하십시오.
 
 라우터 관리는 인벤토리 조회와 재로드에 `GET /models` 또는 `/v1/models`를,
 백그라운드 다운로드에 `POST /models`를, 캐시가 소유한 모델 삭제에 `DELETE /models?model=...`를,
@@ -299,6 +305,8 @@ API 키는 반복 가능한 `--api-key` 값, 쉼표로 구분된 값, 또는 `--
 TLS는 `--ssl-cert-file`과 `--ssl-key-file`을 모두 지정하면 활성화됩니다.
 `.sock`으로 끝나는 `--host`는 Unix 도메인 소켓 리스너를 시작하며,
 `--api-prefix`는 모든 라우트를 하나의 경로 아래에 중첩시킵니다.
+
+서버는 중지될 때 소켓 파일을 삭제하지 않으므로, 동일한 경로에서 다시 시작하면 더 이상 아무도 리슨하지 않는 소켓을 대체합니다. 다른 서버가 여전히 리슨 중인 소켓, 프로브할 수 없는 소켓(연결 권한 없음 또는 다른 유형의 소켓), 또는 해당 경로의 소켓이 아닌 항목(일반 파일, 심볼릭 링크)은 대체하지 않습니다. 이 경우 시작이 실패하고 해당 항목은 그대로 유지됩니다. macOS에서 accept 큐가 완전히 가득 찬 리스너는 아무도 리슨하지 않는 소켓처럼 응답하므로 사용 중으로 인식되지 않습니다.
 
 공개 경로 집합은 클라이언트가 보낸 요청 경로와 접두사를 포함해 문자 그대로 비교됩니다. 따라서 `--api-prefix /llama`와 키가 활성화된 경우 `/llama/health`와 `/llama/v1/health`는 공개 경로가 아니며 bearer 키가 필요하고, 이는 llama-server b10621과 일치합니다. 접두사 없는 `/health`는 여전히 공개로 취급되지만 마운트되어 있지 않아 404로 응답합니다. 키를 보낼 수 없는 health probe(예: 로드 밸런서)는 키가 활성화된 접두사 서버를 가리키면 안 됩니다. 두 설정이 함께 있으면 시작 시 경고를 로그로 남깁니다.
 

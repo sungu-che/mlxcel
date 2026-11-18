@@ -11,7 +11,7 @@ pip install ./python          # from a repo checkout
 pip install "./python[dev]"     # adds pytest, ruff, mypy
 ```
 
-Python 3.9 이상이 필요합니다. 런타임 의존성은 `openai>=1.40`과 `httpx>=0.27`입니다. managed 모드에는 추가로 `mlxcel` 바이너리가 필요합니다. 클라이언트는 `binary=` 인자, `MLXCEL_BIN` 환경 변수, `PATH`의 `mlxcel` 순서로 바이너리를 찾습니다. 바이너리 빌드는 [설치](installation.md)를 참조하십시오.
+Python 3.11 이상이 필요합니다. 런타임 의존성은 `openai>=1.40`과 `httpx>=0.27`입니다. managed 모드에는 추가로 `mlxcel` 바이너리가 필요합니다. 클라이언트는 `binary=` 인자, `MLXCEL_BIN` 환경 변수, `PATH`의 `mlxcel` 순서로 바이너리를 찾습니다. 바이너리 빌드는 [설치](installation.md)를 참조하십시오.
 
 ## Managed 모드
 

@@ -37,7 +37,7 @@ Issue #904는 두 가지 granularity를 제시하며 하나를 구현하고 다�
 
 `SparseSelection::materialize`는 실제로 값을 읽어 오며, 테스트와 각 요청의 선택된 행을 출력하는 `MLXCEL_SPARSE_PAGED_DUMP=1`용으로 예약되어 있습니다. 시간 측정을 하는 실행에서는 절대 dump를 켜지 마십시오.
 
-## MiniMax-M3 block-sparse decode
+## MiniMax-M3 블록 희소 디코드
 
 `src/models/minimax_m3_layers.rs`는 인덱서가 sparse 영역(`kv_len > 2 * topk_blocks * block_size`)에 있을 때마다 `l == 1`에서 fused 경로를 시도하고, 거부되면 additive-mask 경로로 폴백합니다.
 
@@ -86,7 +86,7 @@ MiniMax-M3의 출시 구성(`Hkv = 4`, `topk_blocks = 16`, `block_size = 128`)�
 
 `examples/sparse_paged_decode_bench`가 정확히 이를 측정합니다. MiniMax-M3 geometry(쿼리 헤드 64, KV 헤드 4, head_dim 128, `block_size` 128, `topk_blocks` 16), 유휴 상태의 Apple Silicon 호스트에서 40 step을 1회 반복한 결과이므로 **기록된 결과가 아니라 참고용**입니다.
 
-| 컨텍스트 | sparsity | fused vs mask | 일시적 메모리 |
+| 컨텍스트 | 희소성 | fused 대 mask | 일시적 메모리 |
 |---|---|---|---|
 | 4096 | 2.0x | **0.67x** | -1.6 MB |
 | 8192 | 4.0x | **0.77x** | -3.2 MB |

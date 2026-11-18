@@ -43,7 +43,7 @@ Modified rejection sampling(Leviathan et al. 2023, Chen et al. 2023)은 이 상�
 |------|--------------------|-------------------|
 | 엔진의 토큰 전용 루프에서의 `PromptLookupDrafter`(`mlxcel generate --prompt-lookup`) | greedy argmax (무손실) | **sampler-match** (무손실이며 여기서는 수용 최적) |
 | 서버 스케줄러에서의 `PromptLookupDrafter`(`--draft-kind prompt-lookup`, 동일한 `Engine::verify_round`) | greedy argmax (무손실) | **sampler-match** (무손실이며 여기서는 수용 최적) |
-| 엔진의 토큰 전용 루프에서의 `FullModelDrafter`(`mlxcel generate --draft-model <ordinary model>`, `mlxcel-server --draft-model <ordinary model>`, #2757) | greedy argmax. 프로브 게이트 없음. plain decode와 바이트 단위로 동일하지 않음(prompt lookup과 같은 부류이며 같은 스트림. [오프라인 라우팅](#오프라인-라우팅) 참고) | **sampler-match** (무손실): drafter는 자신의 argmax를 제안하고, target의 추출이 결정 |
+| 엔진의 토큰 전용 루프에서의 `FullModelDrafter`(`mlxcel generate --draft-model <ordinary model>`, `mlxcel-server --draft-model <ordinary model>`, #2757) | greedy argmax. 프로브 게이트 없음. plain decode와 바이트 단위로 동일하지 않음(prompt lookup과 같은 부류이며 같은 스트림. [오프라인 라우팅](#offline-routing) 참고) | **sampler-match** (무손실): drafter는 자신의 argmax를 제안하고, target의 추출이 결정 |
 | Gemma 4 MTP 라운드 루프 | argmax (여기서는 무손실) | argmax-against-argmax (**편향됨**) |
 | DFlash 라운드 루프(Qwen 3.5 DFlash drafter) | argmax (여기서는 무손실) | argmax-against-argmax (**편향됨**) |
 | DFlash 라운드 루프(LFM2 DSpark drafter) | argmax (여기서는 무손실, 프로브 게이트) | 클래식 디코드로 전환 |
@@ -87,7 +87,7 @@ greedy 정확성은 토큰 전용 루프의 것이며, MTP와 DFlash 경로가 b
 
 `finish_reason` 청크만 이를 싣습니다. 카운터는 실행의 총계이며, 스트림 중간 프레임이 진행 중인 `draft_n`을 보고하면 아직 총계가 아닌 값을 보고하는 셈이 되기 때문입니다. 같은 이유로 네이티브 라우트의 토큰별 `timings_per_token` 프레임은 아홉 개의 기본 키를 싣고 네 개는 싣지 않습니다.
 
-기본 키는 드래프트된 요청에서도 클래식 요청과 같은 의미를 가집니다(#1592). `prompt_ms`는 큐 대기와 target prefill을 포함하고, `predicted_ms`는 prefill이 끝난 순간부터의 모든 verify 라운드를 포함하므로, `predicted_per_second`는 드래프트된 디코드 속도이며 같은 프롬프트에 대한 클래식 수치와 비교할 수 있습니다. 버스트는 스트리밍 전에 끝까지 실행되므로, 완료된 토큰이 재생되는 시점이 아니라 prefill이 끝나는 시점에 첫 토큰 시각을 찍습니다. 수정 전에는 그 재생 시점이 기준이었고, `prompt_ms`가 버스트 전체를 흡수하며 `predicted_ms`는 1밀리초 미만의 재생 시간을 보고했습니다(96 토큰 요청에서 초당 95000 토큰). 시작 후 첫 번째 드래프트 요청은 drafter의 디스크 로드 비용도 부담하는데, 이는 프로세스당 한 번의 비용이며 모든 `timings` 필드에서 제외되고 `Drafter loaded` 로그 줄에 남습니다. [`docs/llama-server-compat.md`](llama-server-compat.md#completions와-embeddings는-openai-별칭이-아니라-네이티브-라우트입니다-1441)의 `timings` 참고 사항을 확인하십시오.
+기본 키는 드래프트된 요청에서도 클래식 요청과 같은 의미를 가집니다(#1592). `prompt_ms`는 큐 대기와 target prefill을 포함하고, `predicted_ms`는 prefill이 끝난 순간부터의 모든 verify 라운드를 포함하므로, `predicted_per_second`는 드래프트된 디코드 속도이며 같은 프롬프트에 대한 클래식 수치와 비교할 수 있습니다. 버스트는 스트리밍 전에 끝까지 실행되므로, 완료된 토큰이 재생되는 시점이 아니라 prefill이 끝나는 시점에 첫 토큰 시각을 찍습니다. 수정 전에는 그 재생 시점이 기준이었고, `prompt_ms`가 버스트 전체를 흡수하며 `predicted_ms`는 1밀리초 미만의 재생 시간을 보고했습니다(96 토큰 요청에서 초당 95000 토큰). 시작 후 첫 번째 드래프트 요청은 drafter의 디스크 로드 비용도 부담하는데, 이는 프로세스당 한 번의 비용이며 모든 `timings` 필드에서 제외되고 `Drafter loaded` 로그 줄에 남습니다. [`docs/llama-server-compat.md`](llama-server-compat.md#completions-and-embeddings-are-native-routes-not-openai-aliases-1441)의 `timings` 참고 사항을 확인하십시오.
 
 라운드당 평균 수용 길이는 `(draft_n_accepted + draft_rounds) / draft_rounds`입니다. 모든 라운드가 수용된 드래프트와 보너스 토큰 하나를 내보내기 때문입니다. 이는 보고하지 않고 클라이언트에 맡겨져 있으므로, 다른 집계를 원하는 클라이언트가 이 값에 묶이지 않습니다. `draft_kind`는 `--draft-kind` 이름을 담습니다. `dflash`, `mtp`, `prompt-lookup` 중 하나입니다.
 

@@ -187,17 +187,11 @@ model path
   `MLXCEL_PAGED_ATTENTION_V2=1`로 선택되는 v2 cross-CTA split-KV 및 merge 커널), Gumbel-max 샘플링.
 - CUDA 커널 동작은 대부분 MLX에서 상속됩니다. `mlxcel`은 빌드 시 `MLX_CUDA_ARCHITECTURES`를 통해
   CUDA 아키텍처 목록을 전달합니다.
-- ROCm(실험적, `--features rocm`)은 `src/lib/mlxcelverse/overlays/rocm/`의 벤더링된 ROCm 백엔드를 실행합니다.
-  빌드는 HIP `gfx` 타깃을 `MLX_ROCM_ARCHITECTURES`(기본값: `rocminfo`가 보고하는 타깃)를 통해 전달하고,
-  백엔드의 커널 아카이브와 ROCm 라이브러리를 링크하며, `$ROCM_PATH/lib`를 rpath로 임베드합니다.
-  위의 fused launcher는 Metal을 사용할 수 없을 때마다 CUDA를 선택하므로, ROCm에서는 MLX 그래프 폴백이 있는 경우
-  그 폴백을 사용합니다. 백엔드 종류별 라우팅은 lablup/mlxcel#1803입니다.
-  상태와 알려진 공백은
-  [Linux with AMD ROCm](installation.md#amd-rocm-기반-linux-실험적)을 참조하십시오.
+- ROCm(0.8부터 지원, `--features rocm`)은 Linux 및 Windows x86_64 MSVC에서 `src/lib/mlxcelverse/overlays/rocm/`의 벤더링된 ROCm 백엔드를 실행합니다. Linux에서 빌드는 HIP `gfx` 타깃을 `MLX_ROCM_ARCHITECTURES`(기본값: `rocminfo`가 보고하는 타깃)를 통해 전달하고, 백엔드의 커널 아카이브와 ROCm 라이브러리를 링크하며, `$ROCM_PATH/lib`를 rpath로 임베드합니다. Windows 빌드는 SDK 임포트 라이브러리를 링크하고 재배치 가능한 단일 런타임 디렉터리에서 ROCm DLL을 지연 로드(delay-load)합니다. 위의 fused launcher는 Metal을 사용할 수 없을 때마다 CUDA를 선택하므로, ROCm에서는 MLX 그래프 폴백이 있는 경우 그 폴백을 사용합니다. 백엔드 종류별 라우팅은 lablup/mlxcel#1803입니다. 상태와 알려진 공백은 [Linux with AMD ROCm](installation.md#linux-with-amd-rocm) 및 [Windows with AMD ROCm](installation.md#windows-with-amd-rocm)을 참조하십시오.
 
 ## 분산 및 멀티 디바이스
 
-`src/distributed/`에는 tensor parallelism, pipeline parallelism, 분리형(disaggregated) 추론 실험이 사용하는
+`src/distributed/`에는 텐서 병렬화, 파이프라인 병렬화, 분리형(disaggregated) 추론 실험이 사용하는
 공유 클러스터 설정, transport, registry, 메트릭, 스케줄러 인프라가 있습니다.
 운영자용 요약은 [분산 추론](distributed.md)을 참조하십시오.
 
@@ -206,6 +200,6 @@ model path
 - [새 모델 추가하기](adding-models.md)
 - [오디오 입력 전처리](audio-preprocessing.md)
 - [지원 모델](supported-models.md)
-- [TurboQuant KV cache](turbo-kv-cache.md)
+- [TurboQuant KV 캐시](turbo-kv-cache.md)
 - [OpenAI Responses API](responses-api.md)
 - [분산 추론](distributed.md)

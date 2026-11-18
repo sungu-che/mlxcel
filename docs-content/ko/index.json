@@ -101,6 +101,11 @@
       "titleKo": "llama-server 호환성 경계 (b10621)"
     },
     {
+      "name": "macos-memory.md",
+      "slug": "macos-memory",
+      "titleKo": "macOS 메모리 가드레일"
+    },
+    {
       "name": "mla-absorbed-decode.md",
       "slug": "mla-absorbed-decode",
       "titleKo": "MLA 행렬 흡수(matrix-absorbed) decode"
@@ -161,6 +166,11 @@
       "titleKo": "지원 모델"
     },
     {
+      "name": "temperature-0-block-history-flip.md",
+      "slug": "temperature-0-block-history-flip",
+      "titleKo": "Temperature 0: 일반 디코드 대 블록 기반 KV 히스토리 (#2778)"
+    },
+    {
       "name": "token-classification.md",
       "slug": "token-classification",
       "titleKo": "Token classification과 span extraction"
@@ -181,4 +191,4 @@
       "titleKo": "WebUI 통합 요구사항 매트릭스 (#1848)"
     }
   ]
-}
+}

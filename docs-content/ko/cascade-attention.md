@@ -2,7 +2,7 @@
 
 Cascade attention은 여러 동시 시퀀스가 공유하는 프롬프트 접두사를 시퀀스마다가 아니라 **decode step마다 한 번만** 계산합니다. 이는 mlxcel이 이미 수행하는 저장소 측 중복 제거에 대응하는 연산 측 기법입니다.
 
-상태: opt-in이며 기본값은 꺼짐입니다. 정확성은 Metal에서 f32 및 f16 풀을 사용해 호스트 f64 레퍼런스와 flat fused launch 모두에 대해 검증되었습니다. 실제 서빙 워크로드에서의 처리량은 아직 측정되지 않았으며, 이것이 꺼져 있는 이유입니다. [측정하기](#측정하기)를 참고하십시오.
+상태: opt-in이며 기본값은 꺼짐입니다. 정확성은 Metal에서 f32 및 f16 풀을 사용해 호스트 f64 레퍼런스와 flat fused launch 모두에 대해 검증되었습니다. 이것이 꺼져 있는 이유는 측정 후 기각되었기 때문입니다. Apple M1 Ultra에서의 레이어 수준 실행(2026-08-03)에서 cascade decode는 8회의 측정 모두에서 flat launch보다 느렸으며(0.356x ~ 0.784x, [`docs/benchmark_results/versions/v0.5.0.md#cascade-attention-m1ultra-2026-08-03`](benchmark_results/versions/v0.5.0.md#cascade-attention-m1ultra-2026-08-03)), 서빙 수준 실행은 아직 기록되지 않았습니다. [측정하기](#측정하기)를 참고하십시오.
 
 ## 현재 중복되는 것
 
@@ -117,7 +117,7 @@ python3 scripts/bench_serving_concurrency.py \
 
 `--shared-prefix-tokens`는 모든 클라이언트가 동일한 시스템 프롬프트를 보내고 짧은 사용자 질문만 다르게 하여, 참조 횟수가 있는 공유 블록을 만들어냅니다. `--metrics`는 각 level 전후로 `/metrics`를 스크레이프하여 paged decode 경로 분할을 보고하므로, 실제로 cascade를 실행하지 않은 level은 가정되지 않고 그렇다고 표시됩니다. 같은 서버 빌드에서 `MLXCEL_CASCADE_ATTENTION=1`을 설정한 경우와 설정하지 않은 경우로 동일한 명령을 실행하여 전/후 쌍을 얻으십시오.
 
-결과는 [`benchmarks.md`](benchmarks.md)의 형식에 따라 `docs/benchmark_results/cascade-attention-<hw>-<date>.md` 아래에 기록하십시오. 그러한 파일이 존재하기 전까지 `paged_v2::cascade::DEFAULT_CASCADE_ENABLED`의 기본값은 `false`로 유지됩니다.
+결과는 [`benchmarks.md`](benchmarks.md#결과-보존-및-릴리스-통합)의 형식과 보존 규칙에 따라 기록하십시오. 2026-08-03의 레이어 수준 M1 Ultra 실행은 이미 [`docs/benchmark_results/versions/v0.5.0.md#cascade-attention-m1ultra-2026-08-03`](benchmark_results/versions/v0.5.0.md#cascade-attention-m1ultra-2026-08-03)에 기록되어 있습니다. 측정한 모든 구성에서 cascade가 뒤처졌으므로 `paged_v2::cascade::DEFAULT_CASCADE_ENABLED`는 `false`로 유지됩니다. 기록된 실행에서 cascade가 우세한 구성을 발견한 이후에만 이를 전환하십시오.
 
 ## 제한 사항
 

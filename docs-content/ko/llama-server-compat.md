@@ -264,7 +264,7 @@ mlxcel은 모델 provider를 교체하는 대신 서빙 **워커**를 재웁니�
 
 ### Multi-adapter LoRA, unfused로 서빙 (#1439)
 
-`--lora`는 쉼표로 구분된 adapter 경로를 받고(각각 scale 1.0이며, mlxcel 고유의 `--adapter` 표기는 별칭으로 유지), `--lora-scaled`는 쉼표로 구분된 `FNAME:SCALE` 쌍을 받습니다. adapter는 **unfused**로 서빙됩니다. 각 adapter는 linear 레이어가 forward마다 더하는 저랭크 항 `scale * (x @ A) @ B`를 기여하며, 사용자 scale은 adapter 자체의 `alpha / r`에 곱해지고, 이는 upstream이 적용하는 곱과 정확히 같습니다. 기본 가중치는 결코 수정되지 않으므로 scale은 라이브입니다. 서빙 레이어가 쓰고 레이어가 읽는 공유 핸들 뒤에 있습니다. 숫자가 아니거나, NaN이거나, 무한대인 scale, 없는 adapter 디렉터리, 텐서 shape가 기본 projection에 맞지 않는 adapter, 모델이 공유 linear 생성자 밖에서 만드는 adapter 레이어(적용되지 않을 것이므로), tied-embeddings 체크포인트의 `lm_head` 쌍, Llama decoder(`llama`, `tie_word_embeddings: true`인 `qwen2`)와 Qwen3이 아닌 패밀리의 tied 체크포인트에 있는 `embed_tokens` 쌍(이런 adapter는 먼저 `mlx_lm.fuse`로 병합하십시오. 지원되는 패밀리에서 mlx-lm의 `LoRAEmbedding` 쌍은 adapter의 단일 scale 뒤에서 임베딩 조회와 tied head에 모두 unfused로 적용됩니다), mixture-of-experts expert adapter(expert별 3차원 `lora_a` / `lora_b`, 미지원), 그리고 multi-adapter 또는 scaled 로딩을 tensor/pipeline parallelism과 결합하는 것은 모두 시작 시 실패합니다. `GET /lora-adapters`는 모든 adapter를 b10621의 항목 형태(`id`, `path`, `scale`, `task_name`, `prompt_prefix`)로, 라이브 서버 기본 scale과 함께 보고하므로 교체가 거기서 보입니다.
+`--lora`는 쉼표로 구분된 adapter 경로를 받고(각각 scale 1.0이며, mlxcel 고유의 `--adapter` 표기는 별칭으로 유지), `--lora-scaled`는 쉼표로 구분된 `FNAME:SCALE` 쌍을 받습니다. adapter는 **unfused**로 서빙됩니다. 각 adapter는 linear 레이어가 forward마다 더하는 저랭크 항 `scale * (x @ A) @ B`를 기여하며, 사용자 scale은 adapter 자체의 `alpha / r`에 곱해지고, 이는 upstream이 적용하는 곱과 정확히 같습니다. 기본 가중치는 결코 수정되지 않으므로 scale은 라이브입니다. 서빙 레이어가 쓰고 레이어가 읽는 공유 핸들 뒤에 있습니다. 숫자가 아니거나, NaN이거나, 무한대인 scale, 없는 adapter 디렉터리, 텐서 shape가 기본 projection에 맞지 않는 adapter, 모델이 공유 linear 생성자 밖에서 만드는 adapter 레이어(적용되지 않을 것이므로), tied-embeddings 체크포인트의 `lm_head` 쌍, Llama decoder(`llama`, `tie_word_embeddings: true`인 `qwen2`)와 Qwen3이 아닌 패밀리의 tied 체크포인트에 있는 `embed_tokens` 쌍(이런 adapter는 먼저 `mlx_lm.fuse`로 병합하십시오. 지원되는 패밀리에서 mlx-lm의 `LoRAEmbedding` 쌍은 adapter의 단일 scale 뒤에서 임베딩 조회와 tied head에 모두 unfused로 적용됩니다), mixture-of-experts expert adapter(expert별 3차원 `lora_a` / `lora_b`, 미지원), 그리고 multi-adapter 또는 scaled 로딩을 tensor/파이프라인 병렬화과 결합하는 것은 모두 시작 시 실패합니다. `GET /lora-adapters`는 모든 adapter를 b10621의 항목 형태(`id`, `path`, `scale`, `task_name`, `prompt_prefix`)로, 라이브 서버 기본 scale과 함께 보고하므로 교체가 거기서 보입니다.
 
 `POST /lora-adapters`는 upstream의 규칙(나열된 id는 scale을 설정하고, 나열되지 않은 id는 0.0으로 떨어지며, 알 수 없는 id는 무시됨)으로 해석되는 새 scale 벡터를 런타임에 적용합니다. 요청별 네이티브 `lora` 필드도 같은 방식으로 해석되며 해당 요청에만 적용됩니다. 둘 다 upstream의 타이밍을 따릅니다. 요청은 admission 시점에 자신의 scale을 스냅샷하고, 스케줄러는 배치마다 한 번 실행 중인 그룹의 스냅샷으로 공유 핸들을 쓰며, b10621 자체의 `can_batch_with` 규칙은 배치를 하나의 스냅샷으로 유지하므로, 교체가 이미 진행 중인 생성을 바꾸는 일은 없고 서로 다른 adapter 집합을 지정한 두 동시 요청이 서로에게 새어 들어갈 수 없습니다. `--lora-init-without-apply`는 시작 지점에서의 같은 메커니즘입니다. adapter는 scale 0.0으로 로드 및 검증되고, 이후 POST로 재시작 없이 올릴 수 있습니다. scale 0.0의 항은 어떤 연산도 추가하지 않으므로, 적용되지 않은 adapter를 보유한 서버는 adapter 없이 시작한 서버와 바이트 단위로 동일하게 응답합니다.
 
@@ -292,7 +292,7 @@ GBNF는 b10621 자체의 문법으로 파싱되며, 구문 요약만으로는 �
 
 manifest는 epic #1431의 동시 구현 체인이 서로 겹치지 않는 파일을 편집하도록 영역별로 shard됩니다. 소유권은 산문이 아니라 기계가 읽을 수 있습니다. `pin.json`의 `shards` 맵은 shard마다 그 안의 항목을 소유할 수 있는 구현 이슈 번호의 집합을 기록하며(예를 들어 `shards["authentication"].owners == [1437]`), `scripts/ci/check_llama_compat_manifest.py`는 `issue`가 자신의 shard owner 집합의 구성원이 아닌 항목을 실패시킵니다. 이것이 두 개의 동시 체인이 같은 파일을 편집하는 것을 막는 방법입니다. 리뷰어뿐 아니라 파일 자체가 두 번째 체인의 항목을 거부합니다.
 
-| Shard | 체인 | 소유 이슈 |
+| 샤드 | 체인 | 소유 이슈 |
 |---|---|---|
 | `transport-tls-cors.json` | A | #1432 |
 | `authentication.json` | A | #1437 |
@@ -535,6 +535,10 @@ mlxcel은 upstream의 규칙을 재현한 다음, 순수한 문자열 검사로�
 
 기존의 바이트 및 decode 제한은 변경되지 않았으며 여전히 적용됩니다. `--max-image-payload-size`, `--max-images`, 디코더의 너비, 높이, 할당 상한, 오디오의 클립별 및 요청별 상한, 10초 fetch 타임아웃입니다. JSON 요청의 base64 `data:` 이미지에 대해서는, HTTP 본문 extractor의 크기가 Axum의 2 MiB 기본값이 아니라 설정된 이미지 예산에서 정해집니다. `--max-image-payload-size * --max-images`에 base64의 4/3 엔벌로프와 작은 JSON/data-URL 오버헤드를 더해 확장한 값입니다. JSON 본문이 이 도출된 상한을 넘는 요청은 파싱 전에 OpenAI 형태의 `413` 오류 객체로 거부됩니다. 도출된 extractor 상한은 2 GiB로 clamp되므로, 극단적인 이미지 제한 설정이 버퍼링된 JSON 파싱을 무제한 할당 경로로 만들 수 없으며, 이미지별 디코딩은 본문이 파싱된 후에도 설정된 정확한 이미지 페이로드, 개수, 크기, 할당 제한을 여전히 적용합니다.
 
+### 사진은 EXIF 방향에 따라 똑바로 회전됩니다
+
+카메라는 센서의 행을 저장하고 기기를 쥐고 있던 방식을 EXIF `Orientation` 태그에 기록합니다. 요청이나 명령이 전달하는 모든 사진(JPEG, PNG `eXIf`, WebP)은 디코딩된 후 프로세서에 도달하기 전에 해당 태그에 따라 회전되므로, 휴대전화로 찍은 세로 사진이 모델에 똑바로 전달됩니다. mlx-vlm과 transformers의 `load_image`도 `PIL.ImageOps.exif_transpose`로 동일하게 처리하며, 이는 체크포인트가 측정된 방식이기도 합니다. 태그가 없거나 읽을 수 없는 사진은 저장된 그대로 사용됩니다. 위의 너비, 높이, 할당 제한은 저장된 픽셀에 적용되며, 90도 회전 시 너비와 높이가 바뀌고 전처리기 및 `--image-min-tokens` / `--image-max-tokens`는 그 똑바로 회전된 크기를 보게 됩니다.
+
 ## 오디오 전사(Audio transcription)
 
 `POST /v1/audio/transcriptions`와 그 `/audio/transcriptions` 별칭은 b10621이 마운트하는 유일한 오디오 라우트이며, 이 절이 다루는 유일한 라우트입니다. `/v1/audio/speech`와 `/v1/audio/translations`는 mlxcel 고유이며 [`audio-api.md`](audio-api.md)에 문서화되어 있습니다.
@@ -634,7 +638,7 @@ YaRN을 공유 경로 밖에서 구현하는 패밀리(DeepSeek V2 / V3.2 / V4, 
 
 ### 어떤 아키텍처가 override를 준수하는가
 
-override는 `src/models/rope_utils.rs`를 통해 회전을 해석하는 여섯 패밀리에 적용됩니다. Llama 3.x(그리고 이를 통한 Qwen2 / Qwen2.5, Helium, `mllama` 텍스트 디코더, 텍스트 백본이 그중 하나인 모든 VLM), Qwen3, Qwen3-MoE, Apertus, Gemma 3, InternLM2 / InternLM3입니다. 다른 패밀리는 주파수를 인라인으로 계산하므로 이를 무시할 것입니다.
+override는 `src/models/rope_utils.rs`를 통해 회전을 해석하는 일곱 패밀리에 적용됩니다. Llama 3.x(그리고 이를 통한 Qwen2 / Qwen2.5, Helium, `mllama` 텍스트 디코더, 텍스트 백본이 그중 하나인 모든 VLM), Qwen3, Qwen3-MoE, Apertus, Gemma 3, Llama 4(텍스트 및 VLM), InternLM2 / InternLM3입니다. 다른 패밀리는 주파수를 인라인으로 계산하므로 이를 무시할 것입니다.
 
 이들은 코드 어디에도 나열되어 있지 않은데, 준수하는 아키텍처를 손으로 유지하는 목록은 패밀리가 포팅되는 순간 낡아 버리기 때문입니다. 대신 override를 소비하는 각 seam이 카운터를 증가시키며, override가 요청되었는데 체크포인트 로드 후에도 카운터가 여전히 0이면 모델 워커는 체크포인트와 플래그를 명시하며 서빙을 거부합니다. `rope_utils`에 자신을 연결하는 패밀리는 갱신할 목록 없이 수용되기 시작하며, 그렇지 않은 패밀리는 조용히 무시되는 대신 보고됩니다.
 
@@ -741,7 +745,7 @@ b10621의 열두 개 preset은 각각 `params.model.hf_repo`를 `ggml-org` 아�
 
 열두 개 모두 숨겨져 있고, 파서가 받아들이며, 모델 참조가 해석되기 전에 거부됩니다. 그중 열한 개는 가장 가까운 MLX 체크포인트와 그에 도달하는 정확한 두 개의 명령줄을 출력합니다.
 
-| Preset | Upstream GGUF | mlxcel 대응 |
+| 프리셋 | 업스트림 GGUF | mlxcel 대응 |
 |---|---|---|
 | `--embd-gemma-default` | `ggml-org/embeddinggemma-300M-qat-q4_0-GGUF` | `mlx-community/embeddinggemma-300m-4bit` |
 | `--fim-qwen-1.5b-default` | `ggml-org/Qwen2.5-Coder-1.5B-Q8_0-GGUF` | `mlx-community/Qwen2.5-Coder-1.5B-8bit` |

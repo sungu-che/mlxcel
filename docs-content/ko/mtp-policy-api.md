@@ -45,8 +45,8 @@
 
 | 필드 | 타입 | 의미 |
 |-------|------|---------|
-| `schema_version` | integer | 이 본문의 와이어 스키마 버전. [버전 관리 및 호환성](#버전-관리-및-호환성)을 참조하십시오. |
-| `state` | string | `"settled"`, `"profiling"`, `"forced"`, `"unavailable"`, 또는 `"exactness_declined"`. |
+| `schema_version` | 정수 | 이 본문의 와이어 스키마 버전. [버전 관리 및 호환성](#버전-관리-및-호환성)을 참조하십시오. |
+| `state` | 문자열 | `"settled"`, `"profiling"`, `"forced"`, `"unavailable"`, 또는 `"exactness_declined"`. |
 | `reason` | string 또는 null | 정책을 사용할 수 없는 이유. `state`가 `"unavailable"`일 때만 null이 아닙니다. |
 | `decline_detail` | string 또는 null | 정확성(exactness) 프로브의 한 줄 이유. `state`가 `"exactness_declined"`일 때만 null이 아니며, 부팅 시 WARN 로그에 남는 문장과 같습니다. |
 | `verdict` | string 또는 null | 확정되면 `"enable"` 또는 `"decline"`, 그렇지 않으면 `null`. 영속화된 hint의 `verdict` 필드와 같은 값입니다. |
@@ -54,13 +54,13 @@
 | `target` | string 또는 null | 서비스 중인 모델 디렉터리의 basename. |
 | `drafter` | string 또는 null | draft 모델 디렉터리의 basename. |
 | `hardware` | string 또는 null | 영속화된 판정의 키가 되는 대략적인 하드웨어 클래스 레이블. Apple 호스트는 세대와 코어 수 형식을 유지합니다(예: `"M5-16c"`). Apple이 아닌 호스트는 GPU 백엔드를 접두사로 붙이고, 백엔드가 제공하는 경우 디바이스 아키텍처도 붙입니다(예: `"cuda-Unknown-0c"` 또는 `"rocm-gfx1151-Unknown-0c"`). 따라서 CUDA 판정은 ROCm에서 재사용되지 않습니다(issue #1887). |
-| `gpu_vendor` | string | 서비스 호스트의 GPU 벤더: `"Apple"`, `"Nvidia"`, `"Amd"`, `"Unknown"`. |
+| `gpu_vendor` | 문자열 | 서비스 호스트의 GPU 벤더: `"Apple"`, `"Nvidia"`, `"Amd"`, `"Unknown"`. |
 | `gpu_device` | string 또는 null | 백엔드가 보고하는 디바이스 이름(예: `"AMD Radeon 8060S Graphics"`). 백엔드가 제공하지 않으면 null. |
 | `gpu_architecture` | string 또는 null | 실행 중인 백엔드 고유 체계의 아키텍처 문자열: ROCm에서는 `gfx1151`, CUDA에서는 `sm_89`, Metal에서는 Apple GPU 패밀리 문자열. 벤더 간에 비교할 수 없으므로 `gpu_vendor`와 함께 읽으십시오. |
 | `block_size` | integer 또는 null | 조합의 키가 되는 draft 블록 크기(K). |
 | `acceptance_rate` | number 또는 null | 대략적으로 측정된 수락률(제안된 draft 토큰 대비 수락된 토큰). 프로파일링 중에는 진행 중인 값, 확정되면 최종 값, 아무것도 측정되지 않았으면 `null`. 확정되면 영속화된 hint와 정확히 일치하도록 소수점 둘째 자리로 반올림되며, 프로파일링 중에는 반올림되지 않은 원래의 진행 중 몫입니다. |
-| `samples` | integer | 지금까지 누적된, 또는 확정된 판정의 근거가 된 적격 샘플 수. forced 또는 unavailable이면 `0`. |
-| `samples_required` | integer | 프로파일링 윈도우가 확정되기까지 필요한 적격 샘플 수. |
+| `samples` | 정수 | 지금까지 누적된, 또는 확정된 판정의 근거가 된 적격 샘플 수. forced 또는 unavailable이면 `0`. |
+| `samples_required` | 정수 | 프로파일링 윈도우가 확정되기까지 필요한 적격 샘플 수. |
 | `samples_remaining` | integer 또는 null | 아직 필요한 적격 샘플 수. 다른 상태에서는 대기 중인 것이 없으므로 `state`가 `"profiling"`일 때만 null이 아닙니다. |
 
 `target`, `drafter`, `hardware`, `block_size` 네 필드가 조합 키입니다. 판정을 보여 주는 소비자는 이들이 표시하려는 조합과 일치하는지, 특히 `block_size`를 확인해야 합니다. 하나의 K에서 프로파일링된 판정은 다른 K로 이어지지 않으며, `--draft-block-size` / `MLXCEL_DRAFT_BLOCK_SIZE`를 변경하면 새 프로파일링 윈도우가 시작됩니다.
@@ -159,7 +159,7 @@ drafter가 없는 서버:
 }
 ```
 
-정책이 보고할 수 있는 조합은 싱글톤 MTP 패밀리입니다. assistant drafter를 쓰는 Gemma 4, `qwen3_5_mtp` 헤드를 쓰는 Qwen 3.5 / 3.6 / 3.8, 체크포인트에 포함된 `mtp.safetensors`를 쓰는 Inkling, 그리고 `mlxcel split-mtp`가 추출하는 `glm4_moe_lite_mtp` 블록을 쓰는 GLM-4.7-Flash(`glm4_moe_lite`)입니다(issue #1326). 이들 모두 정책이 샘플을 보기 전에 동일한 정확성 프로브를 통과하므로, 어느 것에서든 `exactness_declined`가 나타날 수 있습니다.
+정책이 보고할 수 있는 조합은 싱글톤 MTP 패밀리입니다. assistant drafter를 쓰는 Gemma 4, `qwen3_5_mtp` 헤드를 쓰는 Qwen 3.5 / 3.6 / 3.8, 네이티브 헤드를 쓰는 Qwen3.8-Flash-Next(`qwen4_exp`)(`mtp.*` 텐서를 유지하는 타깃 변환에 포함되어 drafter로 다시 전달되거나(이슈 #2917), 분리된 `qwen4_exp_mtp` 디렉터리로 제공됨; 이슈 #2880, mlx-vlm의 `split_qwen4_exp_mtp` 또는 이 포트가 검증된 drafter인 리비전 `be6e2bc325d41ac7858b99269a96c495349b494d`의 `sh0wie/Qwen3.8-Flash-Next-MTP-Drafter-MLX-bf16`으로 획득 가능하며, 하나의 대기 롤백 블록을 유지하고 바인드 전에 `hc_count`가 다른 타깃을 거부함), 체크포인트에 포함된 `mtp.safetensors`를 쓰는 Inkling, 그리고 `mlxcel split-mtp`가 추출하는 `glm4_moe_lite_mtp` 블록을 쓰는 GLM-4.7-Flash(`glm4_moe_lite`)입니다(issue #1326). 이들 모두 정책이 샘플을 보기 전에 동일한 정확성 프로브를 통과하므로, 어느 것에서든 `exactness_declined`가 나타날 수 있습니다.
 
 두 가지 커널 선택 모두에서 정확성 프로브에 실패하는 조합이 있는 세대 15+ 호스트(M3 Ultra와 M5 Max에서 Gemma 4 31B + bf16 assistant 조합으로 측정됨, issue #1279):
 

@@ -4,14 +4,14 @@ mlxcel은 `mlxcel generate-image`와 OpenAI 호환 서버 라우트 `POST /v1/im
 
 **현재 상태.** 등록된 패밀리: `flux2`([FLUX.2 Klein](#flux2-klein-flux2)), `z_image`([Z-Image](#z-image)), `bonsai`([Prism Bonsai](#prism-bonsai-bonsai)), `ernie_image`([ERNIE-Image](#ernie-image-ernie_image)), `mage_flow`([Mage-Flow](#mage-flow-mage_flow)), `qwen_image`([Qwen-Image](#qwen-image-qwen_image)), `ideogram4`([Ideogram 4](#ideogram-4-ideogram4)), `ming_image`([Ming-Image](#ming-image-ming_image)), `llada_image`([LLaDA-Image](#llada-image-llada_image)). 이미지 생성 에픽(`lablup/mlxcel#2348`)의 각 모델은 자신의 transformer와 텍스트 conditioner, 그리고 패밀리 표에 한 행을 추가합니다. probe가 인식하지만 `FAMILIES`에 없는 체크포인트는 `image generation family <family> is not supported by this build`로 실패하며, `mlxcel-server --image-model`도 설계상 시작 시점에 실패합니다([서버](#서버) 참고).
 
-| 패밀리 | 체크포인트 | Task | 기본 step / guidance |
+| 패밀리 | 체크포인트 | 작업 | 기본 step / guidance |
 |--------|-----------|------|---------------------|
 | `flux2` | FLUX.2 Klein 4B, 9B, base-4B, base-9B, 9b-kv(Diffusers 트리)와 mlx-community 4-bit 변환본 | generate, edit(참조 이미지) | distilled 4 / 1.0, base 50 / 4.0 |
-| `z_image` | Tongyi-MAI Z-Image-Turbo, Z-Image(원본 Diffusers 트리 또는 mlx-vlm 변환본) | generate, edit(img2img) | Turbo 8 / 0, base 50 / 4 |
-| `bonsai` | Prism Bonsai ternary 2-bit FLUX.2 Klein 4B(`prism-ml/bonsai-image-ternary-4B-mlx-2bit`) | generate | 4 / 1.0 |
-| `ernie_image` | Baidu ERNIE-Image-Turbo, ERNIE-Image(원본 Diffusers 트리) | generate, edit(SDEdit img2img) | Turbo 8 / 1.0(edit 8 / 3.0), base 50 / 4.0 |
+| `z_image` | Tongyi-MAI Z-Image-Turbo, Z-Image(원본 Diffusers 트리 또는 mlx-vlm 변환본) | 생성, 편집(img2img) | Turbo 8 / 0, base 50 / 4 |
+| `bonsai` | Prism Bonsai ternary 2-bit FLUX.2 Klein 4B(`prism-ml/bonsai-image-ternary-4B-mlx-2bit`) | 생성 | 4 / 1.0 |
+| `ernie_image` | Baidu ERNIE-Image-Turbo, ERNIE-Image(원본 Diffusers 트리) | 생성, 편집(SDEdit img2img) | Turbo 8 / 1.0(edit 8 / 3.0), base 50 / 4.0 |
 | `mage_flow` | Mage-Flow, Mage-Flow-Base, Mage-Flow-Turbo, Mage-Flow-Edit, Mage-Flow-Edit-Base, Mage-Flow-Edit-Turbo(mlx-vlm 변환본) | 변형에 따라 generate 또는 edit(참조 이미지 하나 이상) | Turbo 4 / 1.0, Mage-Flow 20 / 5.0, Base와 Edit 30 / 5.0 |
-| `qwen_image` | Qwen-Image-2.1(`Qwen/Qwen-Image-2.1`, Diffusers 트리) | generate, edit(참조 이미지 하나 이상, RGBA 유지) | generate 30 / 1.0, edit 40 / 1.0 |
+| `qwen_image` | Qwen-Image-2.1(`Qwen/Qwen-Image-2.1`, Diffusers 트리) | generate, edit(참조 이미지 하나 이상, RGBA 유지) | 생성 30 / 1.0, 편집 40 / 1.0 |
 | `ideogram4` | `ideogram-ai/ideogram-4-fp8`(라이선스 게이트, 행별 FP8) | generate | `V4_DEFAULT_20`: 20 / 7.0(마지막 두 step은 3.0) |
 | `ming_image` | Ming-Image-0.1-Design(`inclusionAI/Ming-Image-0.1-Design` 트리, 또는 `nativ-community` MLX 8-bit 및 4-bit 변환본) | generate(RGBA 출력) | 12 / 1.0(guidance 고정) |
 | `llada_image` | inclusionAI LLaDA-Image-Turbo, LLaDA-Image(Diffusers bf16 트리) | generate(텍스트 또는 VQ prior), edit(소스 이미지 하나) | Turbo 4 / 1.0, base 50 / 5.0 |
@@ -65,6 +65,19 @@ mlxcel-server -m <chat model> --image-model <image checkpoint>
 
 `--image-model`(`mlxcel-server`와 `mlxcel serve` 모두에서 `MLXCEL_IMAGE_MODEL`도 가능)은 `--embedding-model`처럼 보조 worker를 로드합니다. 전용 스레드가 모델을 소유하고, 제한된 큐가 요청을 받아들이며, 요청별 타임아웃이 호출자를 해방합니다. 로드 실패는 시작 시점에 치명적이므로, 이미지 라우트를 요청한 명령줄은 그 라우트에 대해 `501`을 서빙하는 일이 없습니다. diffusion 실행은 몇 초 동안 GPU를 점유하므로 요청은 한 번에 하나씩 실행되며, 큐가 가득 차면 `503`, 타임아웃은 `504`입니다. 큐 깊이(8)와 타임아웃(900초)은 `src/server/image_worker.rs`의 상수입니다.
 
+### 이미지 전용 모드
+
+채팅 모델 없이 이미지 생성만 서비스하려면 `-m`을 생략하십시오:
+
+```bash
+mlxcel-server --image-model <image checkpoint> --port 8080
+mlxcel serve --image-model <image checkpoint>
+```
+
+이때 이미지 체크포인트는 보조 모델이 아니라 서비스되는 주 모델이 됩니다. 모델 ID는 `--alias` 항목이 주어진 경우 첫 번째 별칭이고, 그렇지 않은 경우 체크포인트 디렉터리 이름이며, 프로바이더, `/props` 표시 ID, `/v1/models` 모두 이 하나의 값을 보고하므로 `/v1/models`에서 복사한 `model`이 이미지 라우트의 모델 확인을 통과합니다. 체크포인트가 로드되면 `/health`는 준비 상태를 보고하며(로드 실패는 시작 시 여전히 치명적임), `/v1/models`는 `completion` 없이 `image` 기능만 가진 해당 ID를 나열합니다.
+
+채팅, completion 및 프롬프트 검사 라우트는 임베딩 전용 모드에서 사용하는 것과 동일한 구조화된 `501`로 응답하며, `--image-model`과 `no -m`을 명시합니다. 여기에는 실행할 채팅 체크포인트의 토크나이저나 템플릿이 없는 `/tokenize`, `/detokenize`, `/apply-template`도 포함됩니다. 이 모드는 두 모델 모두 로드하지 않으므로 `/v1/embeddings`와 `/v1/rerank`는 워커를 요구하는 평소의 `501`로 응답합니다. `-m` 없는 `--image-model`은 `--models-dir`, `--models-preset`, `--webui`, `--embedding-model`, `--reranker-model`, `--embeddings`, `--reranking`과 결합할 수 없으며 시작 시 두 플래그를 모두 명시하며 실패합니다. `-m`도 함께 전달하면 정상 작동하는 `/tokenize`와 `completion`을 안내하는 `/v1/models` 목록을 포함하여 위에서 설명한 2개 모델 동작이 유지됩니다.
+
 | 메서드 | 경로 | 비고 |
 |--------|------|------|
 | POST | `/v1/images/generations` | 별칭 `/images/generations`. |
@@ -104,7 +117,7 @@ RGB와 RGBA 이미지는 모두 그대로 인코딩되며, RGBA는 alpha 채널�
 
 `src/imagegen/flux2/`에 있는 `mlx_vlm/models/flux2`(`Blaizzy/mlx-vlm`, git 73d366ec)의 포트입니다. 두 task 모두 지원됩니다.
 
-| 체크포인트 | 변형 | Step | Guidance | 비고 |
+| 체크포인트 | 변형 | 스텝 | 가이던스 | 비고 |
 |-----------|------|------|----------|------|
 | `black-forest-labs/FLUX.2-klein-4B` | `flux2-klein-4b` | 4 | 1.0 | Diffusers 트리, bf16. Qwen3-4B 텍스트 encoder. |
 | `black-forest-labs/FLUX.2-klein-9B` | `flux2-klein-9b` | 4 | 1.0 | Qwen3-8B 텍스트 encoder. |
@@ -132,8 +145,8 @@ mlx 0.32.4, CUDA, NVIDIA GB10, `MLX_ENABLE_TF32=0`에서 upstream mlx-vlm 0.7.8(
 | 초기 noise(generate seed 9909, edit seed 123) | 비트 단위로 동일 |
 | f32 transformer 대 f32 upstream, 같은 입력 | 비트 단위로 동일 |
 | upstream의 최종 latent를 디코딩하는 VAE, tiled / untiled | 57.59 / 58.45 dB |
-| 4B generate 512x512, 4 step, seed 9909 | 32.27 dB |
-| 4B edit "Add black sunglasses", seed 123 | 40.54 dB |
+| 4B 생성 512x512, 4 스텝, seed 9909 | 32.27 dB |
+| 4B 편집 "Add black sunglasses", seed 123 | 40.54 dB |
 
 bf16 최종 latent는 upstream과 상대 RMS로 1.03e-1(generate), 4.11e-2(edit) 차이가 납니다. 긴 reduction을 가진 bf16 matmul(7680 폭의 context embedder가 첫 번째)은 동일한 입력과 가중치에서 이 빌드의 MLX와 mlx 0.32.4에서 다르게 반올림되고, 네 번의 Euler step이 이를 증폭합니다. upstream 자신의 f32 실행도 같은 케이스에서 bf16 실행과 7.1e-2 차이가 납니다. generate는 30 dB 게이트보다 약 2 dB 위에 있으므로 MLX pin 변경으로 움직일 수 있습니다.
 
@@ -197,7 +210,7 @@ upstream은 모든 부동소수점 transformer 가중치를 bf16으로 변환하
 
 | 케이스 | upstream 입력에 대한 첫 transformer forward | 최종 latent 상대 RMS | PNG PSNR | 게이트(latent / PSNR) |
 |--------|---------------------------------------------|----------------------|----------|-----------------------|
-| Turbo, 8 step, guidance 1 | 0 | 0 | 57.00 dB | 1e-2 / 30 dB |
+| Turbo, 8 스텝, guidance 1 | 0 | 0 | 57.00 dB | 1e-2 / 30 dB |
 | Turbo 이미지의 Turbo 편집, 8 step, guidance 3, `image_strength` 0.7 | 4.90e-2 | 1.35e-1 | 32.23 dB | 2.5e-1 / 30 dB |
 | Base, 50 step, guidance 4, 빈 negative 프롬프트 | 5.02e-3 | 3.03e-1 | 24.24 dB(30 dB 미달) | 4.5e-1 / 20 dB |
 | Base 대조, 8 step, guidance 4(oracle 디렉터리 전용) | 5.02e-3 | 1.64e-1 | 31.43 dB | 2.5e-1 / 30 dB |
@@ -312,7 +325,7 @@ upstream은 transformer와 VAE 가중치를 bf16으로 유지하고 f32 noise와
 
 | 케이스 | 최종 latent 상대 RMS | PNG PSNR |
 |--------|---------------------|----------|
-| Turbo, 8 step, guidance 0 | 8.6e-2 | 32.9 dB |
+| Turbo, 8 스텝, guidance 0 | 8.6e-2 | 32.9 dB |
 | Base, 50 step, guidance 4, negative 프롬프트 `blurry, low quality`, `cfg_truncation` 1.0 | 6.2e-2 | 34.7 dB |
 | Turbo img2img, strength 0.6 | 1.7e-2 | 46.1 dB |
 
@@ -328,9 +341,9 @@ MLX_ENABLE_TF32=0 <lib test binary> --ignored --test-threads=1 imagegen::z_image
 
 `src/imagegen/mage_flow/`는 `mlx_vlm/models/mage_flow`(mlx-vlm `73d366ec`)를 포팅한 것으로, Qwen3-VL conditioner, 3축 RoPE를 사용하는 dual-stream transformer, Mage-VAE(DiCo convolutional encoder와 CoD + DiCo denoiser decoder, 16배 downsampling, 128 latent 채널)로 구성됩니다. mlx-vlm 변환 레이아웃(`transformer/`, `vae/`, `text_encoder/`, `_class_name: "MageFlowPipeline"`인 `model_index.json`)을 로드합니다. mlx-vlm이 양자화한 transformer projection(index 메타데이터에서 읽는 `affine`, `mxfp4`, `mxfp8`, `nvfp4`)은 양자화 matmul로 실행되며, 양자화된 VAE는 거부됩니다. 텍스트 encoder는 자체 `config.json` 양자화와 함께 Qwen3-VL VLM 로더를 통해 로드됩니다.
 
-| 변형 | 체크포인트 | Task | Step / guidance |
+| 변형 | 체크포인트 | 작업 | 스텝 / 가이던스 |
 |------|-----------|------|-----------------|
-| `mage-flow-turbo` | `mage-flow-community/Mage-Flow-Turbo` | generate | 4 / 1.0 |
+| `mage-flow-turbo` | `mage-flow-community/Mage-Flow-Turbo` | 생성 | 4 / 1.0 |
 | `mage-flow` | `mage-flow-community/Mage-Flow` | generate | 20 / 5.0 |
 | `mage-flow-base` | `mage-flow-community/Mage-Flow-Base` | generate | 30 / 5.0 |
 | `mage-flow-edit-turbo` | `mage-flow-community/Mage-Flow-Edit-Turbo` | edit | 4 / 1.0 |
@@ -358,7 +371,7 @@ upstream은 포트가 유지하는 f32 섬을 제외하고 bf16으로 끝까지 
 
 | 케이스 | 최종 latent 상대 RMS | PNG PSNR | upstream의 conditioning에서 |
 |--------|---------------------|----------|----------------------------|
-| Turbo, generate | 6.6e-2 | 38.4 dB | 3.4e-2, 42.3 dB |
+| Turbo, 생성 | 6.6e-2 | 38.4 dB | 3.4e-2, 42.3 dB |
 | Edit-Turbo, 참조 두 개 | 2.5e-1 | 21.8 dB | 5.1e-2, 39.9 dB |
 
 편집의 격차는 denoiser나 VAE가 아니라 conditioner에 있습니다. upstream 자체의 conditioner 출력을 넣으면 편집 실행은 39.9 dB입니다. bf16 Qwen3-VL은 upstream의 bf16 hidden state를 가깝게 재현할 수 없습니다. 같은 입력의 decoder 레이어 하나가 이미 이 빌드의 MLX와 mlx 0.32.4 사이에서 5.7e-3 차이가 나고, upstream 자신의 bf16 hidden state도 같은 모델을 f32로 확장한 것과 1.8e-2(generate), 2.6e-1(edit, 24층 vision tower와 DeepStack 경유) 떨어져 있습니다. upstream은 conditioner만 f32로 실행하면(위의 결정적 LayerNorm을 양쪽 실행에 적용) 자기 자신의 edit PNG와 22.9 dB에 도달합니다. 따라서 conditioner 테스트는 입력(token id, 이미지 grid, M-RoPE 위치)을 정확히 검사하고, 포트의 hidden state가 f32 참조에서 upstream의 bf16 실행보다 더 멀지 않을 것을 요구합니다(측정 비율 0.96과 1.04, 경계 1.2). VAE는 upstream 자체 입력에서 단계별로 5e-3으로 게이트하고(CoD decoder, posterior head, pixel head는 정확. 마지막 denoiser 블록은 위의 공간 평균 누산 때문에 2e-2), 엔드투엔드로는 5e-2로 게이트합니다(측정 decode 1.0e-2, encode 평균 2.4e-2).
@@ -390,7 +403,7 @@ MLX_ENABLE_TF32=0 <lib test binary> --include-ignored --test-threads=1 imagegen:
 
 | 케이스 | 최종 latent 상대 RMS(drift) | PNG PSNR |
 |--------|----------------------------|----------|
-| Generate | 7.6e-3 | 52.22 dB |
+| 생성 | 7.6e-3 | 52.22 dB |
 | Edit, RGBA 참조, KV cache | 6.4e-3 | 52.61 dB(alpha 53.58 dB) |
 | KV cache 없는 edit, cache된 실행과 비교 | 동일 | inf(CLI로 40 step에서도 비트 단위로 동일) |
 
@@ -487,7 +500,7 @@ MLX_ENABLE_TF32=0 <lib test binary> --ignored --test-threads=1 imagegen::ming_im
 
 프롬프트는 단어 임베딩 뒤에 QueryFormer query가 이어지는 입력에 대해 트리 내 LLaDA-2 MoE decoder(`Llada2MoeModel`, 20층, expert 256개, token당 8개)가 인코딩하며, 최종 hidden state의 QueryFormer 위치는 text projection을 거쳐 2560개의 caption 특징이 됩니다. denoiser는 공유 Z-Image 블록(`dit_blocks`)으로 만든 30층, 폭 3840의 single-stream DiT이며, 3축 RoPE와 2층의 noise, context, SigVQ refiner를 가집니다. VQ와 편집 요청은 caption에 폭 4096의 SigVQ 의미 특징을 추가합니다. latent는 FLUX.2 VAE latent(128채널, 16배 downsampling)이며 공유 `Flux2Vae`가 디코딩하고, 편집에서는 인코딩합니다.
 
-| 체크포인트 | Step / guidance | 스케줄 |
+| 체크포인트 | 스텝 / 가이던스 | 스케줄 |
 |-----------|-----------------|--------|
 | `llada-image-turbo` | 4 / 1.0 | f32의 `linspace(1, 0, steps + 1)`, shift 3, stochastic: 모든 step이 예측된 clean latent로부터 다시 noise를 입힘 |
 | `llada-image` | 50 / 5.0 | f64로 만들어 f32로 반올림한 `linspace(0.001, 1, steps + 1)[:-1]` 위의 비선형 `1 - (1 - (1 - s^1.17)^0.8)^1.1`, shift 1, Euler step |
@@ -518,11 +531,11 @@ oracle은 양쪽 모두 `MLX_ENABLE_TF32=0`으로 CUDA 백엔드(NVIDIA GB10)의
 
 | 케이스 | upstream 입력에 대한 첫 예측 | 최종 latent 상대 RMS / PNG PSNR | upstream 특징에서 | 경계(upstream 특징에서) |
 |--------|-----------------------------|-------------------------------|-------------------|------------------------|
-| Turbo text, 1024x1024 | 0 | 0.882 / 16.10 dB | 0 / 57.97 dB | 5e-3 / 50.0 dB |
+| Turbo 텍스트, 1024x1024 | 0 | 0.882 / 16.10 dB | 0 / 57.97 dB | 5e-3 / 50.0 dB |
 | Turbo VQ, 512x512 | 3.00e-3 | 1.087 / 14.34 dB | 0.0454 / 44.79 dB | 0.08 / 40.0 dB |
-| Turbo edit | 0 | 0.154 / 26.71 dB | 0 / 56.21 dB | 5e-3 / 50.0 dB |
-| Base text, 1024x1024 | 0 | 0.623 / 18.02 dB | 0 / 57.94 dB | 5e-3 / 50.0 dB |
-| Base edit | 0 | 0.547 / 22.24 dB | 0 / 58.45 dB | 5e-3 / 50.0 dB |
+| Turbo 편집 | 0 | 0.154 / 26.71 dB | 0 / 56.21 dB | 5e-3 / 50.0 dB |
+| 기본 텍스트, 1024x1024 | 0 | 0.623 / 18.02 dB | 0 / 57.94 dB | 5e-3 / 50.0 dB |
+| 기본 편집 | 0 | 0.547 / 22.24 dB | 0 / 58.45 dB | 5e-3 / 50.0 dB |
 
 upstream의 특징에서는 text와 edit 케이스가 upstream의 최종 latent를 정확히 재현하며, 그 PSNR은 VAE 디코딩의 잔차입니다. mlxcel 자체 특징에서는 30 dB 기준을 충족하지 못하며, 그 격차는 아래의 텍스트 encoder에서 옵니다.
 
@@ -530,9 +543,9 @@ upstream의 특징에서는 text와 edit 케이스가 upstream의 최종 latent�
 
 mlxcel 자체 특징에서의 엔드투엔드 격차는 denoiser나 VAE가 아니라 텍스트 encoder를 통해 들어옵니다. upstream의 특징에서는 text와 edit가 정확하고 VQ는 4.5e-2입니다. 이는 포트의 결함이 아닙니다. teacher-forced(각 레이어에 upstream 자체의 해당 레이어 입력을 입력)로 보면, attention과 dense 레이어 0은 모든 레이어에서 비트 단위로 정확하고 모든 MoE 레이어는 모든 token을 같은 expert로 같은 순서로 라우팅합니다. MoE 출력의 0.6%만 한 번의 반올림(레이어당 상대 RMS 2e-4)만큼 다른데, mlxcel의 expert 정렬 `gather_mm`이 oracle의 정렬하지 않은 호출과 다른 순서로 누산하기 때문입니다. 정렬하지 않은 호출을 쓰면 20개 레이어 모두 upstream의 입력에서 비트 단위로 정확하지만 프롬프트는 여전히 drift합니다. QueryFormer의 28행 k 및 v projection(`addmm`)이 이 빌드의 MLX에서 mlx 0.32.4와 다른 GEMM 커널을 선택하고(57344개 값 중 40개가 다름), 라우팅이 이를 마지막 레이어에서 3e-2로 증폭합니다. 정렬하지 않은 호출(과 컴파일된 GELU)로 측정한 결과: Turbo text 18.5 dB, Turbo edit 36.0 dB, VQ id는 처음 48개 token이 같고(1024개 중 377개), VQ prior 시간은 두 배(206초 대 101초)입니다. 포트는 upstream이 직접 호출하는 정렬된 호출을 유지합니다. 파이프라인은 작은 차이를 증폭하며 upstream도 자신의 것을 같은 방식으로 증폭합니다. upstream의 image-embedder bias 덧셈을 따로 반올림하면 첫 예측이 8.6e-2 움직이고 PNG는 26.5 dB가 되며, QueryFormer query를 2^-9만큼 교란하면 caption이 3.1e-3 움직이고 PNG는 17.9 dB가 되며, 텍스트 backbone 레이어 2에서 bf16 1 ulp가 최종 hidden state를 0.167 움직입니다(mlxcel 대 upstream: 0.172). MoE 라우팅이 뒤집히기 때문입니다. 따라서 VQ prior의 id는 upstream과 정확히 일치하지 않습니다. 1024개 중 254개가 같고 처음 6개가 동일합니다. 엄격한 게이트는 타이트한 단계(token id, noise, 1e-4 미만의 projection, 2e-5 미만으로 teacher-forced한 텍스트 backbone의 처음 두 레이어(이는 5.1e-5인 FP32 RoPE 테이블을 거부함), upstream id의 SigVQ 임베딩 1e-2 미만, VAE 인코딩, text와 edit에서 1e-3 미만, VQ에서 1e-2 미만의 첫 예측)에 있고, 엔드투엔드 경계는 측정된 포트와 잘못된 포트 대조군 사이에 있습니다.
 
-| 대조군(Turbo, upstream 특징) | Text | VQ | Edit |
+| 대조군(Turbo, upstream 특징) | 텍스트 | VQ | 편집 |
 |------------------------------|------|----|------|
-| Seed 43 | 1.256 / 12.78 dB | 0.978 / 17.71 dB | 0.505 / 20.46 dB |
+| 시드 43 | 1.256 / 12.78 dB | 0.978 / 17.71 dB | 0.505 / 20.46 dB |
 | shift 3 대신 1 | 0.791 / 18.02 dB | 0.669 / 22.20 dB | 0.230 / 25.37 dB |
 | RoPE 후 FP32 q와 k(첫 예측) | 0.250 / 28.62 dB (8.43e-2) | 0.117 / 35.28 dB (6.69e-2) | 0.0152 / 48.85 dB (1.28e-2) |
 

@@ -1,4 +1,4 @@
-# Dense prediction
+# 밀집 예측
 
 `mlxcel predict`는 depth, normal, segmentation, point, keypoint, 인스턴스별 mask, mesh, Gaussian 결과를 반환하는 체크포인트를 위한 오프라인 파일 인터페이스입니다. 이런 출력은 `generate`의 token 스트림이나 `detect`의 box 행에 맞지 않는 shape과 수명을 가집니다.
 
@@ -33,7 +33,7 @@ mlxcel predict \
   --output outputs/cats
 ```
 
-| 패밀리 | 런타임과 체크포인트 표기 | Task | 실제 출력 파일 |
+| 패밀리 | 런타임과 체크포인트 표기 | 작업 | 실제 출력 파일 |
 |---|---|---|---|
 | DINOv2 | `predict`; `dinov2`, `dinov2_with_registers` | `features` | `result.safetensors`, `meta.json` |
 | Sapiens2 | `predict`; `sapiens2` | `pose`, `seg`, `normal`, `pointmap`, `matting`, `backbone` | 모든 task가 `result.safetensors`와 `meta.json`을 기록함. 비어 있지 않은 pose는 `keypoints.json`도 기록함. `seg`는 `segmentation.png`, `normal`은 `normal.png`를 기록함 |
@@ -78,14 +78,14 @@ Sapiens2는 모든 백엔드에서 공개된 BF16 가중치 dtype을 유지합�
 
 Sapiens2는 다음 텐서 키와 shape을 사용합니다.
 
-| 체크포인트 task | 텐서 키 | Shape |
+| 체크포인트 task | 텐서 키 | 형태 |
 |---|---|---|
-| Pose | `keypoints`, `scores`, `boxes` | 원본 이미지 픽셀 단위의 `(N, K, 2)`, `(N, K)`, `(N, 4)` |
-| Segmentation | `segmentation` | `(H, W)` 정수 class ID |
-| Normal | `normals` | `(H, W, 3)` normal 벡터 |
-| Pointmap | `pointmaps`, `scales` | `(H, W, 3)`, `(1)` |
-| Matting | `alphas`, `foregrounds` | `(H, W)`, `(H, W, 3)` |
-| Backbone | `last_hidden_state`, `pooler_output` | token 및 pooled 특징 텐서 |
+| 포즈 | `keypoints`, `scores`, `boxes` | 원본 이미지 픽셀 단위의 `(N, K, 2)`, `(N, K)`, `(N, 4)` |
+| 세그멘테이션 | `segmentation` | `(H, W)` 정수 class ID |
+| 노멀 | `normals` | `(H, W, 3)` normal 벡터 |
+| 포인트맵 | `pointmaps`, `scales` | `(H, W, 3)`, `(1)` |
+| 매팅 | `alphas`, `foregrounds` | `(H, W)`, `(H, W, 3)` |
+| 백본 | `last_hidden_state`, `pooler_output` | token 및 pooled 특징 텐서 |
 
 Pose는 box당 하나의 `keypoints.json` 항목도 기록합니다. 점 이름은 체크포인트에 `id2label` 맵이 있으면 거기서 옵니다.
 
@@ -107,7 +107,7 @@ MoGe3는 큰 decoder, sparse-refiner, 유지되는 출력 그래프를 구성하
 
 정지 이미지의 표준 텐서 shape은 다음과 같습니다.
 
-| 키 | Shape | 의미 |
+| 키 | 형태 | 의미 |
 |---|---|---|
 | `points` | `(H, W, 3)` | 카메라 공간 XYZ. masking이 활성화되면 유효 mask 밖은 양의 무한대 |
 | `depth` | `(H, W)` | 같은 무효 값 규칙을 쓰는 metric 스케일의 카메라 depth |
@@ -203,7 +203,7 @@ conv_weight_to_channels_last(weight, expected_in_channels)
 
 스트리밍, 웹캠 입력, 서버 라우트는 클라이언트용 dense 출력 wire format이 정의될 때까지 이 파일 계약의 범위 밖입니다.
 
-## SAM 3D Objects geometry
+## SAM 3D Objects 기하 구조
 
 RGB 이미지와 같은 크기의 mask, 또는 alpha가 mask를 제공하는 RGBA 이미지로부터 객체를 재구성합니다.
 
@@ -218,7 +218,7 @@ mlxcel predict -m models/sam-3d-objects-bf16 --image chair-rgba.png --opts '{"es
 
 mask는 최소 두 행과 두 열에 걸쳐 있어야 합니다. 전처리는 큰 할당 전에 원본 변환, crop padding, 정사각형 view, 보간 중간 결과, point-map 정규화를 보수적인 1 GiB live-buffer 보호 장치에 대해 검사합니다. 극단적인 종횡비는 원본 픽셀 수가 입력 제한 이내여도 이 보호 장치를 넘을 수 있으며, 거부된 입력은 암묵적으로 resize되거나 잘리지 않습니다. 다른 prediction 패밀리는 `--mask`와 `--pointmap`을 거부합니다. 공개된 메인 체크포인트는 BF16을 유지하고 내장 depth 모델은 F32를 유지합니다. 공유 DINO trunk는 파라미터를 정확히 비교한 뒤에만 재사용됩니다. 비디오, 배치 JSONL, 스트리밍, 장면 배치, 서빙은 이 패밀리에서 지원되지 않습니다.
 
-## SAM 3D Body human mesh
+## SAM 3D Body 인체 메시
 
 ```bash
 mlxcel predict -m models/sam-3d-body-dinov3-bf16 --image person.png \
