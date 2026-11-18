@@ -10,7 +10,7 @@
 |---|---|---|
 | `falcon_ocr` | `tiiuae/Falcon-OCR` (`lablup/mlxcel#848`, PR `lablup/mlxcel#1075`) | `src/models/detection.rs` (`"falcon_ocr" => FalconOcrVL`), `src/models/falcon_ocr.rs`, `src/models/falcon_ocr_rope.rs`, `src/vision/falcon_ocr.rs`, `src/vision/processors/falcon_ocr.rs`, `src/loading/vlm_falcon_ocr.rs`, `src/commands/generate_falcon_ocr.rs`, [supported-models.md](supported-models.md) |
 | `jina_vlm` | `jinaai/jina-vlm` (`lablup/mlxcel#849`, PR `lablup/mlxcel#1076`) | `src/models/detection.rs` (`"jvlm" \| "jina_vlm" => JinaVLM`), `src/models/jina_vlm.rs`, `src/vision/jina_vlm.rs`, `src/vision/encoders/jina_vlm.rs`, `src/vision/processors/jina_vlm.rs`, `src/loading/vlm_jina_vlm.rs`, [supported-models.md](supported-models.md) |
-| `laguna` | Poolside Laguna XS/S (`lablup/mlxcel#1347`, PR `lablup/mlxcel#1739`; DFlash drafter `lablup/mlxcel#1351`, PR `lablup/mlxcel#1771`) | `src/models/detection.rs` (`"laguna" => Laguna`), `src/models/laguna.rs`, `src/models/laguna_layers.rs`, `src/models/laguna_sanitize.rs`, `src/models/laguna_speculative.rs`, [supported-models.md](supported-models.md) |
+| `laguna` | Poolside Laguna XS/S (`lablup/mlxcel#1347`, PR `lablup/mlxcel#1739`; DFlash 드래프터 `lablup/mlxcel#1351`, PR `lablup/mlxcel#1771`) | `src/models/detection.rs` (`"laguna" => Laguna`), `src/models/laguna.rs`, `src/models/laguna_layers.rs`, `src/models/laguna_sanitize.rs`, `src/models/laguna_speculative.rs`, [supported-models.md](supported-models.md) |
 
 ## 전용 에픽과 포트 이슈로 재분류됨
 
@@ -31,7 +31,7 @@
 | | `tiiuae/Falcon-Perception` | `tiiuae/Falcon-Perception-300M` |
 |---|---|---|
 | 크기 | 2.53 GB, 텐서 231개 | 1.27 GB, 텐서 123개 |
-| Decoder | `dim` 1024, `n_layers` 28, `n_heads` 16, `n_kv_heads` 8, `head_dim` 128, `ffn_dim` 3072, `vocab_size` 65536 | `dim` 768, `n_layers` 22, `n_heads` 16, `n_kv_heads` 8, `head_dim` 64, `ffn_dim` 2304, `vocab_size` 65536 |
+| 디코더 | `dim` 1024, `n_layers` 28, `n_heads` 16, `n_kv_heads` 8, `head_dim` 128, `ffn_dim` 3072, `vocab_size` 65536 | `dim` 768, `n_layers` 22, `n_heads` 16, `n_kv_heads` 8, `head_dim` 64, `ffn_dim` 2304, `vocab_size` 65536 |
 | `freqs_cis_golden` | `[16, 32, 2]` | `[16, 16, 2]` |
 | `do_segmentation` | `true` (`segm_out_dim` 256, `num_segm_layers` 3) | `false` (detection 전용) |
 
@@ -63,8 +63,8 @@
 - **확인된 가중치 레이아웃**:
   - Vision tower(`vision_tower.patch_embed.proj.weight` `[1280, 3, 1, 14, 14]`, `vision_tower.blocks.{0..31}.*`, `vision_tower.merger.{ln_q, mlp.0, mlp.2}`)는 `src/vision/encoders/qwen2_5_vl.rs`와 일치합니다.
   - 텍스트 decoder(`model.layers.{0..39}.*`, 레이어당 텐서 133개):
-    - Convolution이 추가된 attention(`attn.self_attn.qkv.*`): `linear_q.weight` `[1024, 2048]`, `linear_k.weight` `[256, 2048]`, causal 1차원 convolution `conv_qk.0.{weight,bias}`(`[1280, 1, 2]`)와 `conv_qk.1.{weight,bias}`(`[1280, 128, 2]`, `(out, in/groups, k)`에서 `(out, k, in/groups)`로의 permutation 필요), 시간 이동된 hidden state를 위한 이중 value projection `val_proj1.weight`와 `val_proj2.weight`(각각 `[128, 2048]`), 학습되는 KV head별 temperature `qkv.temp` `[2]`, 출력 projection `o_proj.weight` `[2048, 1024]`, 그리고 rank-8 vision LoRA adapter(`lora_linear_{q,k,o}.{0,1}.weight`, `lora_val_proj{1,2}.{0,1}.weight`).
-    - MoE + Mixture-of-Depths 블록(`mlp.zaya_block.*`): router(`router.down_proj.{weight,bias}` `[256, 2048]`, `router.rmsnorm_eda.weight` `[256]`, `256 -> 256 -> 256 -> 17`로 projection하는 `router.router_mlp.{0,2,4}`, fp32의 `router.balancing_biases` `[17]`)에서 17번째 슬롯은 MoD skip expert이며, 여기에 각각 rank-32 vision LoRA adapter(`lora_fc1.{0,1}.weight`, `lora_fc2.{0,1}.weight`)를 가진 16개의 SwiGLU expert `experts.local_experts.{0..15}.{linear_fc1, linear_fc2}.weight`(`[4096, 2048]`, `[2048, 2048]`)가 있습니다.
+    - Convolution이 추가된 attention(`attn.self_attn.qkv.*`): `linear_q.weight` `[1024, 2048]`, `linear_k.weight` `[256, 2048]`, causal 1차원 convolution `conv_qk.0.{weight,bias}`(`[1280, 1, 2]`)와 `conv_qk.1.{weight,bias}`(`[1280, 128, 2]`, `(out, in/groups, k)`에서 `(out, k, in/groups)`로의 permutation 필요), 시간 이동된 hidden state를 위한 이중 value projection `val_proj1.weight`와 `val_proj2.weight`(각각 `[128, 2048]`), 학습되는 KV head별 temperature `qkv.temp` `[2]`, 출력 projection `o_proj.weight` `[2048, 1024]`, 그리고 rank-8 비전 LoRA 어댑터(`lora_linear_{q,k,o}.{0,1}.weight`, `lora_val_proj{1,2}.{0,1}.weight`).
+    - MoE + Mixture-of-Depths 블록(`mlp.zaya_block.*`): router(`router.down_proj.{weight,bias}` `[256, 2048]`, `router.rmsnorm_eda.weight` `[256]`, `256 -> 256 -> 256 -> 17`로 projection하는 `router.router_mlp.{0,2,4}`, fp32의 `router.balancing_biases` `[17]`)에서 17번째 슬롯은 MoD skip expert이며, 여기에 각각 rank-32 비전 LoRA 어댑터(`lora_fc1.{0,1}.weight`, `lora_fc2.{0,1}.weight`)를 가진 16개의 SwiGLU expert `experts.local_experts.{0..15}.{linear_fc1, linear_fc2}.weight`(`[4096, 2048]`, `[2048, 2048]`)가 있습니다.
     - 서브레이어별 residual scaling(`attn.res_scale.{hidden_states_scale, hidden_states_bias}`와 `mlp.res_scale.{hidden_states_scale, hidden_states_bias, residual_scale, residual_bias}`), 그리고 최상위 `model.res_scale.*`.
 - **포트 변경 범위(delta)**: `lablup/mlxcel#548` 목록에서 가장 큽니다. Vision tower는 `qwen2_5_vl.rs`를 재사용하지만, 텍스트 backbone에는 사용자 정의 레이어별 하이브리드 cache(KV cache + 2단계 causal conv/token-shift 상태), 레이어 간 router 상태 전달(`zaya_use_eda`), MoD skip-expert 라우팅(`zaya_use_mod`), 그리고 attention과 expert 양쪽의 image-token 마스크 LoRA 분기가 필요합니다.
 

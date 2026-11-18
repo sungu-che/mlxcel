@@ -151,6 +151,11 @@ Muse Glimmer가 이 규칙의 현재 예시입니다. 첫 번째 베이스라인
 8. 패밀리가 `switch_layers::SwitchLinear`를 사용하지 않고 **자체 양자화 MoE 전문가 타입**을 가진다면, 로더가 이를 저장하는 시점에서 선언된 양자화 쌍의 범위를 제한하십시오:
    `switch_layers::validate_expert_quantization_params(prefix, group_size, bits)?`.
    공유 로더는 이를 대신 수행해 주지만, 패밀리 로컬 `SwitchLinear` / `SwitchGLU` / `ExpertLinear`는 이를 상속하지 않습니다. [양자화 파라미터 범위](#양자화-파라미터-범위)를 참조하십시오.
+9. `LanguageModel::last_row_logits`를 구현하여 prefill이 샘플링된 은닉 행(hidden row)만 최종 norm, LM head, 그리고 임의의 softcap이나 logit scale을 통해 projection하도록 만드십시오. 이것이 없으면 엔진의 prefill은 `[B, L, vocab]`을 계산하고 단 하나의 행만 유지하므로, 262K 어휘에서 2048 토큰 조각당 약 1 GB가 소비됩니다.
+   - 최종 norm 직전에 `mlxcel_core::generate::select_row(h, row)`로 행을 forward 본문에 통과시키거나, 모델이 이미 은닉 상태와 헤드를 분리하고 있는 경우 `logits_at_position`으로 슬라이스하십시오. 이 훅은 `None` 임베딩에 대해서는 `forward_with_sequence_id`를, 그렇지 않은 경우에는 `forward_with_embeddings_and_sequence_id`를 반영하며 지원하지 않는 조합에 대해서는 `None`을 반환합니다.
+   - `LanguageModel`을 구현하는 VLM 래퍼는 이 훅을 텍스트 모델로 전달합니다. 단순 위임인 경우 `mlxcel_core::generate::last_row_logits_from`을 사용하고, 위치를 준비하거나 피처를 주입하는 경우 텍스트 모델 자체의 last-row 변형을 사용합니다.
+   - 작은 무작위 가중치 fixture를 대상으로 `last_row_case!` 테스트(`src/models/last_row_logits_harness.rs`)를 추가하십시오.
+   - `src/models/last_row_logits_coverage_tests.rs`에는 전체 logits 기본값을 유지하는 모든 구현과 그 사유가 나열되어 있습니다. 이 훅을 받을 수 없는 모델은 여기에 추가됩니다.
 
 ## VLM 체크리스트
 

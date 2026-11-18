@@ -27,9 +27,9 @@ git -C mlx-vlm grep -nF -e "queries.astype(mx.float32)" -e "keys.astype(mx.float
 
 | 업스트림 위치 | 업스트림이 widen하는 것 | 클래스 | mlxcel | 판정 |
 |---|---|---|---|---|
-| [mlx-lm `phi.py`](https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/models/phi.py), [mlx-vlm `phi/language.py`](https://github.com/Blaizzy/mlx-vlm/blob/main/mlx_vlm/models/phi/language.py) | queries | 오버플로 | `src/models/phi.rs:199` | 일치, 변경 없음 |
+| [mlx-lm `phi.py`](https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/models/phi.py), [mlx-vlm `phi/language.py`](https://github.com/Blaizzy/mlx-vlm/blob/main/mlx_vlm/models/phi/language.py) | 쿼리 | 오버플로 | `src/models/phi.rs:199` | 일치, 변경 없음 |
 | [mlx-lm `stablelm.py`](https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/models/stablelm.py), [mlx-vlm `stablelm/language.py`](https://github.com/Blaizzy/mlx-vlm/blob/main/mlx_vlm/models/stablelm/language.py) | queries와 keys | 오버플로 | `src/models/stablelm.rs:197-198` | 일치, 변경 없음 |
-| [mlx-lm `phixtral.py`](https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/models/phixtral.py), [mlx-vlm `phixtral/language.py`](https://github.com/Blaizzy/mlx-vlm/blob/main/mlx_vlm/models/phixtral/language.py) | queries | 오버플로 | `src/models/phixtral.rs:507` | keys와 values를 과도하게 widen함; **일치하도록 축소** |
+| [mlx-lm `phixtral.py`](https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/models/phixtral.py), [mlx-vlm `phixtral/language.py`](https://github.com/Blaizzy/mlx-vlm/blob/main/mlx_vlm/models/phixtral/language.py) | 쿼리 | 오버플로 | `src/models/phixtral.rs:507` | keys와 values를 과도하게 widen함; **일치하도록 축소** |
 | [mlx-vlm `paligemma/language.py`](https://github.com/Blaizzy/mlx-vlm/blob/main/mlx_vlm/models/paligemma/language.py) | queries와 keys, `model_type != "gemma"`일 때만 | 오버플로, 단 아래 참조 | 없음; 텍스트 attention은 `src/models/gemma.rs:181`과 `src/models/gemma2.rs:194` | widen 불필요, 측정됨 |
 | [mlx-vlm `minimax_m3_vl/language.py`](https://github.com/Blaizzy/mlx-vlm/blob/main/mlx_vlm/models/minimax_m3_vl/language.py) (사본 네 개) | indexer queries와 keys | 블록 선택 | `src/models/minimax_m3_indexer.rs:219`, widen 안 됨 | 미검증, 체크포인트 없음 |
 | [mlx-vlm `qwen4_exp/language.py`](https://github.com/Blaizzy/mlx-vlm/blob/main/mlx_vlm/models/qwen4_exp/language.py) | pooled keys와 query | 블록 선택 | 포트 없음 | 할 일 없음 |
@@ -53,7 +53,7 @@ git -C mlx-vlm grep -nF -e "queries.astype(mx.float32)" -e "keys.astype(mx.float
 
 업스트림의 paligemma attention에는 두 개의 분기가 있습니다. `text_config.model_type == "gemma"`일 때는 widen 없이 `scaled_dot_product_attention`을 호출하며, 이는 PaliGemma 1이고 `src/models/gemma.rs`와 일치합니다. PaliGemma 2(`model_type == "gemma2"`)가 택하는 `else` 분기는 완전한 수동 eager attention입니다. queries를 스케일하고, f32 점수를 계산하고, `attn_logit_softcapping` tanh를 적용하고, f32로 softmax한 뒤, 다시 캐스트합니다. 그 주석은 동기를 밝히고 있으며, 오버플로가 아닙니다.
 
-> Match HF eager semantics: compute logits in fp32, softmax in fp32, then cast attention weights back to query dtype before value matmul.
+> HF eager 의미론에 맞춤: logits는 fp32로 계산하고, softmax도 fp32로 수행한 뒤, value matmul 전에 attention 가중치를 query dtype으로 다시 캐스팅합니다.
 
 따라서 mlxcel에게 남는 질문은 영향을 받는 체크포인트에서 점수가 f16 범위를 벗어날 수 있는지뿐입니다. 이는 실제 decode의 모든 레이어에서 `q @ k^T`를 f32로 계산하여 절댓값의 최댓값을 취하는 방식으로 직접 측정했습니다. 일부러 f32를 썼습니다. f16으로 측정하면 포화되어 알고자 한 답을 가려 버리기 때문입니다.
 

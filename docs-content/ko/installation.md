@@ -14,10 +14,10 @@
 |----------|--------|-----------------------|-------|
 | Apple Silicon 기반 macOS | 주요 | `metal,accelerate` | 주된 개발 및 검증 대상입니다. |
 | NVIDIA CUDA 기반 Linux | 보조 | `cuda` | 릴리스 빌드는 현재 CUDA 13 시대 시스템을 대상으로 하며, 다른 버전은 MLX/CUDA 호환성에 따라 달라집니다. |
-| AMD ROCm 기반 Linux | 실험적 | `rocm` | 소스 빌드만 지원합니다. ROCm 10.0 / HIP 7.15의 RDNA 3.5(`gfx1151`, Strix Halo)에서 검증되었으며 lablup/mlxcel#1801에서 추적합니다. [AMD ROCm 기반 Linux](#amd-rocm-기반-linux-실험적)를 참고하십시오. |
+| AMD ROCm 기반 Linux | 지원됨 (0.8부터) | `rocm` | 소스 빌드만 지원합니다. ROCm 10.0 / HIP 7.15의 RDNA 3.5(`gfx1151`, Strix Halo)에서 검증되었으며 lablup/mlxcel#1801에서 추적합니다. [AMD ROCm 기반 Linux](#amd-rocm-기반-linux)를 참고하십시오. |
 | CPU 전용 Linux | 릴리스 대상 아님 | 없음 | 제한된 구성에서는 컴파일될 수 있지만, 이 프로젝트에서 유용하거나 검증된 추론 대상은 아닙니다. |
 | NVIDIA CUDA 기반 Windows | 실험적 | `cuda` | 소스 빌드만 지원하며 단일 노드입니다(tensor 또는 pipeline 병렬화 없음). `aarch64-pc-windows-msvc`(NVIDIA RTX Spark N1X)에서 네이티브로 검증되었으며, 빌드 glue는 `x86_64-pc-windows-msvc`도 포함합니다. [NVIDIA CUDA 기반 Windows](#nvidia-cuda-기반-windows-실험적)를 참고하십시오. |
-| AMD ROCm 기반 Windows | 실험적 | `rocm` | 소스 빌드만 지원하며 단일 노드입니다. Radeon 8060S(`gfx1151`)와 ROCm 10.1.0을 사용하여 `x86_64-pc-windows-msvc`에서 네이티브로 검증되었습니다. `PATH`에 ROCm `bin` 디렉터리를 두거나 `ROCM_PATH`를 설정하지 않아도 실행됩니다. [AMD ROCm 기반 Windows](#amd-rocm-기반-windows-실험적)를 참고하십시오. |
+| AMD ROCm 기반 Windows | 지원됨 (0.8부터) | `rocm` | 소스 빌드만 지원하며 단일 노드입니다. Radeon 8060S(`gfx1151`)와 ROCm 10.1.0을 사용하여 `x86_64-pc-windows-msvc`에서 네이티브로 검증되었습니다. `PATH`에 ROCm `bin` 디렉터리를 두거나 `ROCM_PATH`를 설정하지 않아도 실행됩니다. [AMD ROCm 기반 Windows](#amd-rocm-기반-windows)를 참고하십시오. |
 
 ## Cargo feature 플래그
 
@@ -33,7 +33,7 @@
 | `metal` | off | Apple Silicon Metal GPU 백엔드입니다(`mlxcel-core/metal`에 위임). macOS에서 표준입니다. |
 | `accelerate` | off | Apple Accelerate CPU BLAS 백엔드입니다(`mlxcel-core/accelerate`에 위임). macOS에서 표준입니다. |
 | `cuda` | off | NVIDIA CUDA GPU 백엔드입니다(`mlxcel-core/cuda`에 위임). NVIDIA 호스트에서 필수이며, 일반 빌드는 CPU 전용입니다(아래 함정 안내 참고). |
-| `rocm` | off | Linux와 Windows x86_64 MSVC의 AMD GPU 백엔드입니다(`mlxcel-core/rocm`에 위임). `src/lib/mlxcelverse/overlays/rocm/`의 ROCm overlay에서 빌드됩니다. `cuda` 또는 `metal`과 함께 사용할 수 없습니다. 실험적이며 [AMD ROCm 기반 Linux](#amd-rocm-기반-linux-실험적)와 [AMD ROCm 기반 Windows](#amd-rocm-기반-windows-실험적)를 참고하십시오. |
+| `rocm` | off | Linux와 Windows x86_64 MSVC의 AMD GPU 백엔드입니다(`mlxcel-core/rocm`에 위임). `src/lib/mlxcelverse/overlays/rocm/`의 ROCm overlay에서 빌드됩니다. `cuda` 또는 `metal`과 함께 사용할 수 없습니다. 0.8부터 지원됨; [AMD ROCm 기반 Linux](#amd-rocm-기반-linux)와 [AMD ROCm 기반 Windows](#amd-rocm-기반-windows)를 참고하십시오. |
 | `experimental-backend` | off | MLX가 아닌 compute 백엔드 seam 슬롯을 예약합니다(issue #338). 커널은 포함하지 않으며 런타임 dispatch도 추가하지 않습니다. 향후 MLX가 아닌 엔진(예: FuriosaAI RNGD)이 `ComputeBackend`를 구현할 플러그인 경계만 컴파일합니다. `select_backend()`는 여전히 MLX로 귀결됩니다. |
 | `xla-backend` | off | OpenXLA / StableHLO 백엔드 seam입니다(issue #449, [ADR 0004](adr/0004-compute-backend-session-seam-and-stablehlo-family.md)). `mlxcel-xla`를 가져오고 `Backend::Xla` / `Session::Xla` arm과 `MLXCEL_BACKEND=xla` 선택기를 컴파일하지만, 네이티브 실행 엔진은 포함하지 않습니다. 이 crate는 순수 Rust 스텁과 StableHLO 그래프 emitter로 이루어져 있어 CI에서 그대로 빌드됩니다. |
 | `xla-iree` | off | `xla-backend`에 실제 IREE 실행(`mlxcel-xla/iree`)을 더합니다. 사전 빌드된 IREE 런타임에 대해 C shim을 컴파일하고 번들된 prefill / decode_step 그래프를 구동합니다. 빌드 시점에 `IREE_DIST`(또는 아래의 소스 빌드 변수)가 필요하므로, CI나 릴리스 기본값이 아니라 로컬 / 선택적 빌드입니다. |
@@ -82,7 +82,7 @@ XLA 경로는 두 단계로 나뉜 선택적 기능이며 Apple Silicon이나 CU
 
 런타임에는 `MLXCEL_BACKEND=xla`로 백엔드를 선택하고, `MLXCEL_XLA_*` 변수(device,
 precision, packed quant)로 조정합니다. 전체 목록은
-[환경 변수](environment-variables.md#openxla--stablehlo-백엔드-변수)를,
+[환경 변수](environment-variables.md#openxla--stablehlo-backend-variables)를,
 설계는 [ADR 0004](adr/0004-compute-backend-session-seam-and-stablehlo-family.md)를
 참고하십시오.
 
@@ -121,6 +121,8 @@ macOS에서는 일반 `cargo build --release`에서도 MLX가 Metal과 Accelerat
 target/release/mlxcel
 target/release/mlxcel-server
 ```
+
+통합 메모리의 대부분을 차지하는 모델의 경우, 현재 사용 가능한 메모리 수치, macOS를 위해 남겨진 예약량 및 `MLXCEL_WIRE_WEIGHTS`에 대한 내용은 [macOS 메모리 가드레일](macos-memory.md)을 참조하십시오.
 
 macOS 릴리스 워크플로는 필요할 때 `mlx.metallib` 아티팩트도 함께 패키징합니다.
 바이너리를 수동으로 배포하는 경우에는 실행 파일만으로 항상 충분하다고 가정하지 말고,
@@ -420,7 +422,7 @@ python scripts\package_windows_cuda_runtime.py --cuda-path C:\path\to\cuda --sta
 - 라이선스 파일. 스크립트는 CUDA EULA를 `EULA.txt`(설치 프로그램 레이아웃) 또는 툴킷 루트의 `LICENSE`에서 읽고, cuDNN 라이선스는 cuDNN 루트의 `LICENSE`에서 읽습니다. 또한 각 파일의 내용을 확인합니다. 재배포 아카이브는 모두 `LICENSE`라는 이름의 파일을 포함하므로, 하나의 디렉터리에 풀면 마지막 아카이브의 사본이 나머지를 덮어쓰기 때문입니다. 이 경우 `cuda_cudart`와 `cudnn` 아카이브의 `LICENSE`를 추출하여 `--cuda-license`와 `--cudnn-license`로 전달하십시오. `windows-arm64` `cccl` 아카이브의 `LICENSE`는 CUDA EULA이며, 빌드가 내려받는 CCCL 릴리스에는 라이선스 파일이 없습니다. 따라서 일치하는 `NVIDIA/cccl` 릴리스 태그의 `LICENSE`를 `--cccl-license`로 전달하십시오.
 - 헤더와 재배포. CUDA EULA(Attachment A)는 위의 CUDA DLL과 일부 헤더(`cuda_fp16.h`, `cuda_bf16.h`, `cuda_fp8.h`, `cuda_runtime_api.h`, `vector_types.h`, ...)를 재배포 가능하다고 명시하지만, JIT 커널이 포함하는 모든 헤더를 명시하지는 않습니다(`cooperative_groups.h`, `math_constants.h`, `cuda_runtime.h`, `mma.h`, `driver_types.h`, ...). 이 번들은 자신의 머신에서 사용하기 위한 것입니다. 공개하기 전에 NVIDIA와 약관을 확인하십시오.
 - `CUDA_HOME`은 번들의 헤더보다 우선합니다. CUDA 설치 프로그램이 시스템 전체에 설정하는 `CUDA_PATH`는 그렇지 않습니다.
-- 런타임 디렉터리, 번들의 `include\`, `mlxcel.exe`가 들어 있는 폴더는 관리자만(또는 본인만) 쓸 수 있어야 합니다. DLL은 mlxcel 프로세스 안에서 실행되고, 헤더는 GPU 커널로 컴파일되기 때문입니다. `C:\Program Files`에는 이 보호가 적용되어 있습니다. `C:\` 바로 아래에 만든 폴더라면, [ROCm SDK](#amd-rocm-기반-windows-실험적)에서 설명한 대로 상속된 접근 권한을 제거하십시오.
+- 런타임 디렉터리, 번들의 `include\`, `mlxcel.exe`가 들어 있는 폴더는 관리자만(또는 본인만) 쓸 수 있어야 합니다. DLL은 mlxcel 프로세스 안에서 실행되고, 헤더는 GPU 커널로 컴파일되기 때문입니다. `C:\Program Files`에는 이 보호가 적용되어 있습니다. `C:\` 바로 아래에 만든 폴더라면, [ROCm SDK](#amd-rocm-기반-windows)에서 설명한 대로 상속된 접근 권한을 제거하십시오.
 - 번들에는 Visual C++ 런타임이 포함되어 있지 않습니다. Visual Studio도 설치된 검증 호스트에서는 `MSVCP140.dll`과 `VCRUNTIME140.dll`이 System32에서 로드되었습니다. 따라서 이들이 없는 머신에는 Visual C++ Redistributable이 필요합니다. 디스플레이 드라이버만 있는 머신에서는 실행해 보지 않았습니다.
 - `openblas.dll`은 일반 import이므로 `MLXCEL_CUDA_RUNTIME_DIR`이 아니라 실행 파일 폴더에서 가져옵니다. 번들 밖에서 실행되는 바이너리 옆에도 복사본을 두십시오.
 - 번들 경로는 짧게 유지하십시오(예: `C:\mlxcel`). 260자를 넘는 DLL 경로는 Win32 긴 경로가 활성화되어 있어야 합니다.
@@ -441,10 +443,10 @@ python scripts\package_windows_cuda_runtime.py --cuda-path C:\path\to\cuda --sta
 | 사전 빌드된 릴리스 아카이브 | 아직 없습니다. |
 | CI | 컴파일 전용이며 GPU가 없습니다. `ci.yml`의 호스팅된 `Windows build (compile-only)` 작업은 Windows 빌드 스크립트, `build_support/`, 오버레이의 런타임 디렉터리 소스, 번들 패키저 또는 MLX pin이 변경되면 `windows-latest`에서 실행됩니다(또는 PR에 `ci:full` 라벨이 붙은 경우이며, 이 라벨은 저장소가 아직 정의하지 않았습니다). 실행되는 항목은 `mlxcel-mlx-pin` 단위 테스트, `tests/` Python 테스트 모음, 그리고 `cargo check -p mlxcel-core --features rocm`을 ROCm 10.1.0 `gfx1151` TheRock SDK에 대해 실행한 결과입니다. 이 SDK는 MLX와 그 HIP 커널을 빌드합니다. Windows에서 `cuda` feature를 빌드하는 CI 작업은 없습니다. 두 오버레이의 런타임 디렉터리 선택에 대한 호스트 테스트는 `overlay-host-tests`에서 Linux로 실행됩니다. |
 
-## AMD ROCm 기반 Windows (실험적)
+## AMD ROCm 기반 Windows
 
 MSVC로 빌드한 `rocm` 기능 포함 네이티브 `mlxcel.exe` / `mlxcel-server.exe`입니다
-(lablup/mlxcel#2601). [Linux 빌드](#amd-rocm-기반-linux-실험적)와 같은 ROCm
+(lablup/mlxcel#2601). [Linux 빌드](#amd-rocm-기반-linux)와 같은 ROCm
 overlay를 사용하며, [Windows CUDA 빌드](#windows의-현재-제한-사항)와 같은 단일 노드
 제한을 따릅니다.
 
@@ -668,11 +670,11 @@ SDK에 어떤 `--arch`의 커널 데이터가 없으면, 스크립트는 그 GPU
 - [Windows의 현재 제한 사항](#windows의-현재-제한-사항)의 모든 내용이 적용됩니다: 단일 노드, Unix 소켓 없음, 라우터 모드 다운로드 없음.
 - 사전 빌드된 아카이브는 없으며, 번들은 로컬에서 빌드합니다. CI는 GPU 없이 Windows에서 `rocm` feature를 컴파일하고 AMD 하드웨어에서는 아무것도 실행하지 않습니다. [Windows의 현재 제한 사항](#windows의-현재-제한-사항)의 CI 행을 참고하십시오.
 
-## AMD ROCm 기반 Linux (실험적)
+## AMD ROCm 기반 Linux
 
-**실험적.** Linux의 AMD GPU 지원은 lablup/mlxcel#1802에서 추가되었으며 lablup/mlxcel#1801에서 추적합니다. 소스 빌드만 지원하며, 아직 릴리스 아티팩트도 실행 중인 ROCm CI 작업도 없습니다. 아래에 나열된 공백은 아직 열려 있습니다.
+**0.8부터 지원됨.** Linux에서의 AMD GPU 지원은 lablup/mlxcel#1802에서 추가되었고 lablup/mlxcel#1801에서 추적합니다. 소스 빌드만 지원합니다. 릴리스 아티팩트가 없으며, 저장소에 `ROCM_CI_ENABLED`가 설정되어 있지 않은 한 선택적 ROCm CI 작업은 비활성화되어 있습니다. 아래 나열된 공백은 미해결 상태입니다.
 
-이 백엔드는 upstream MLX의 일부가 아닙니다. mlxcel은 [NripeshN/mlx](https://github.com/NripeshN/mlx/tree/rocm-support)(MIT)의 `rocm-support` 브랜치에서 ROCm 백엔드를 `src/lib/mlxcelverse/overlays/rocm/`로 vendor하고, Metal 및 CUDA 빌드가 사용하는 것과 같은 MLX pin 커밋 위에 이를 적용합니다. overlay의 구성은 [mlxcelverse](architecture.md#mlxcelverse-mlx-측-계층)를, mlxcel이 fork 위에 얹어 유지하는 변경 사항은 `src/lib/mlxcelverse/overlays/rocm/LOCAL_FIXES.md`를 참고하십시오.
+이 백엔드는 upstream MLX의 일부가 아닙니다. mlxcel은 [NripeshN/mlx](https://github.com/NripeshN/mlx/tree/rocm-support)(MIT)의 `rocm-support` 브랜치에서 ROCm 백엔드를 `src/lib/mlxcelverse/overlays/rocm/`로 vendor하고, Metal 및 CUDA 빌드가 사용하는 것과 같은 MLX pin 커밋 위에 이를 적용합니다. overlay의 구성은 [mlxcelverse](architecture.md#mlxcelverse-the-mlx-side-layer)를, mlxcel이 fork 위에 얹어 유지하는 변경 사항은 `src/lib/mlxcelverse/overlays/rocm/LOCAL_FIXES.md`를 참고하십시오.
 
 테스트된 구성: Radeon 8060S(`gfx1151`, RDNA 3.5)를 탑재한 AMD Ryzen AI MAX+ 395와 96 GiB VRAM carve-out, Debian 13, ROCm 10.0.0 패키지(HIP 7.15, AMD clang 23). 다른 RDNA 3, 3.5, 4 제품도 빌드될 것으로 예상됩니다. CDNA 제품(예: MI300)은 컴파일되지만 튜닝이 없으며, 이들에서는 32-lane wavefront에 걸쳐 reduce하는 fused 커널이 검증될 때까지 MLX 그래프로 fallback됩니다(아래 표의 "Wave64 devices" 행 참고).
 
@@ -737,11 +739,11 @@ MLX_ROCM_ARCHITECTURES="gfx1100;gfx1151" cargo build --release --features rocm
 ./target/release/mlxcel generate -m models/mlx/Qwen3-0.6B-4bit -p "Hello" -n 50 --temp 0
 ```
 
-expert-batched `gather_qmm` 커널(bf16 및 f16 affine, bf16 mxfp4에서 기본으로 켜져 있음) 대신 행별 MoE 커널을 사용하려면, 예를 들어 처리량 변화를 A/B로 비교하거나 MoE 회귀를 bisect하려면 `MLX_ROCM_GATHER_QMV_EXPERT_BATCHED=0`을 설정하십시오. 이 변수는 호출할 때마다 읽힙니다. 이 변수와 백엔드가 실행 시점에 읽는 다른 ROCm 변수는 [ROCm 백엔드 변수](environment-variables.md#rocm-백엔드-변수)에 나열되어 있습니다.
+expert-batched `gather_qmm` 커널(bf16 및 f16 affine, bf16 mxfp4에서 기본으로 켜져 있음) 대신 행별 MoE 커널을 사용하려면, 예를 들어 처리량 변화를 A/B로 비교하거나 MoE 회귀를 bisect하려면 `MLX_ROCM_GATHER_QMV_EXPERT_BATCHED=0`을 설정하십시오. 이 변수는 호출할 때마다 읽힙니다. 이 변수와 백엔드가 실행 시점에 읽는 다른 ROCm 변수는 [ROCm 백엔드 변수](environment-variables.md#rocm-backend-variables)에 나열되어 있습니다.
 
 UMA 호스트에서는 GPU가 운영 체제 및 다른 GPU 프로세스와 메모리를 공유하므로, 큰 모델을 로드하기 전에 `rocm-smi --showpids`로 다른 tenant(GPU를 사용하는 다른 프로세스)가 있는지 확인하십시오.
 
-CLI가 아니라 HTTP 서버를 확인하려면, 서버를 시작한 뒤 chat smoke 스크립트를 그에 대해 실행하십시오. dense 체크포인트와 affine MoE 체크포인트 모두 `gfx1151`에서 통과하며, 결과는 [`docs/benchmark_results/rocm-correctness-gfx1151-2026-09-12.md`](benchmark_results/rocm-correctness-gfx1151-2026-09-12.md)에 있습니다. sliding-window 모델, 두 개의 SSM 하이브리드, 그리고 VLM을 추가하고 Apple M5 Max Metal 참조와 비교한 결과는 [`docs/benchmark_results/rocm-correctness-gfx1151-2026-09-30.md`](benchmark_results/rocm-correctness-gfx1151-2026-09-30.md)에 있습니다.
+CLI가 아니라 HTTP 서버를 확인하려면, 서버를 시작한 뒤 chat smoke 스크립트를 그에 대해 실행하십시오. dense 체크포인트와 affine MoE 체크포인트 모두 `gfx1151`에서 통과하며, 결과는 [`docs/benchmark_results/versions/v0.8.0.md#rocm-correctness-gfx1151-2026-09-12`](benchmark_results/versions/v0.8.0.md#rocm-correctness-gfx1151-2026-09-12)에 있습니다. sliding-window 모델, 두 개의 SSM 하이브리드, 그리고 VLM을 추가하고 Apple M5 Max Metal 참조와 비교한 결과는 [`docs/benchmark_results/versions/v0.8.0.md#rocm-correctness-gfx1151-2026-09-30`](benchmark_results/versions/v0.8.0.md#rocm-correctness-gfx1151-2026-09-30)에 있습니다.
 
 ```bash
 ./target/release/mlxcel-server -m models/mlx/Qwen3-30B-A3B-4bit --port 8080 &
@@ -750,9 +752,9 @@ CLI가 아니라 HTTP 서버를 확인하려면, 서버를 시작한 뒤 chat sm
 
 이 스크립트는 `/health`, `/v1/models`, 그리고 `/v1/chat/completions`를 스트리밍과 비스트리밍 모두에 대해 확인합니다. reasoning 채널도 출력으로 계산하므로, 예산 전체를 thinking 블록 안에서 소진하는 thinking 모델은 빈 응답처럼 보이는 대신 `channel=reasoning only`로 보고됩니다.
 
-gfx11의 bf16 및 f16 GEMM(hipBLASLt, 그리고 bf16 출력을 쓰는 rocBLAS)은 `v_wmma_f32_16x16x16_bf16`과 그 f16 쌍둥이 명령에서 실행되며, 이 명령은 부호가 반대인 항을 IEEE 방식으로 더하지 않습니다. 한 명령에서 `1 + -1`은 `-2^-24`를 줍니다. 따라서 정확한 값이 0인 출력이 정수 입력에서도 `-2^-22` 같은 값으로 나올 수 있습니다. 측정된 오차는 표준 f32 내적 한계 `K u sum_k |a_k b_k|`의 2.1% 이내였고, 이 명령을 피하는 hipBLASLt 솔루션이 없으므로 백엔드는 이를 그대로 둡니다. 그래서 ROCm에서 bf16 GEMM을 비교하는 테스트는 정확히 일치하는지가 아니라 이 한계 안에서 비교합니다. 측정, 커널, probe는 [`docs/benchmark_results/rocm-bf16-gemm-residue-gfx1151-2026-10-08.md`](benchmark_results/rocm-bf16-gemm-residue-gfx1151-2026-10-08.md)(lablup/mlxcel#2206)에 있습니다.
+gfx11의 bf16 및 f16 GEMM(hipBLASLt, 그리고 bf16 출력을 쓰는 rocBLAS)은 `v_wmma_f32_16x16x16_bf16`과 그 f16 쌍둥이 명령에서 실행되며, 이 명령은 부호가 반대인 항을 IEEE 방식으로 더하지 않습니다. 한 명령에서 `1 + -1`은 `-2^-24`를 줍니다. 따라서 정확한 값이 0인 출력이 정수 입력에서도 `-2^-22` 같은 값으로 나올 수 있습니다. 측정된 오차는 표준 f32 내적 한계 `K u sum_k |a_k b_k|`의 2.1% 이내였고, 이 명령을 피하는 hipBLASLt 솔루션이 없으므로 백엔드는 이를 그대로 둡니다. 그래서 ROCm에서 bf16 GEMM을 비교하는 테스트는 정확히 일치하는지가 아니라 이 한계 안에서 비교합니다. 측정, 커널, probe는 [`docs/benchmark_results/versions/v0.8.0.md#rocm-bf16-gemm-residue-gfx1151-2026-10-08`](benchmark_results/versions/v0.8.0.md#rocm-bf16-gemm-residue-gfx1151-2026-10-08)(lablup/mlxcel#2206)에 있습니다.
 
-`gfx1151`에서 같은 호스트의 mlx-lm과 비교한 decode 및 prefill 처리량은 [`docs/benchmark_results/rocm-baseline-gfx1151-2026-09-30.md`](benchmark_results/rocm-baseline-gfx1151-2026-09-30.md)에 있습니다. `scripts/bench_decode.sh`는 ROCm 호스트를 스스로 인식합니다([벤치마크](benchmarks.md#rocm-호스트-issue-1810) 참고). 이 decode 시간이 커널별로 어디에 쓰이는지, 그리고 #1814 커널 포트가 반영되어야 할 순서는 [`docs/benchmark_results/rocm-decode-profile-gfx1151-2026-09-30.md`](benchmark_results/rocm-decode-profile-gfx1151-2026-09-30.md)에 있습니다. 통합 decode 엔진(epic #2166)은 병합 후 `gfx1151`에서 검증되었습니다. ROCm gate, 모든 ROCm 전용 테스트, CLI 대 서버 parity(dense 및 paged), 그리고 epic 이전 루프와 비교한 decode 처리량은 [`docs/benchmark_results/rocm-unified-engine-gfx1151-2026-10-08.md`](benchmark_results/rocm-unified-engine-gfx1151-2026-10-08.md)에 있습니다.
+`gfx1151`에서 같은 호스트의 mlx-lm과 비교한 decode 및 prefill 처리량은 [`docs/benchmark_results/versions/v0.8.0.md#rocm-baseline-gfx1151-2026-09-30`](benchmark_results/versions/v0.8.0.md#rocm-baseline-gfx1151-2026-09-30)에 있습니다. `scripts/bench_decode.sh`는 ROCm 호스트를 스스로 인식합니다([벤치마크](benchmarks.md#rocm-hosts-issue-1810) 참고). 이 decode 시간이 커널별로 어디에 쓰이는지, 그리고 #1814 커널 포트가 반영되어야 할 순서는 [`docs/benchmark_results/versions/v0.8.0.md#rocm-decode-profile-gfx1151-2026-09-30`](benchmark_results/versions/v0.8.0.md#rocm-decode-profile-gfx1151-2026-09-30)에 있습니다. 통합 decode 엔진(epic #2166)은 병합 후 `gfx1151`에서 검증되었습니다. ROCm gate, 모든 ROCm 전용 테스트, CLI 대 서버 parity(dense 및 paged), 그리고 epic 이전 루프와 비교한 decode 처리량은 [`docs/benchmark_results/versions/v0.8.0.md#rocm-unified-engine-gfx1151-2026-10-08`](benchmark_results/versions/v0.8.0.md#rocm-unified-engine-gfx1151-2026-10-08)에 있습니다.
 
 #### 커널 디스크 캐시
 
@@ -766,7 +768,7 @@ hipRTC로 JIT 컴파일된 커널은 사용자별로 디스크에 캐시되며, 
 
 #### 메모리 사용량
 
-두 가지 기본값이 allocator의 사용량을 가중치 크기에 가깝게 유지합니다(lablup/mlxcel#2062). `gfx1151`에서 pp512/tg128로 측정한 결과, Meta-Llama-3.1-8B-Instruct-4bit의 MLX 최대 사용량은 20.60 GB에서 6.14 GB로, Qwen3-30B-A3B-4bit는 23.56 GB에서 18.58 GB로 줄었습니다. decode 처리량은 변하지 않았고 prefill은 2% 이내였습니다. 세부 내역과 비교한 모든 설정은 [`docs/benchmark_results/rocm-memory-gfx1151-2026-09-30.md`](benchmark_results/rocm-memory-gfx1151-2026-09-30.md)에 있습니다.
+두 가지 기본값이 allocator의 사용량을 가중치 크기에 가깝게 유지합니다(lablup/mlxcel#2062). `gfx1151`에서 pp512/tg128로 측정한 결과, Meta-Llama-3.1-8B-Instruct-4bit의 MLX 최대 사용량은 20.60 GB에서 6.14 GB로, Qwen3-30B-A3B-4bit는 23.56 GB에서 18.58 GB로 줄었습니다. decode 처리량은 변하지 않았고 prefill은 2% 이내였습니다. 세부 내역과 비교한 모든 설정은 [`docs/benchmark_results/versions/v0.8.0.md#rocm-memory-gfx1151-2026-09-30`](benchmark_results/versions/v0.8.0.md#rocm-memory-gfx1151-2026-09-30)에 있습니다.
 
 - **In-flight 한도, `MLX_ROCM_MAX_INFLIGHT_MB`(기본값 1024).** 이전 최대 사용량의 대부분은 캐시가 아니었습니다. prefill은 연산마다 임시 버퍼(transient)를 할당하고(dequantize 후 GEMM 경로의 f16 4-bit 모델에서는 각 가중치 행렬의 f16 복사본), 각 버퍼는 해당 command batch가 GPU에서 끝나야만 해제되는데, 호스트는 GPU보다 훨씬 앞서 인코딩할 수 있었습니다. 이제 백엔드는 batch가 이 예산의 4분의 1만큼 할당하면 batch를 commit하고, in-flight 양이 예산을 넘는 동안에는 가장 오래된 batch를 기다리므로, 임시 버퍼는 대략 이 MiB 수 이내로 유지됩니다(할당 개수를 세는 것이므로 근사값입니다). `0`은 제한 없는 이전 동작을 복원합니다.
 - **버퍼 캐시 한도, `MLXCEL_CACHE_LIMIT`(ROCm의 기본값 2 GiB).** 해제된 버퍼는 재사용을 위해 캐시되는데, ROCm allocator는 요청된 크기와 정확히 같은 버퍼만 재사용하며, 캐시 한도의 기본값은 메모리 한도(여기서는 76.8 GiB)였습니다. 이제 ROCm 빌드는 `MLXCEL_CACHE_LIMIT`이 달리 지정하지 않으면 캐시를 2 GiB로 제한하며, `0` 또는 `none`은 제한을 해제합니다. 이 변경 이전에는 allocator가 캐시 한도를 아예 무시했으므로 `MLXCEL_CACHE_LIMIT`은 ROCm에서 효과가 없었습니다. decode 처리량은 두 모델 모두에서 128 MiB와 제한 없음 사이에서 변하지 않았고, prefill은 8B 모델에서 128 MiB일 때 16% 떨어졌습니다. 캐시가 각 f16 가중치 복사본을 담지 못하면 매번 다시 할당되기 때문입니다. 512 MiB 이상에서는 측정 가능한 차이가 없었습니다. 2 GiB는 그 손실 없는 가장 작은 값의 네 배이므로, 더 큰 모델의 더 큰 가중치 복사본을 위한 공간이 남습니다.
@@ -780,12 +782,12 @@ allocator의 최대 사용량은 활성 버퍼만 세므로, allocator가 보유
 | Affine 4-bit / 8-bit 체크포인트 | 네이티브로 실행됩니다. |
 | mxfp8 및 mxfp4 체크포인트 | `gather_qmm`을 통한 MoE expert(예: gpt-oss-20b-MXFP4-Q4)를 포함해 네이티브로 실행됩니다. mxfp4 `quantize`, `quantized_matmul`, `gather_qmm`은 `tests/rocm_mxfp4_quant.rs`에서 CPU 참조와 대조하여 검증됩니다(lablup/mlxcel#1808). 벤더 FP8 block 체크포인트(`quant_method: fp8`, 128x128 블록)는 로드 시 mxfp8로 재양자화되어 네이티브로 실행됩니다. dense 0.8B Qwen3.5 FP8 체크포인트에서 end to end로 검증되었으며, mxfp8 `gather_qmm`과 `quantized_matmul`은 `models::switch_layers::mxfp_tests`에서 검증됩니다. 공식 Qwen3.5 FP8 MoE 릴리스는 ROCm에서 실행해 보지 않았습니다(lablup/mlxcel#1807). |
 | NVFP4 체크포인트 | 네이티브로 실행됩니다(lablup/mlxcel#2617). dense 레이어와 MoE expert 모두에서, expert별 global scale을 `gather_qmm` 내부에서 적용합니다. ModelOpt NVFP4 체크포인트는 Metal 및 CUDA에서와 마찬가지로 로드 시 MLX 네이티브 NVFP4로 트랜스코딩되며, MLX 네이티브 NVFP4 export(`"mode": "nvfp4"`, 예: `mlx-community/*-nvfp4`)는 그대로 로드됩니다. decode와 짧은 행 수에서는 전용 NVFP4 matrix-vector 커널을 실행하며(여덟 행이 가중치 로드 하나를 공유), prefill 규모의 dense GEMM은 가중치를 dequantize한 뒤 hipBLASLt 또는 rocBLAS로 실행합니다. 정렬된 MoE prefill은 각 expert의 run을 순회하는 expert-batched 커널을 사용합니다(lablup/mlxcel#2665). `quantized_matmul`과 `gather_qmm`은 `tests/rocm_nvfp4_quant.rs`에서 CPU 참조와 대조하여 검증됩니다. 실제 체크포인트 `mlx-community/Nemotron-Cascade-2-30B-A3B-nvfp4`(`nemotron_h`, 128 experts, top-6)로 `gfx1151`에서 검증되었습니다. 일관된 greedy 출력이 나왔고, expert-batched 커널을 사용할 때 512-token prefill은 269~328 tok/s, 2048-token prefill은 237~330 tok/s였습니다(세 번 측정의 중앙값). decode는 약 44~48 tok/s였으며, `MLX_ROCM_GATHER_QMV_EXPERT_BATCHED=0`일 때 greedy 출력이 바이트 단위로 동일했습니다. lablup/mlxcel#2698 이후 NVFP4 `dequantize`(임베딩 조회)는 CPU 스트림 대신 GPU에서 실행됩니다. CPU 스트림은 512-token prefill의 약 3분의 2 동안 fine-grained 메모리에서 가져온 행을 읽고 있었습니다. 정렬된 MoE prefill은 expert 평균 행 수가 16 이상이면 wave32 device에서 rocWMMA 타일 변형을 사용합니다. 그 결과 512-token prefill은 329~1008 tok/s, 2048-token prefill은 331~1106 tok/s, decode는 45~60 tok/s가 되었습니다(세 번 측정의 중앙값). greedy 출력은 GPU `dequantize`에서 동일하며, f32 누적 순서가 다른 WMMA 변형에서는 달라집니다(`MLX_ROCM_NVFP4_GATHER_WMMA=0`은 스칼라 커널을 복원합니다). #2665 이전에는 Nemotron-H가 NVFP4 export를 로드하지 않았습니다. 그 fused Mamba2 decode 단계(`fused_mamba2_forward`)는 affine 투영만 곱하므로, NVFP4 투영은 unfused 단계를 사용합니다. 그 단계와 `fused_moe_forward`를 위한 NVFP4 지원은 #2698에서 구현되었지만 더 빨라지지 않았습니다(512 prompt token 이후 decode 61.0 대 61.9 tok/s). 그래서 유지하지 않았습니다. #2617 이전에는 ModelOpt NVFP4가 로드 시 affine 4-bit로 변환되었고 MLX 네이티브 NVFP4는 거부되었습니다(lablup/mlxcel#1806). |
-| Affine MoE 모델(예: Qwen3-30B-A3B) | 네이티브로 실행됩니다. 단일 token decode는 Metal 및 CUDA와 마찬가지로 HIP 포트를 통해 fused 2-kernel MoE 경로(gate-up 다음 down)를 사용합니다(lablup/mlxcel#2065). `gfx1151`에서 Qwen3-30B-A3B-4bit decode는 61.3에서 62.5 tok/s로 올랐으며, 결정된 모든 위치에서 logit이 Metal의 fused 커널과 일치했습니다([결과](benchmark_results/rocm-fused-moe-gfx1151-2026-10-05.md)). `MLXCEL_FUSED_MOE=0`은 대신 `gather_qmm` 그래프 경로를 선택합니다. `MLXCEL_FUSED_MOE_MAX_DFF`(기본값 8192, CUDA와 같으며 Mixtral-8x7B는 14336)보다 넓은 expert는 `gather_qmm`에 남습니다. |
-| 모델별 fused 커널(Apertus xIELU, Cohere2 add3 + LayerNorm, Mamba1 selective scan, Nemotron-H의 opt-in `MLXCEL_FUSED_MOE_RELU2`) | HIP 포트로 실행됩니다(lablup/mlxcel#2069). xIELU와 add3 LayerNorm은 ROCm 자체의 fused되지 않은 그래프와 바이트 단위로 동일하며, Mamba1 scan은 Metal과 마찬가지로 상태를 f32로 유지합니다. relu2 경로는 Nemotron-H에서 성능에 중립적이어서 opt-in으로 남습니다. Apertus, Cohere2, Mamba1 계열은 테스트된 호스트에 체크포인트가 없으므로 커널 테스트로만 검증됩니다([결과](benchmark_results/rocm-metal-only-ports-gfx1151-2026-10-05.md)). |
-| Fused residual-add RMSNorm 및 RoPE + KV append (`MLXCEL_FUSED_ADD_RMSNORM`, `MLXCEL_FUSED_ROPE_APPEND`) | ROCm에서 기본으로 켜져 있고(lablup/mlxcel#2145), Metal과 CUDA에서는 꺼져 있습니다. 둘 다 HIP 포트(lablup/mlxcel#2063)로 실행되며, 출력이 대체하는 그래프와 바이트 단위로 동일하므로 logit을 바꾸지 않습니다. `gfx1151`에서 decode는 이들을 사용해도 느려진 적이 없습니다(Llama 3.1 8B에서 +0.3%, Qwen2.5 7B에서 +1.7%로 실행 간 편차 이내). 둘 중 어느 변수든 `0`으로 설정하면 그래프로 fallback됩니다. Llama 3.1은 `rope_scaling` 테이블 때문에 그래프 RoPE를 유지하며, Gemma와 IQuest Loop Coder도 norm 포트를 사용하지만 ROCm에서 측정된 체크포인트는 없습니다([결과](benchmark_results/rocm-fused-norm-rope-gfx1151-2026-10-05.md)). |
-| Paged attention (서버의 batched paged decode, MLA split-KV, sparse paged decode) | v1 decode, v2 partial, merge 커널이 HIP 포트로 실행되므로(lablup/mlxcel#2068), 이 경로들은 Metal 및 CUDA와 마찬가지로 gather 후 SDPA 대신 fused 커널을 사용하며, 커널 테스트는 `gfx1151`에서 gather 및 호스트 참조와 일치합니다. 같은 바이너리의 gather 경로와 비교한 `gfx1151`의 Meta-Llama-3.1-8B-Instruct-4bit 서버 decode는 batch 4, 약 16K token에서 요청당 decode 1.28x이고, 하나의 sequence에서는 약 16K와 약 32K에서 각각 1.40x와 1.77x이며, batch 4와 약 4K에서는 측정 가능한 변화가 없습니다([결과](benchmark_results/rocm-paged-attention-gfx1151-2026-10-05.md)). `MLXCEL_PAGED_ATTENTION_NATIVE=0`은 gather 경로를 강제합니다. |
-| 샘플링 decode (`temperature > 0`) | fused Gumbel-max sampler(필터 없음)와 dual-pivot rejection sampler(top-p 및 라우팅이 허용하는 다른 필터 조합)가 Metal 및 CUDA와 마찬가지로 HIP 커널로 실행됩니다(lablup/mlxcel#2064). `gfx1151`에서 Meta-Llama-3.1-8B-Instruct-4bit로 `--temperature 0.8 --top-p 0.95`의 decode는 33.98에서 37.56 tok/s로 올랐습니다(세 번 측정의 중앙값. 변경 전 실행은 36.26에서 32.81로 떨어졌고, 변경 후 실행은 37.06에서 37.82로 유지되었습니다). `--temperature 0.8`만 사용하면 변화는 노이즈 범위 안입니다([결과](benchmark_results/rocm-samplers-gfx1151-2026-10-05.md)). Llama 3 어휘(128256)와 Qwen의 151936 및 152064에서는 top-p만, top-p와 min-p, 그리고 top-k와 top-p(예: `--top-k 40 --top-p 0.95`)가 rejection 커널을 사용하고, top-k만, min-p만, top-k와 min-p는 기본 chain을 사용합니다. ROCm 빌드는 top-k와 top-p를 어휘 152064까지 라우팅합니다(Metal과 CUDA에서는 32768). 이를 사용하면 `--temperature 0.8 --top-k 40 --top-p 0.95` decode는 Meta-Llama-3.1-8B-Instruct-4bit에서 33.15에서 37.73 tok/s로, Qwen2.5-7B-Instruct-4bit에서 41.91에서 46.92 tok/s로 올랐습니다(세 쌍을 번갈아 측정한 중앙값, [joint-cap 결과](benchmark_results/rocm-rejection-joint-cap-gfx1151-2026-10-07.md), lablup/mlxcel#2157). `MLXCEL_SAMPLING_GUMBEL=0`과 `MLXCEL_SAMPLING_REJECTION=0`은 그래프를 강제합니다. |
-| 하이브리드 SSM decode (granite-4.0-h, falcon-h1, plamo-2, Nemotron-H) | 단일 token Mamba2 SSM 업데이트는 약 55개 연산의 SSD 그래프 대신 fused HIP 커널을 실행합니다(lablup/mlxcel#2067). `gfx1151`에서 decode는 granite-4.0-h-tiny-4bit에서 60.4에서 88.4 tok/s로, Nemotron-3-Nano-30B-A3B-4bit에서 51.4에서 74.4 tok/s로 올랐으며, 결정된 모든 위치에서 모델 logit이 그래프 및 Metal의 커널과 일치했습니다([결과](benchmark_results/rocm-ssm-update-kernel-gfx1151-2026-10-04.md)). granite와 Nemotron-H에서 측정되었습니다. falcon-h1과 plamo-2는 같은 gate를 사용하지만 ROCm에서 실행해 보지 않았습니다. `MLXCEL_SSM_KERNEL=0`은 그래프를 강제합니다. |
+| Affine MoE 모델(예: Qwen3-30B-A3B) | 네이티브로 실행됩니다. 단일 token decode는 Metal 및 CUDA와 마찬가지로 HIP 포트를 통해 fused 2-kernel MoE 경로(gate-up 다음 down)를 사용합니다(lablup/mlxcel#2065). `gfx1151`에서 Qwen3-30B-A3B-4bit decode는 61.3에서 62.5 tok/s로 올랐으며, 결정된 모든 위치에서 logit이 Metal의 fused 커널과 일치했습니다([결과](benchmark_results/versions/v0.8.0.md#rocm-fused-moe-gfx1151-2026-10-05)). `MLXCEL_FUSED_MOE=0`은 대신 `gather_qmm` 그래프 경로를 선택합니다. `MLXCEL_FUSED_MOE_MAX_DFF`(기본값 8192, CUDA와 같으며 Mixtral-8x7B는 14336)보다 넓은 expert는 `gather_qmm`에 남습니다. |
+| 모델별 fused 커널(Apertus xIELU, Cohere2 add3 + LayerNorm, Mamba1 selective scan, Nemotron-H의 opt-in `MLXCEL_FUSED_MOE_RELU2`) | HIP 포트로 실행됩니다(lablup/mlxcel#2069). xIELU와 add3 LayerNorm은 ROCm 자체의 fused되지 않은 그래프와 바이트 단위로 동일하며, Mamba1 scan은 Metal과 마찬가지로 상태를 f32로 유지합니다. relu2 경로는 Nemotron-H에서 성능에 중립적이어서 opt-in으로 남습니다. Apertus, Cohere2, Mamba1 계열은 테스트된 호스트에 체크포인트가 없으므로 커널 테스트로만 검증됩니다([결과](benchmark_results/versions/v0.8.0.md#rocm-metal-only-ports-gfx1151-2026-10-05)). |
+| Fused residual-add RMSNorm 및 RoPE + KV append (`MLXCEL_FUSED_ADD_RMSNORM`, `MLXCEL_FUSED_ROPE_APPEND`) | ROCm에서 기본으로 켜져 있고(lablup/mlxcel#2145), Metal과 CUDA에서는 꺼져 있습니다. 둘 다 HIP 포트(lablup/mlxcel#2063)로 실행되며, 출력이 대체하는 그래프와 바이트 단위로 동일하므로 logit을 바꾸지 않습니다. `gfx1151`에서 decode는 이들을 사용해도 느려진 적이 없습니다(Llama 3.1 8B에서 +0.3%, Qwen2.5 7B에서 +1.7%로 실행 간 편차 이내). 둘 중 어느 변수든 `0`으로 설정하면 그래프로 fallback됩니다. Llama 3.1은 `rope_scaling` 테이블 때문에 그래프 RoPE를 유지하며, Gemma와 IQuest Loop Coder도 norm 포트를 사용하지만 ROCm에서 측정된 체크포인트는 없습니다([결과](benchmark_results/versions/v0.8.0.md#rocm-fused-norm-rope-gfx1151-2026-10-05)). |
+| Paged attention (서버의 batched paged decode, MLA split-KV, sparse paged decode) | v1 decode, v2 partial, merge 커널이 HIP 포트로 실행되므로(lablup/mlxcel#2068), 이 경로들은 Metal 및 CUDA와 마찬가지로 gather 후 SDPA 대신 fused 커널을 사용하며, 커널 테스트는 `gfx1151`에서 gather 및 호스트 참조와 일치합니다. 같은 바이너리의 gather 경로와 비교한 `gfx1151`의 Meta-Llama-3.1-8B-Instruct-4bit 서버 decode는 batch 4, 약 16K token에서 요청당 decode 1.28x이고, 하나의 sequence에서는 약 16K와 약 32K에서 각각 1.40x와 1.77x이며, batch 4와 약 4K에서는 측정 가능한 변화가 없습니다([결과](benchmark_results/versions/v0.8.0.md#rocm-paged-attention-gfx1151-2026-10-05)). `MLXCEL_PAGED_ATTENTION_NATIVE=0`은 gather 경로를 강제합니다. |
+| 샘플링 decode (`temperature > 0`) | fused Gumbel-max sampler(필터 없음)와 dual-pivot rejection sampler(top-p 및 라우팅이 허용하는 다른 필터 조합)가 Metal 및 CUDA와 마찬가지로 HIP 커널로 실행됩니다(lablup/mlxcel#2064). `gfx1151`에서 Meta-Llama-3.1-8B-Instruct-4bit로 `--temperature 0.8 --top-p 0.95`의 decode는 33.98에서 37.56 tok/s로 올랐습니다(세 번 측정의 중앙값. 변경 전 실행은 36.26에서 32.81로 떨어졌고, 변경 후 실행은 37.06에서 37.82로 유지되었습니다). `--temperature 0.8`만 사용하면 변화는 노이즈 범위 안입니다([결과](benchmark_results/versions/v0.8.0.md#rocm-samplers-gfx1151-2026-10-05)). Llama 3 어휘(128256)와 Qwen의 151936 및 152064에서는 top-p만, top-p와 min-p, 그리고 top-k와 top-p(예: `--top-k 40 --top-p 0.95`)가 rejection 커널을 사용하고, top-k만, min-p만, top-k와 min-p는 기본 chain을 사용합니다. ROCm 빌드는 top-k와 top-p를 어휘 152064까지 라우팅합니다(Metal과 CUDA에서는 32768). 이를 사용하면 `--temperature 0.8 --top-k 40 --top-p 0.95` decode는 Meta-Llama-3.1-8B-Instruct-4bit에서 33.15에서 37.73 tok/s로, Qwen2.5-7B-Instruct-4bit에서 41.91에서 46.92 tok/s로 올랐습니다(세 쌍을 번갈아 측정한 중앙값, [joint-cap 결과](benchmark_results/versions/v0.8.0.md#rocm-rejection-joint-cap-gfx1151-2026-10-07), lablup/mlxcel#2157). `MLXCEL_SAMPLING_GUMBEL=0`과 `MLXCEL_SAMPLING_REJECTION=0`은 그래프를 강제합니다. |
+| 하이브리드 SSM decode (granite-4.0-h, falcon-h1, plamo-2, Nemotron-H) | 단일 token Mamba2 SSM 업데이트는 약 55개 연산의 SSD 그래프 대신 fused HIP 커널을 실행합니다(lablup/mlxcel#2067). `gfx1151`에서 decode는 granite-4.0-h-tiny-4bit에서 60.4에서 88.4 tok/s로, Nemotron-3-Nano-30B-A3B-4bit에서 51.4에서 74.4 tok/s로 올랐으며, 결정된 모든 위치에서 모델 logit이 그래프 및 Metal의 커널과 일치했습니다([결과](benchmark_results/versions/v0.8.0.md#rocm-ssm-update-kernel-gfx1151-2026-10-04)). granite와 Nemotron-H에서 측정되었습니다. falcon-h1과 plamo-2는 같은 gate를 사용하지만 ROCm에서 실행해 보지 않았습니다. `MLXCEL_SSM_KERNEL=0`은 그래프를 강제합니다. |
 | GPU fault | 오류로 보고됩니다(lablup/mlxcel#1804). HIP가 거부하는 launch(과도하게 큰 block, device용 code object 없음)는 그것을 발행한 evaluation을 실패시키며, device는 계속 사용할 수 있습니다. 비동기 fault(out-of-bounds 접근)는 멈추거나 NaN을 반환하는 대신, 이를 기다리는 evaluation을 약 1초 안에 실패시킵니다. 서버는 그 요청을 실패시키고, 이후 요청에도 같은 오류로 응답합니다. queue fault 이후에는 HIP 런타임이 프로세스가 끝날 때까지 모든 호출을 거부하므로 프로세스를 다시 시작해야 하며, 종료에 SIGKILL이 필요할 수 있습니다(HIP의 teardown이 fault가 난 queue가 결코 실행하지 않는 callback을 기다리기 때문). 끝나지 않는 커널은 감지되지 않으며, `MLX_ROCM_GPU_WATCHDOG_SECS`(기본값 꺼짐)는 그보다 오래 걸리는 단일 호스트 대기를 실패시킵니다. |
 | UMA 호스트에서의 메모리 추정 | 올바릅니다. 테스트된 구성에서 측정한 결과, ROCm allocator는 0이 아닌 상한(96 GiB carve-out 중 76.80 GiB)을 보고합니다. 추정기는 호스트 RAM에 닿기 전에 이 값을 읽으므로, carve-out에 들어가는 것은 그 이유로 거부되지 않습니다(lablup/mlxcel#1805). |
 | 진단 | AMD 벤더, device 이름, `gfx` 대상, device 메모리를 보고하며, 더 이상 이에 대해 CUDA compute capability를 출력하지 않습니다(lablup/mlxcel#1805). 컴파일된 `gfx` 목록이 device를 포함하지 않는 바이너리는 첫 번째 커널 launch에서 실패하는 대신 시작을 거부합니다. |
@@ -793,10 +795,10 @@ allocator의 최대 사용량은 활성 버퍼만 세므로, allocator가 보유
 | `mlxcel-server` chat completions | dense 및 affine MoE 체크포인트에서 스트리밍과 비스트리밍 모두 동작하며, `scripts/server_chat_smoke.sh`로 검증되었습니다. |
 | 오디오 (speech to text, text to speech) | 동작합니다. FFT primitive는 hipFFT에서 실행되며, plan은 `MLX_ROCM_FFT_CACHE_SIZE`까지 캐시됩니다(CUDA와 마찬가지로 기본값 128, lablup/mlxcel#1825, #1876). 양의 정수가 아닌 값은 경고와 함께 무시됩니다(#2051). |
 | Wave64 devices (CDNA: MI200 `gfx90a`, MI300 `gfx942`) | 검증되지 않았습니다. 지금까지 유일한 wave64 실행은 MI300X 하나의 bring-up뿐이었으며(`overlays/rocm/LOCAL_FIXES.md` 52번 항목), lablup/mlxcel#2699에서 검증을 추적합니다. lane에 걸쳐 reduce하는 fused HIP 커널(BitLinear, 두 개의 fused MoE 커널과 squared-ReLU 커널, Mamba2 SSM 업데이트, Mamba1 scan, add3 LayerNorm, fused residual-add RMSNorm, paged-attention v1 decode와 v2 partial)은 32-lane wavefront에서만 실행되었고, 이들의 컴파일 시점 wavefront guard는 AMD clang 23에서 아무 효과가 없습니다. 따라서 mlxcel은 device가 32-lane wavefront를 보고할 때만 이들을 선택합니다(`MLX_ROCM_FORCE_WARP_SIZE`로도 바뀌지 않는 하드웨어 값). 64-lane device에서는 그 경로들이 MLX 그래프 fallback을 사용하며, stderr가 프로세스당 한 번 이를 알립니다(lablup/mlxcel#2147). lane 간 연산이 없는 커널(xIELU, RoPE + KV append, paged-attention merge, 두 sampler)은 어떤 폭에서든 선택됩니다. BitLinear에는 그래프 fallback이 없으므로 BitNet 체크포인트는 wave64 device에서 로드 시 거부됩니다. rocWMMA 양자화 GEMM(`qmm_wmma_dense_kernel`과 grouped-prefill gather)도 32-lane warp를 가정하므로, 마찬가지로 wave32 device로만 제한됩니다. 그 전에는 `MLX_ROCM_WMMA_QMM=0`이 설정되지 않은 한 gfx942에서 모든 bf16 양자화 prefill이 쓰레기 출력(`!!!!`)을 냈습니다(`overlays/rocm/LOCAL_FIXES.md` 52번 항목). |
-| Windows | 실험적이며, [AMD ROCm 기반 Windows (실험적)](#amd-rocm-기반-windows-실험적)을 참고하십시오. |
+| Windows | 0.8부터 지원됨; [AMD ROCm 기반 Windows](#amd-rocm-기반-windows)를 참고하십시오. |
 | 다중 GPU, 분산 추론 | 지원되지 않습니다. |
 
-테스트된 구성에서 측정한 decode 처리량이며, 참고용으로만 제시합니다: Qwen3-0.6B-4bit 약 250 tok/s(greedy, 짧은 프롬프트), fused MoE 커널을 사용한 Qwen3-30B-A3B-4bit 약 62 tok/s([결과](benchmark_results/rocm-fused-moe-gfx1151-2026-10-05.md)), 512 token 프롬프트 이후 mxfp4 warp-shared gather 커널을 통한 gpt-oss-20b-MXFP4-Q4 약 64 tok/s(`overlays/rocm/LOCAL_FIXES.md` 41번 항목. 그 이전에는 8.3 tok/s였고, 위에 링크된 baseline 페이지에서는 8.07 tok/s였습니다. [결과](benchmark_results/rocm-moe-decode-mxfp4-gfx1151-2026-10-08.md)).
+테스트된 구성에서 측정한 decode 처리량이며, 참고용으로만 제시합니다: Qwen3-0.6B-4bit 약 250 tok/s(greedy, 짧은 프롬프트), fused MoE 커널을 사용한 Qwen3-30B-A3B-4bit 약 62 tok/s([결과](benchmark_results/versions/v0.8.0.md#rocm-fused-moe-gfx1151-2026-10-05)), 512 token 프롬프트 이후 mxfp4 warp-shared gather 커널을 통한 gpt-oss-20b-MXFP4-Q4 약 64 tok/s(`overlays/rocm/LOCAL_FIXES.md` 41번 항목. 그 이전에는 8.3 tok/s였고, 위에 링크된 baseline 페이지에서는 8.07 tok/s였습니다. [결과](benchmark_results/versions/v0.8.0.md#rocm-moe-decode-mxfp4-gfx1151-2026-10-08)).
 
 ## 런타임 환경 변수
 
@@ -811,8 +813,9 @@ allocator의 최대 사용량은 활성 버퍼만 세므로, allocator가 보유
 | `MLXCEL_QUIET_JIT` | 콜드 첫 실행 시 한 번 표시되는 "compiling CUDA kernels" 안내를 숨김 | unset (안내 표시) |
 | `MLXCEL_DEVICE` | 런타임 device 힌트 (`gpu`, `metal`, 또는 `cpu`) | `gpu` |
 | `MLXCEL_WIRED_LIMIT` | Apple Silicon wired 메모리 상한, 예: `64GB`. `0`/`none`은 비활성화 | `max` |
+| `MLXCEL_WIRE_WEIGHTS` | macOS: `1`은 `mlock`으로 평가된 가중치를 배선하며, [예약량](macos-memory.md)을 남기도록 제한됨 | unset (off) |
 | `MLXCEL_REQUEST_MEMORY_BUDGET` | [Nemotron-H 요청 admission](request-memory-admission.md)을 위한 하향 전용 양수 바이트/크기 상한, 예: `24GB`. 잘못된 명시 값은 시작을 중단시킴 | 런타임 device/wired/allocator 중 최솟값 |
-| `MLX_ROCM_*` 및 기타 ROCm 백엔드 변수 | ROCm 백엔드 튜닝, A/B 및 진단, 예: `MLX_ROCM_GATHER_QMV_EXPERT_BATCHED`, `MLX_ROCM_MAX_INFLIGHT_MB`, `MLX_NO_HIPBLASLT`. [ROCm 백엔드 변수](environment-variables.md#rocm-백엔드-변수) 참고 | 해당 섹션 참고 |
+| `MLX_ROCM_*` 및 기타 ROCm 백엔드 변수 | ROCm 백엔드 튜닝, A/B 및 진단, 예: `MLX_ROCM_GATHER_QMV_EXPERT_BATCHED`, `MLX_ROCM_MAX_INFLIGHT_MB`, `MLX_NO_HIPBLASLT`. [ROCm 백엔드 변수](environment-variables.md#rocm-backend-variables) 참고 | 해당 섹션 참고 |
 | `LLAMA_ARG_*` | clap이 받아들이는 환경 변수 기반 서버 옵션 | unset |
 
 전체 `MLXCEL_*` 참조는 [환경 변수](environment-variables.md)를 참고하십시오.
@@ -892,7 +895,7 @@ make test-fast
 # Linux / CUDA
 make test-fast-cuda
 
-# Linux / ROCm (experimental): no make target yet
+# Linux / ROCm (0.8부터 지원됨): 아직 make 대상 없음
 cargo test --profile test-fast --features rocm -- --test-threads=1
 
 # Narrow to a subset while iterating

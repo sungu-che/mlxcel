@@ -12,7 +12,7 @@ NemotronLabs VoiceChat(`model_type: "nemotron_voicechat"`, `architectures: ["Nem
 | FastConformer 인코더 | `stt_model.perception.encoder` | 인과적(causal) depthwise-striding 서브샘플링(8배, 10 ms mel 프레임이 80 ms 프레임이 됨), 왼쪽 컨텍스트 70프레임으로 제한된 상대 위치 어텐션을 갖는 24개 conformer 블록, 인과적 depthwise 컨볼루션, LayerNorm conv norm. |
 | Perception 프로젝션 | `stt_model.perception.proj` | 1024에서 4480으로, LLM의 오디오 채널입니다. |
 | RNNT 브랜치 | `stt_model.rnnt_decoder`, `stt_model.rnnt_joint` | 2층 LSTM prediction net과 joint 네트워크이며, SentencePiece `rnnt_vocabulary`에 대한 greedy 디코딩으로 사용자 전사를 생성합니다. |
-| Duplex LLM | `stt_model.embed_tokens`, `stt_model.llm`, `stt_model.lm_head`, `stt_model.function_head` | 위치마다 하나의 융합 임베딩 `E(prev_text) + audio + 2 * E(prev_function)`에 대해 실행되는 Nemotron-H(56개 레이어, Mamba2 / attention / MLP 패턴)이며, 텍스트 헤드와 function 헤드를 가지며 둘 다 greedy입니다. |
+| 듀플렉스 LLM | `stt_model.embed_tokens`, `stt_model.llm`, `stt_model.lm_head`, `stt_model.function_head` | 위치마다 하나의 융합 임베딩 `E(prev_text) + audio + 2 * E(prev_function)`에 대해 실행되는 Nemotron-H(56개 레이어, Mamba2 / attention / MLP 패턴)이며, 텍스트 헤드와 function 헤드를 가지며 둘 다 greedy입니다. |
 | EAR-TTS | `tts_model.tts_model`, `tts_model.audio_prompt_latents.Aria` | 문자 인식(character-aware) 서브워드 인코더와 게이트 융합을 통해 현재 텍스트 토큰을 조건으로 하는 28층 Gemma-3 스타일 백본(sliding 및 global 어텐션, 임베딩 스케일링 없음)이며, classifier-free guidance(batch 2)를 사용합니다. 가우시안 혼합(mixture-of-Gaussians) 헤드가 8회의 masked 반복으로 31개의 residual codebook을 정제합니다. |
 | 코덱 | `tts_model.audio_codec` | 확률적 residual VQ(1024개씩 31개 codebook)를 사용하는 ConvNeXt 인코더/디코더이며, n_fft 16 / hop 4의 iSTFT 출력을 가집니다. 코드 프레임 하나는 1764 샘플(22.05 kHz에서 80 ms)입니다. |
 

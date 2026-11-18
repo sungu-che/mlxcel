@@ -6,16 +6,16 @@
 
 모든 벤치마크 실행에는 다음을 포함하십시오.
 
-- 하드웨어 모델과 메모리 크기
-- 운영 체제 버전
-- `mlxcel` 버전 또는 커밋
-- 고정(pin)된 MLX 커밋/버전
-- 비교 대상 런타임 버전 (`mlx-lm`, `mlx-vlm` 또는 다른 baseline)
-- 모델 체크포인트 이름과 quantization 형식
-- 프롬프트 길이, 요청한 decode 길이, batch 크기, warmup 정책
-- 캐시 모드와 서버/생성 플래그
-- 가능한 경우 모델별 원본 prefill 및 decode 처리량
-- op 수준 마이크로벤치마크의 경우, 아래 섹션에 따른 메모리 모드(warm 또는 cold last-level cache)와 rotation 횟수
+- 하드웨어 모델과 메모리 크기;
+- 운영 체제 버전;
+- `mlxcel` 버전 또는 커밋;
+- 고정(pin)된 MLX 커밋/버전;
+- 비교 대상 런타임 버전 (`mlx-lm`, `mlx-vlm` 또는 다른 baseline);
+- 모델 체크포인트 이름과 quantization 형식;
+- 프롬프트 길이, 요청한 decode 길이, batch 크기, warmup 정책;
+- 캐시 모드와 서버/생성 플래그;
+- 모델별 prefill 및 decode 행, CSV 결과 파일로 커밋;
+- op 수준 마이크로벤치마크의 경우, 아래 섹션에 따른 메모리 모드(warm 또는 cold last-level cache)와 rotation 횟수.
 
 평균값은 원본 행이 확보된 뒤에만 유용합니다. 비교 가능한 모델 집합과 제외 항목이 명확하지 않다면 "X보다 빠르다"와 같은 표현은 피하십시오.
 
@@ -27,35 +27,68 @@
 
 보고서를 확인하거나 반복 재현하는 데 독자에게 필요한 것을 보관하십시오. 요약, 기계 판독 가능한 결과, 드라이버, 계측(instrumentation) 패치, 출처 정보가 여기에 해당합니다. 실행별 서버 로그, 빌드·포맷·린트 로그, 빈 캡처는 커밋하지 마십시오. `make verify-benchmark-raw-logs`가 이들을 실패로 처리합니다. 보고서가 이름으로 인용하거나 매니페스트에 색인하는 로그는 `scripts/ci/benchmark_raw_logs_allowlist.txt`에 넣으십시오. 실패한 시도의 증거는 32 KB 이하의 `.7z`로 저장할 수 있으며, 결론은 그 옆에 평문으로 적으십시오.
 
+## decode tok/s 계산 방식
+
+`decode_tok_s`는 시간을 잰 decode 구간 안에서 생성된 토큰 수를 그 구간의 길이로 나눈 값입니다(issue #2929). 대부분의 경로는 첫 번째 토큰을 prefill의 일부로 샘플링하고 평가하므로, 그 토큰은 `prefill_ms`에 들어가고, 뒤따르는 decode 구간에는 나머지 N-1번의 forward step이 들어갑니다. 이 경로들은 N-1개의 토큰을 `decode_ms`로 나눕니다. 구간 안에서 모든 토큰을 생성하는 경로는 N을 나눕니다. 공통 헬퍼는 `mlxcel_core::generate::decode_tok_per_sec`이며, 모든 generation 경로의 통계가 이를 거칩니다.
+
+| 경로 | 첫 번째 토큰 | 분자 |
+|------|-------------|-----------|
+| 엔진 직접 completion (`mlxcel-bench-decode`, `bench_decode.sh`, 일반 `generate`), speculative 엔진, MTP (단일 및 batched, 행별로 집계), DFlash, `mlxcel-bench-engine` 서버 probe | prefill에서 생성, 구간 밖 | N-1 |
+| Pipeline-parallel `generate`, diffusion generator (`diffusion_gemma`, `llada2_moe`) | 구간 안에서 생성 | N |
+
+`decode_ms`와 `generated_tokens`는 이 규칙에 영향을 받지 않습니다. 영향을 받는 것은 속도 값뿐입니다. N = 128일 때 두 관례의 차이는 128/127, 즉 0.79%입니다.
+
+서버의 `/metrics` 히스토그램 `mlxcel_request_decode_tok_s`도 같은 규칙을 사용합니다(issue #2938). 완료된 각 요청은 decode 구간의 길이(`generation_only_ms`, 첫 토큰부터 완료까지 측정)와 그 안에서 생성된 토큰 수(`decode_window_tokens`)를 함께 가지며, 히스토그램은 `decode_tok_per_sec(decode_window_tokens, generation_only_ms)`를 관측합니다. batch 스케줄러의 첫 토큰은 prefill에서 나오므로, N개 토큰의 요청은 N-1개의 구간 토큰에 기여하며, 이는 네이티브 `/completion` 응답의 `timings.predicted_per_second`가 보고하는 값과 같습니다. 구간에 토큰이 없는 요청(토큰 한 개짜리 completion)은 속도를 기록하지 않습니다. Florence-2와 Nemotron-Parse는 encoder pass와 decode loop를 모델이 소유한 하나의 호출로 실행하므로, 구간 토큰 수 없이 전체 벽시계 시간을 보고하며, 히스토그램은 벽시계 시간 기반 속도를 기록하지 않고 이를 건너뜁니다. llama-server의 `llamacpp:tokens_predicted_total`과 `llamacpp:tokens_predicted_seconds_total` 카운터는 `generation_only_ms`에 걸쳐 모든 completion 토큰을 누적하는 upstream 방식을 유지합니다.
+
+서버의 `predicted_per_second`도 llama-server와 같은 규칙을 따릅니다(`src/server/types/native_completion.rs` 참조). mlx-lm과 mlx-vlm은 그렇지 않습니다. 이들의 `generation_tps`는 첫 토큰 이후 시계를 다시 시작하지만 N개 토큰을 모두 셉니다([mlx-lm `stream_generate`](https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/generate.py), [mlx-vlm `stream_generate`](https://github.com/Blaizzy/mlx-vlm/blob/main/mlx_vlm/generate/dispatch.py)). 따라서 같은 실행에 대해 이들의 값은 N/(N-1)배만큼 높게 읽힙니다. `scripts/bench_mlxlm.py`는 CSV를 쓰기 전에 그 값을 `(N - 1) / window`로 변환하므로, "vs mlx-lm" 열이 같은 기준끼리 비교됩니다. `mlx_lm.generate --verbose` 또는 `mlx_lm.benchmark`에서 바로 가져온 수치도 mlxcel 행 옆에 놓기 전에 같은 방식으로 변환하십시오.
+
+2026-11-10 이전에 기록된 행은 speculative 엔진을 제외한 모든 경로에서 N을 사용했으며, speculative 엔진은 이미 N-1을 사용했습니다. 이들의 `decode_ms`는 영향을 받지 않으므로, 과거 속도는 `(generated_tokens - 1) / decode_ms`로 다시 표기할 수 있습니다. `benchmarks/` 및 `docs/benchmark_results/` 아래의 CSV는 기록된 그대로 유지됩니다.
+
+## 결과 보관과 릴리스 통합
+
+[벤치마크 결과 색인](benchmark_results/README.md)에서 시작하십시오. 최종 공개/하드웨어 보고서와 그 최소 기계 판독 측정 행을 보관하십시오. 완료된 조사는 시도들을 영구 디렉터리에 쌓아 두지 말고 **릴리스당 하나의 결정 아카이브**에 넣으십시오. 측정된 거부, 기본값 비활성(default-off) 결정, 결론이 나지 않은 비교도 모두 결과입니다.
+
+개발 중에는 측정된 commit, 환경, 체크포인트, 명령, arm 귀속 증거, 반복 및 분산, 결론, 측정되지 않은 셀을 담은 집중된 `<feature>-<hw>-<date>.md` 기록을 작성하십시오. 완료되지 않은 검증에 증거가 필요한 동안에는 보고서를 독립적으로 유지하십시오. 릴리스 시점에는 완료된 조사를 `benchmark_results/versions/v<version>.md`로 압축하고, 최종 CSV와 필요한 정확성/출처 증거를 보존하며, 대체된 보고서와 실행 캡처는 삭제하십시오. 보고서 전체를 이어 붙이거나 불투명한 아카이브 묶음을 만들지 마십시오.
+
+안정적인 섹션 anchor를 사용하고, 보고서를 삭제하기 전에 코드, ADR, 문서의 참조를 갱신하십시오. 원본 상세 보고서는 변경 불가능한 commit permalink로 연결하여, 과거 issue/PR 독자가 재현 명령과 계측 방법을 복구할 수 있게 하십시오. Git 이력을 다시 쓰지 마십시오. 레거시 아카이브 배치는 보고서를 포함하는 첫 번째 안정 태그를 기준으로 하며, 측정 binary 버전을 추측하지 마십시오. 실제 측정 출처는 따로 보존하고, 호환되지 않는 하드웨어, 워크로드, 지표 정의를 한데 섞지 마십시오.
+
+`benchmark_results/` 아래에는 원본 서버/빌드/린트 로그, stdout/stderr 캡처, 빈 파일, JSONL/NDJSON 레코드 스트림을 두지 마십시오. 최종 측정 행은 CSV로 변환하고, 일시적인 출력은 무시되는 `bench-results/` 또는 체크아웃 밖에 두십시오. 재사용 가능한 드라이버와 입력은 캠페인의 `data/` 디렉터리가 아니라 `scripts/`와 `tests/fixtures/`에 두십시오. `make verify-benchmark-raw-logs`는 전체 결과 트리를 검사하며, 레거시 예외 목록은 비어 있고 새 캡처를 위해 다시 채우면 안 됩니다.
+
 ## 현재 결과 스냅샷
 
-종합 수치가 문서마다 어긋나지 않도록 공개 결과 요약은 한 곳에 모아 둡니다. 현재 Apple Silicon 벤치마크 보고서는 다음과 같습니다.
+종합 수치가 문서마다 어긋나지 않도록 공개 결과 요약은 한 곳에 모아 둡니다. 현재 벤치마크 보고서는 다음과 같습니다.
 
 - [Benchmark Report - 2026-05-19](benchmark_results/benchmark-report.md)
+- [Model compatibility and performance on GB10 at 0.8.1](benchmark_results/model_tests_gb10.md): pp512/tg128에서의 전체 text 및 VLM sweep(2026-11-03 및 2026-11-04), 아래 보고서의 modality ladder 포함.
 - [Native batched decode on M3 Ultra — 2026-10-27](benchmark_results/native-batched-decode-m3ultra-2026-10-27.md): 체크포인트 21개, 구성 23개, 원본 trace와 serving 증거 포함.
-- [CUDA quantized matmul batch fold on RTX Spark N1X, 2026-10-31](benchmark_results/cuda-qmm-fold-batch-n1x-2026-10-31.md)
-- [MoE expert overlap in batched decode on RTX Spark N1X, 2026-10-31](benchmark_results/moe-distinct-experts-n1x-2026-10-31.md)
-- [Few-row quantized matmul for batched decode on M1 Ultra, 2026-10-30](benchmark_results/few-row-qmm-batched-decode-m1ultra-2026-10-30.md): Llama 3.1 8B 4-bit 8-row decode step이 56.5 ms에서 39 ms로, B=8/B=1 serving 비율이 1.35x에서 1.95x로 변경됨.
+- [CUDA quantized matmul batch fold on RTX Spark N1X, 2026-10-31](benchmark_results/versions/v0.8.0.md#cuda-qmm-fold-batch-n1x-2026-10-31)
+- [MoE expert overlap in batched decode on RTX Spark N1X, 2026-10-31](benchmark_results/versions/v0.8.0.md#moe-distinct-experts-n1x-2026-10-31)
+- [Few-row quantized matmul for batched decode on M1 Ultra, 2026-10-30](benchmark_results/versions/v0.8.0.md#few-row-qmm-batched-decode-m1ultra-2026-10-30): Llama 3.1 8B 4-bit 8-row decode step이 56.5 ms에서 39 ms로, B=8/B=1 serving 비율이 1.35x에서 1.95x로 바뀜.
 
-이 통합 보고서는 하드웨어 간 비교를 위한 자료이지만, 요약 대상인 호스트별 표보다 오래되었습니다. 가장 최신의 전체 sweep은 mlxcel 0.6.0 (2026-09-03/04)에서 측정한 M5 Max 결과로, 텍스트, VLM, speculative 및 batched serving을 다루며 [model_tests_m5max.md](benchmark_results/model_tests_m5max.md)에 있습니다. M1 Ultra와 GB10은 아직 0.4.0-rc.1이므로 현재 하드웨어 간 비율에는 서로 다른 버전이 섞여 있습니다. 다른 호스트를 다시 측정하기 전까지는 호스트별 수치는 하드웨어별 표에서 가져오고, 통합 보고서는 비교의 형태를 파악하는 용도로만 사용하십시오.
+이 통합 보고서는 하드웨어 간 비교를 위한 기준 면(surface)이지만, 요약 대상인 호스트별 표보다 오래되었습니다. 가장 최신의 전체 sweep은 mlxcel 0.6.0에서 측정한 M5 Max(text, VLM, speculative 및 batched serving)와 0.8.1에서 측정한 GB10(text, VLM, embeddings 및 rerank, 이미지 생성 및 편집)입니다. M1 Ultra는 아직 0.4.0-rc.1이므로 하드웨어 간 비율은 현재 서로 다른 버전이 섞여 있습니다. 남은 호스트를 다시 측정하기 전까지는 호스트별 수치를 하드웨어별 표에서만 가져오고, 통합 보고서는 비교의 형태를 파악하는 용도로만 사용하십시오.
 
-릴리스 노트, README 업데이트, 용량 계획에는 이 표들을 사용하십시오. 이 페이지는 방법론, 필수 메타데이터, 주의 사항에 집중합니다.
+릴리스 노트, README 업데이트, 용량 계획에는 이 표들을 사용하십시오. 이 페이지는 방법론, 필수 메타데이터, 주의 사항에 집중해야 합니다.
 
 디코드 격차 조사(mlxcel이 기준 런타임에 뒤처지는 지점에 대한 근본 원인 분석)는 스냅샷과 함께 보관됩니다.
 
-- [MoE decode gap investigation](benchmark_results/moe-decode-gap-investigation.md)
-- [Fused decode-MoE kernel: design and roadmap](benchmark_results/fused-moe-decode-kernel-design.md)
-- [Gemma3n decode profile: is a compiled fusion justified?](benchmark_results/gemma3n-decode-profile.md)
-- [Gemma3n decode profile on M5 Max](benchmark_results/gemma3n-decode-profile-m5max.md)
-- [Gemma 4 31B QAT/non-QAT MTP exactness on M5 Max](benchmark_results/gemma4-31b-mtp-exactness-2026-09-26.md)
-- [Unified engine baseline: CLI vs server B=1 decode, prefill chunk and KV storage (GB10)](benchmark_results/unified-engine-baseline-gb10-2026-10-07.md)
-- [Unified engine final measurement: pre-epic CxxGenerator vs the engine, batched serving, prefill chunk under live decode (GB10)](benchmark_results/unified-engine-final-gb10-2026-10-08.md)
-- [Penalty pipelining and server prompt lookup: penalty requests across three builds, prompt lookup at B=1, under concurrency and on long paged prompts (GB10)](benchmark_results/server-prompt-lookup-gb10-2026-10-11.md)
+- [MoE decode gap investigation](benchmark_results/versions/v0.3.0.md#moe-decode-gap-investigation)
+- [Fused decode-MoE kernel: design and roadmap](benchmark_results/versions/v0.3.0.md#fused-moe-decode-kernel-design)
+- [Gemma3n decode profile: is a compiled fusion justified?](benchmark_results/versions/v0.3.2.md#gemma3n-decode-profile)
+- [Gemma3n decode profile on M5 Max](benchmark_results/versions/v0.3.2.md#gemma3n-decode-profile-m5max)
+- [Gemma 4 31B QAT/non-QAT MTP exactness on M5 Max](benchmark_results/versions/v0.8.0.md#gemma4-31b-mtp-exactness-2026-09-26)
+- [Unified engine baseline: CLI vs server B=1 decode, prefill chunk and KV storage (GB10)](benchmark_results/versions/v0.8.0.md#unified-engine-baseline-gb10-2026-10-07)
+- [Unified engine final measurement: pre-epic CxxGenerator vs the engine, batched serving, prefill chunk under live decode (GB10)](benchmark_results/versions/v0.8.0.md#unified-engine-final-gb10-2026-10-08)
+- [Penalty pipelining and server prompt lookup: penalty requests across three builds, prompt lookup at B=1, under concurrency and on long paged prompts (GB10)](benchmark_results/versions/v0.8.0.md#server-prompt-lookup-gb10-2026-10-11)
 
 임베딩 및 rerank 처리량(`/v1/embeddings`, `/v1/rerank`)은 `scripts/bench_embeddings.py`로 구동되는 별도의 ladder를 가집니다.
 
-- [Embedding and rerank throughput on GB10 - 2026-08-26](benchmark_results/embeddings-rerank-gb10-2026-08-26.md)
-- [Embedding and rerank throughput on M5 Max - 2026-09-04](benchmark_results/embeddings-rerank-m5max-2026-09-04.md)
+- [Embedding and rerank throughput on GB10 - 2026-08-26](benchmark_results/versions/v0.7.0.md#embeddings-rerank-gb10-2026-08-26)
+- [Embedding and rerank throughput on M5 Max - 2026-09-04](benchmark_results/versions/v0.7.0.md#embeddings-rerank-m5max-2026-09-04)
+- [Embedding and rerank throughput on GB10 - 2026-11-04](benchmark_results/embeddings-rerank-gb10-2026-11-04.md)
+
+이미지 생성 및 편집 처리량(`/v1/images/generations`, `/v1/images/edits`)은 `scripts/bench_imagegen.py`로 구동되는 별도의 ladder를 가집니다.
+
+- [Image generation throughput on GB10 - 2026-11-04](benchmark_results/imagegen-gb10-2026-11-04.md)
 
 ### 측정이 의존하는 모든 버전을 기록하십시오
 
@@ -63,13 +96,14 @@
 
 | 열 | 작성 주체 | 내용 |
 |--------|-----------|-------|
-| `mlxcel_version` | `bench_decode.sh`, `bench_embeddings.py` | `Cargo.toml`에 기재된 이 저장소의 crate 버전 |
-| `mlxcel_commit` | 위 두 스크립트 | 측정한 소스 리비전의 8자리 값. 추적 파일이 수정된 경우 `-dirty` |
-| `mlx_commit` | 위 두 스크립트 | 바이너리가 링크하는 고정된 MLX C++ 리비전의 8자리 값 |
+| `mlxcel_version` | `bench_decode.sh`, `bench_embeddings.py`, `bench_imagegen.py` | `Cargo.toml`에 기재된 이 저장소의 crate 버전 |
+| `mlxcel_commit` | 위 세 스크립트 | 측정한 소스 리비전의 8자리 값. 추적 파일이 수정된 경우 `-dirty` |
+| `mlx_commit` | 위 세 스크립트 | 바이너리가 링크하는 고정된 MLX C++ 리비전의 8자리 값 |
 | `mlx_version` | 과거 CSV 전용 | 이 열이 MLX 버전으로 하드코딩되어 있던 시절의 MLX 라이브러리 버전 |
 | `baseline_version` | `bench_mlxlm.py` | Python baseline. `mlx-lm-<v>` 또는 `mlx-vlm-<v>` 형태이며, ROCm 호스트에서는 뒤에 `+mlx-<v>`가 붙습니다. 해당 환경의 MLX는 버전에 커밋이 포함되는 소스 빌드이기 때문입니다 |
 | `mlx_rocm_overlay_commit` | `bench_decode.sh`, ROCm 행 전용 | MLX ROCm overlay(`src/lib/mlxcelverse/overlays/rocm/UPSTREAM`)의 8자리 소스 커밋. `mlx_commit`은 upstream 고정 값 그대로 유지됩니다 |
 | `hip_version` | `bench_decode.sh`, ROCm 행 전용 | `hipconfig --version`으로 얻은 HIP 런타임 버전. ROCm 릴리스는 `hardware` 문자열에 있습니다 |
+| `backend` | 위 세 스크립트 | 버전이 붙은 실행 스택: `nvcc --version`의 `cuda-13.0`, `rocm-<release>`, 또는 `metal`. 프로브가 이름을 알 수 없는 빌드(예: `cuda-rust-0.1`, `vulkan-1.4`, `openxla-2026.11`)에는 `MLXCEL_BENCH_BACKEND`를 설정하여 덮어쓰십시오. 2026-11-04에 추가되었으며, 그 이전 CSV에는 값이 없습니다 |
 | `decode_path` | `bench_decode.sh` | 러너가 시간을 측정한 decode 루프: `engine`(batch-native 엔진의 raw-completion 클라이언트이며, `mlxcel generate`와 서버의 B=1 행이 실행하는 루프, epic #2166 Phase 6)은 #2176 이후의 모든 행에 해당하고, 그 이전 행은 비어 있으며 퇴역한 `CxxGenerator`의 시간을 측정한 것입니다 |
 
 speculative 또는 batched-serving 표를 수작업으로 옮겨 적을 때 이 열들을 빠뜨리지 마십시오.
@@ -96,7 +130,7 @@ scripts/compare_bench_csv.py --before benchmarks/pylm_m5max_vlm_2026-09-09.csv \
 
 제외된 모든 항목은 사유와 함께 보고됩니다. 쌍의 개수만으로는 무엇이 빠졌는지 알 수 없기 때문입니다.
 
-이 도구가 존재하는 이유는 2026-09 캠페인에서 공개된 수치 여섯 개가 바로 이런 방식으로 잘못되었고, 각 비교가 서로 다른 일부 검사만 갖춘 채 따로 작성되었기 때문입니다. 이 도구로 다시 확인한 결과, 하드웨어 간 0.35x 열세와 298% 마진은 모두 즉시 거부되고, 61% 동등성 수치는 하니스 불일치로 비정상 종료 코드를 반환하며, 두 호스트 간 쌍 개수 불일치는 대상 목록 정책이 한 곳에 있으므로 해소됩니다. 수정된 마진은 M5 Max에서 105%, M1 Ultra에서 108%로 재현됩니다.
+이 도구가 존재하는 이유는 2026-09 캠페인에서 공개된 수치 여섯 개가 바로 이런 방식으로 잘못되었고, 각 비교가 서로 다른 일부 검사만 갖춘 채 따로 작성되었기 때문입니다. 이 도구로 다시 확인한 결과, 하드웨어 간 0.35x 열세와 298% 마진은 모두 즉시 거부되고, 61% 동등성 수치는 하니스 불일치로 0이 아닌 종료 코드를 반환하며, 두 호스트 간 쌍 개수 불일치는 대상 목록 정책이 한 곳에 있으므로 해소됩니다. 수정된 마진은 M5 Max에서 105%, M1 Ultra에서 108%로 재현됩니다.
 
 ## 권장 벤치마크 명령
 
@@ -121,6 +155,22 @@ scripts/compare_bench_csv.py --before benchmarks/pylm_m5max_vlm_2026-09-09.csv \
 # 128 GB host 1.209 yields a ~90 GB budget.
 BENCH_MEM_OVERHEAD_FACTOR=1.209 ./scripts/bench_decode.sh all --cooldown 30 --big-cooldown 30
 
+# Paired A/B of two builds of the OpenXLA / IREE backend on one HAL device.
+# The two arms run interleaved, medians are reported with the number of rounds
+# the new arm won, and the greedy text has to match. --old takes a git ref
+# (built in a temporary worktree) or a path to an already-built binary; --new
+# defaults to the working tree. Three cases are refused rather than measured:
+# two arms holding the same bytes, a zero prefill window (whole-run accounting,
+# #3042), and differing text. `--help` lists the device, capacity and quant
+# flags. The script applies the matching setup-*.sh env when it is not exported.
+# A ref arm builds in its own temporary worktree of about 2 GB; the script
+# removes those worktrees on every exit path, including an interrupt, and says
+# which ones it removed. --keep-worktrees leaves them for inspection. The
+# summary line reports the median over every round it measured and refuses to
+# print one when a round is missing.
+./scripts/xla/ab_decode_pair.sh --model models/llama-3.2-1b-instruct-4bit \
+    --device hip --old origin/main --tokens 128 --rounds 6
+
 # Speculative / MTP sweep. Prints a Markdown table on stdout and writes no CSV;
 # transcribe it into benchmarks/{backend}_{hw}_spec_{date}.csv.
 ./target/release/speculative_bench --sweep --max-tokens 128
@@ -128,9 +178,15 @@ BENCH_MEM_OVERHEAD_FACTOR=1.209 ./scripts/bench_decode.sh all --cooldown 30 --bi
 # Prompt lookup (`generate --prompt-lookup`): plain decoding against both
 # drafting policies, arms interleaved per repetition, plus the verify-width
 # cost the policies are built on. Method and GB10 results:
-# docs/benchmark_results/prompt-lookup-governor-gb10-2026-10-02.md.
-CASES=qwen3-8b-4bit:edit_json:400,qwen3-8b-4bit:story:800 REPS=3 BENCH_OUT=out-ab \
-    python3 docs/benchmark_results/data/prompt-lookup-governor-gb10-2026-10-02/harness/ab.py
+# docs/benchmark_results/versions/v0.8.0.md#prompt-lookup-governor-gb10-2026-10-02.
+# Restore the historical driver and its prompt fixtures into a temporary tree.
+REPRO=$(mktemp -d)
+git archive 2dc8ed47b30dc204d892328098e8cc34ec02ddc1 \
+    docs/benchmark_results/data/prompt-lookup-governor-gb10-2026-10-02/harness \
+    | tar -x -C "$REPRO"
+mkdir -p bench-results
+CASES=qwen3-8b-4bit:edit_json:400,qwen3-8b-4bit:story:800 REPS=3 BENCH_OUT=bench-results/prompt-lookup \
+    python3 "$REPRO/docs/benchmark_results/data/prompt-lookup-governor-gb10-2026-10-02/harness/ab.py"
 cargo run --release --features cuda --example verify_width_cost -- models/mlx/qwen3-8b-4bit
 
 # Batched serving ladder, against a server started with
@@ -145,6 +201,11 @@ python3 scripts/bench_serving_concurrency.py --port <port> \
 # Embedding and rerank ladder. One server per checkpoint; writes its own CSV.
 python3 scripts/bench_embeddings.py --bin target/release/mlxcel-server \
     --out benchmarks/{backend}_{hw}_embeddings_{date}.csv --repeats 5 --port 18091
+
+# Image generation and edit ladder. One image-only server per checkpoint;
+# writes its own CSV. Add --task edit --image <reference> for the edit route.
+python3 scripts/bench_imagegen.py --bin target/release/mlxcel-server \
+    --out benchmarks/{backend}_{hw}_imagegen_{date}.csv --repeats 3 --port 18092
 
 # Continuous-batching sweep over every model dir. Takes ONE positional
 # argument, the output log path, and no flags.
@@ -174,11 +235,11 @@ cargo run --release --features metal,accelerate --example gumbel_sampling_microb
 cargo run --release --features metal,accelerate --example rejection_sampling_microbench
 ```
 
-두 샘플링 하니스는 표를 출력하기 전에, `mlxcel-server`가 INFO 레벨로 알리는 것과 같은 레코드에서 가져온, 각 arm이 기록한 dispatch 결과를 출력합니다. 수치를 읽기 전에 해당 줄을 먼저 읽으십시오. 이슈 #899에서는 어떤 경로가 실행되었는지 알려 주는 정보가 없었기 때문에, 전체 sweep에 걸쳐 fallback을 자기 자신과 비교하고도 깔끔해 보이는 null 결과를 내놓은 프로덕션 벤치마크가 배포되었습니다. 두 arm이 같은 경로를 보고하는 샘플링 sweep은 아무것도 측정하지 못한 것입니다.
+두 샘플링 하니스는 표를 출력하기 전에, `mlxcel-server`가 INFO 레벨로 알리는 것과 같은 레코드에서 가져온, 각 arm이 기록한 dispatch 결과를 출력합니다. 수치를 읽기 전에 해당 줄을 먼저 읽으십시오. 이슈 #899에서는 fallback을 자기 자신과 비교하고도 전체 sweep에서 깔끔해 보이는 null 결과를 내놓은 프로덕션 벤치마크가 있었는데, 어떤 경로가 실행되었는지 알려 주는 정보가 없었기 때문입니다. 두 arm이 같은 경로를 보고하는 샘플링 sweep은 아무것도 측정하지 못한 것입니다.
 
 ### ROCm 호스트 (issue #1810)
 
-Linux에서 `nvidia-smi`가 GPU를 찾지 못하면, `bench_decode.sh`는 가장 작은 체크포인트(또는 지정한 체크포인트)에서 토큰 하나짜리 `mlxcel generate`를 실행하고, `generate`가 출력하는 줄에서 백엔드, `gfx` 타깃, 장치 이름, 장치 메모리를 읽습니다. 대체 수단은 `rocminfo`입니다. 그러면 ROCm 실행은 `benchmarks/rocm_<hw>_<date>.csv`로 기록되며, `<hw>`는 Radeon 8060S 호스트에서는 `strixhalo-gfx1151`, 그 외에는 `amd-<gfx>`입니다. 85% 메모리 가드는 장치 메모리를 기준으로 적용됩니다. UMA carve-out에서는 GPU가 96 GiB를 가지지만 호스트는 약 31 GiB만 인식합니다. `bench_mlxlm.py`도 같은 방식으로 호스트에 태그를 붙이므로, 두 결과는 `compare_bench_csv.py --reference`로 비교할 수 있습니다. MLX에는 ROCm wheel이 없으므로 Python baseline에는 ROCm 백엔드로 MLX를 소스 빌드한 환경이 필요합니다. `MLXLM_PYTHON`이 그 인터프리터를 가리키도록 하십시오. 다른 GPU 사용자는 먼저 중단하십시오. 공개된 gfx1151 baseline이 이를 어떻게 확인했는지 기록하고 있습니다([rocm-baseline-gfx1151-2026-09-30.md](benchmark_results/rocm-baseline-gfx1151-2026-09-30.md)).
+Linux에서 `nvidia-smi`가 GPU를 찾지 못하면, `bench_decode.sh`는 가장 작은 체크포인트(또는 지정한 체크포인트)에서 토큰 하나짜리 `mlxcel generate`를 실행하고, `generate`가 출력하는 줄에서 백엔드, `gfx` 타깃, 장치 이름, 장치 메모리를 읽습니다. 대체 수단은 `rocminfo`입니다. 그러면 ROCm 실행은 `benchmarks/rocm_<hw>_<date>.csv`로 기록되며, `<hw>`는 Radeon 8060S 호스트에서는 `strixhalo-gfx1151`, 그 외에는 `amd-<gfx>`입니다. 85% 메모리 가드는 장치 메모리를 기준으로 적용됩니다. UMA carve-out에서는 GPU가 96 GiB를 가지지만 호스트는 약 31 GiB만 인식합니다. `bench_mlxlm.py`도 같은 방식으로 호스트에 태그를 붙이므로, 두 결과는 `compare_bench_csv.py --reference`로 비교할 수 있습니다. MLX에는 ROCm wheel이 없으므로 Python baseline에는 ROCm 백엔드로 MLX를 소스 빌드한 환경이 필요합니다. `MLXLM_PYTHON`이 그 인터프리터를 가리키도록 하십시오. 다른 GPU 작업은 먼저 중단하십시오. 공개된 gfx1151 baseline이 이를 어떻게 확인했는지 기록되어 있습니다([rocm-baseline-gfx1151-2026-09-30.md](benchmark_results/versions/v0.8.0.md#rocm-baseline-gfx1151-2026-09-30)).
 
 ```bash
 MODELS_DIR=models/mlx ./scripts/bench_decode.sh all --cooldown 30 --big-cooldown 30
@@ -218,7 +279,7 @@ python3 scripts/rocm_decode_profile.py report benchmarks/rocm_profiles/gfx1151_<
 
 결과는 `benchmarks/rocm_profiles/gfx1151_<commit>/`에 저장됩니다. 전체 trace는 수백 MB에 달하므로 임시 디렉터리에 저장되며(`--trace-dir`로 보존할 수 있음), 프로파일링 실행에서는 절대 시간이 아니라 비중을 읽으십시오. 트레이서가 decode를 느리게 만들며, 요약에는 일반 실행 대비 얼마나 느려졌는지가 기록됩니다. `--temperature`와 `--top-p`는 프로파일이 sampler를 볼 수 있도록 존재하며, greedy 기본값은 sampler를 호출하지 않습니다.
 
-port unit이 decode GPU 시간에서 차지하는 비중은 `1 / (1 - share)`의 속도 향상 상한(요약의 `ceiling_gpu_share`)을 의미하지만, 이 비중은 dispatch 사이의 호스트 launch gap을 무시하므로 작은 dispatch 여러 개를 하나의 커널로 대체하는 port의 효과를 과소평가합니다(issue #2148). 따라서 요약은 decode 구간의 각 idle 구간을 그것을 끝내는 dispatch에 귀속시키기도 합니다(`scripts/rocm_decode_gaps.py`). role별로는 `role_host_gap_ms_per_token`, port unit별로는 토큰당 및 dispatch당 호스트 gap, decode 벽시계 시간(커널과 그 앞의 gap)에서의 비중, 그리고 그 비중이 의미하는 속도 향상 한계인 `ceiling_wall`을 제공합니다. 일반 실행이 있는 경우 gap은 일반 실행의 호스트 gap에 맞춰 스케일되고(트레이서는 커널 시간이 아니라 호스트 gap을 부풀립니다) 토큰당 벽시계 시간으로 나뉘며, 이것이 `plain_ceiling_wall_est`입니다. port의 실측 속도 향상을 비교해야 하는 기준이 바로 이 한계이며, `report`는 이를 GPU 비중 상한 옆에 출력합니다. 배포 기본값으로 도달하는 role에 대해서도 같은 필드가 있습니다(`reached_default_*`). 공개된 프로파일과 각 커널 이름이 port unit에 어떻게 귀속되었는지는 [rocm-decode-profile-gfx1151-2026-09-30.md](benchmark_results/rocm-decode-profile-gfx1151-2026-09-30.md)에 있습니다.
+port unit이 decode GPU 시간에서 차지하는 비중은 `1 / (1 - share)`의 속도 향상 상한(요약의 `ceiling_gpu_share`)을 의미하지만, 이 비중은 dispatch 사이의 호스트 launch gap을 무시하므로 작은 dispatch 여러 개를 하나의 커널로 대체하는 port의 효과를 과소평가합니다(issue #2148). 따라서 요약은 decode 구간의 각 idle 구간을 그것을 끝내는 dispatch에 귀속시키기도 합니다(`scripts/rocm_decode_gaps.py`). role별로는 `role_host_gap_ms_per_token`, port unit별로는 토큰당 및 dispatch당 호스트 gap, decode 벽시계 시간(커널과 그 앞의 gap)에서의 비중, 그리고 그 비중이 의미하는 속도 향상 한계인 `ceiling_wall`을 제공합니다. 일반 실행이 있는 경우 gap은 일반 실행의 호스트 gap에 맞춰 스케일되고(트레이서는 커널 시간이 아니라 호스트 gap을 부풀립니다) 토큰당 벽시계 시간으로 나뉘며, 이것이 `plain_ceiling_wall_est`입니다. port의 실측 속도 향상을 비교해야 하는 기준이 바로 이 한계이며, `report`는 이를 GPU 비중 상한 옆에 출력합니다. 배포 기본값으로 도달하는 role에 대해서도 같은 필드가 있습니다(`reached_default_*`). 공개된 프로파일과 각 커널 이름이 port unit에 어떻게 귀속되었는지는 [rocm-decode-profile-gfx1151-2026-09-30.md](benchmark_results/versions/v0.8.0.md#rocm-decode-profile-gfx1151-2026-09-30)에 있습니다.
 
 ### op 수준 수치는 decode 수치가 아닙니다 (issue #901)
 
@@ -234,8 +295,7 @@ port unit이 decode GPU 시간에서 차지하는 비중은 `1 / (1 - share)`의
 
 `all` 모드는 `"$MODELS_DIR"/*/`를 열거하는데, 하나의 체크포인트가 둘 이상의 디렉터리 이름 아래 있는 경우가 흔합니다. 재다운로드로 생긴 별칭이거나 공유 모델 저장소로의 심볼릭 링크입니다. 중복 제거가 없으면 각 별칭이 따로 로드, prefill, decode, cooldown되어 CSV에 별개의 행으로 남습니다. 이 저장소가 개발되는 M1 Ultra 호스트에서 `models/mlx`에는 중복 그룹이 15개 있고, 불필요한 디렉터리 16개와 불필요한 가중치 124.5 GB를 차지하며, 이러한 중복은 `metal_m5max_2026-04-04.csv`까지 거슬러 올라가 커밋된 모든 sweep에 존재했습니다. 그중 세 그룹은 `docs/benchmark_results/model_tests_m1ultra.md`와 `docs/benchmark_results/model_tests_m5max.md`에 별도의 표 행으로 실렸습니다.
 
-`all` 모드는 이제 첫 모델을 실행하기 전에 체크포인트 동일성으로 중복을 제거합니다. 동일성 키는 `sha256(config.json)`과 모든 `*.safetensors` shard의 `(basename, byte size)` 목록을 정렬한 것의 조합입니다. 작은 파일 하나를 읽고 shard마다 `stat`을 한 번 수행할 뿐 가중치를 해시하지 않습니다. quantization이나 weight dtype만 다른 체크포인트는 `config.json`의 `quantization` 블록이 다르기 때문에 의도적으로 합치지 않습니다. 이 호스트에서 `bitnet-b1.58-2b-4t`와 `bitnet-b1.58-2b-4t-4bit`는 서로 다른 키로 해시됩니다.
-`realpath`(실패 시 `cd && pwd -P`)로 해석한 물리 경로가 다른 후보와 같은 디렉터리도 하나로 합쳐지므로, 공유 모델 저장소로의 심볼릭 링크가 콘텐츠 키와 무관하게 행을 두 배로 만드는 일은 없습니다. `config.json`이 없는 디렉터리는 콘텐츠 기준으로 그룹화되지 않으며, 이 중복 제거 단계가 생기기 전과 똑같이 항상 측정됩니다.
+`all` 모드는 이제 첫 모델을 실행하기 전에 체크포인트 동일성으로 중복을 제거합니다. 동일성 키는 `sha256(config.json)`과 모든 `*.safetensors` shard의 `(basename, byte size)` 목록을 정렬한 것의 조합입니다. 작은 파일 하나를 읽고 shard마다 `stat`을 한 번 수행할 뿐 가중치를 해시하지 않습니다. quantization이나 weight dtype만 다른 체크포인트는 `config.json`의 `quantization` 블록이 다르기 때문에 의도적으로 합치지 않습니다. 이 호스트에서 `bitnet-b1.58-2b-4t`와 `bitnet-b1.58-2b-4t-4bit`는 서로 다른 키로 해시됩니다. `realpath`(실패 시 `cd && pwd -P`)로 해석한 물리 경로가 다른 후보와 같은 디렉터리도 하나로 합쳐지므로, 공유 모델 저장소로의 심볼릭 링크가 콘텐츠 키와 무관하게 행을 두 배로 만드는 일은 없습니다. `config.json`이 없는 디렉터리는 콘텐츠 기준으로 그룹화되지 않으며, 이 중복 제거 단계가 생기기 전과 똑같이 항상 측정됩니다.
 
 중복 그룹 안에서 살아남는 것은 sweep 자체의 열거 순서상 가장 먼저 도달하는 디렉터리입니다. 이 순서는 끝에 슬래시가 붙은 경로에 대한 glob 순서이므로, 한 이름이 다른 이름의 접두사인 경우 더 긴 이름이 이깁니다. `pixtral-12b-4bit`가 `pixtral-12b`보다 우선하고, `qwen2.5-7b-4bit`가 `qwen2.5-7b`와 `qwen2.5-7b-instruct-4bit` 모두보다 우선합니다. 이는 결정적이며 안정적이고, 마침 공개된 비교 표가 이미 사용하는 이름을 유지하게 됩니다. 나머지 구성원은 모두 건너뛰고, 후행 상태 `SKIP:duplicate_of=<survivor-name>`와 함께 각자의 CSV 행으로 기록합니다. 따라서 `all` sweep의 행 수는 여전히 디렉터리 수와 같고, 별칭 집합은 조용히 사라지지 않고 CSV에 그대로 남습니다. 합쳐진 그룹은 첫 모델을 측정하기 전에 stderr로 한 번 출력됩니다. `--no-dedup`은 #1615 이전의 동작을 정확히 복원합니다. 모든 디렉터리를 측정하고, 별칭 행을 내보내지 않으며, sweep 시작 전에 아무것도 출력하지 않습니다. 단일 모델 모드(`bench_decode.sh models/<name>`)는 중복 제거를 하지 않으며, 명시적으로 지정한 경로는 항상 정확히 그 디렉터리를 측정합니다.
 
@@ -254,6 +314,21 @@ caffeinate -i cargo run --release --features cuda \
 어느 op든 속도 향상이 1.00 미만이면 `src/lib/mlxcel-core/src/layers.rs`의 `FUSED_ADD_RMSNORM_DEFAULT` 또는 `FUSED_ROPE_APPEND_DEFAULT`를 뒤집으라는 신호입니다. 그러면 커널을 제거하는 대신 그대로 두되 `MLXCEL_FUSED_ADD_RMSNORM=1` / `MLXCEL_FUSED_ROPE_APPEND=1`로 선택해야 사용하도록 바뀝니다. 두 상수는 모두 `cfg!(feature = "rocm")`입니다. Metal 및 CUDA 빌드에서는 꺼져 있고 ROCm 빌드에서는 켜져 있습니다(#2145).
 
 op 수준 수치는 end-to-end 효과의 하한입니다. 두 fusion은 모두 호출마다 MLX 그래프에서 전체 폭의 중간 결과 하나를 제거하는데, 이는 커널 시간이 아니라 할당자와 의존성 추적 부담으로 나타납니다. 따라서 결정적인 측정은 end-to-end decode sweep(dense 모델 하나와 MoE 모델 하나, batch 1과 4, A/B를 위해 각 kill switch를 뒤집은 상태)입니다. 두 결과를 모두 `docs/benchmark_results/fused-norm-rope-<hw>-<date>.md`에 기록하십시오.
+
+## Fused tanh-GELU f32: 같은 측정 후 유지 기준
+
+fused `gelu_tanh_f32` 커널(Metal 포트 #2857, CUDA 포트 #2780)은 같은 정책으로 반영됩니다. 대체하던 그래프보다 op 수준에서 빠를 때에만 연결을 유지합니다. `examples/fused_gelu_tanh_microbench.rs`가 그 증거를 만들어 냅니다. 모델을 로드하지 않고, tanh 방식을 쓰는 encoder가 공급하는 세 가지 shape에서 eager 체인, `compile_shapeless` 체인, fused 커널의 시간을 잽니다.
+
+```bash
+caffeinate -i cargo run --release --features metal,accelerate \
+    --example fused_gelu_tanh_microbench
+# CUDA host: quiet GPU, PTX cache warm (the first call compiles the kernel)
+cargo run --release --features cuda --example fused_gelu_tanh_microbench
+```
+
+CUDA에서는 op 수준 수치만으로 주장을 입증할 수 없습니다. #2780은 `compile_shapeless` 체인이 그곳에서 둘 이상의 커널로 실행되었기 때문에 등록되었으므로, 이 이슈의 인수 기준은 tanh 방식을 쓰는 계열의 end-to-end 이미지 prefill을 erf arm과 비교하여 null floor 안에 들어오는지 확인하는 것입니다. 측정은 [GELU erf-vs-tanh 기록](benchmark_results/versions/v0.8.0.md#gelu-erf-vs-tanh-2026-10-23)과 같은 방식으로 수행합니다. GB10 측정 결과는 [fused-gelu-tanh-f32-cuda-gb10-2026-11-11](benchmark_results/fused-gelu-tanh-f32-cuda-gb10-2026-11-11.md)에 있습니다.
+
+하니스는 시험(trial)을 서로 번갈아 실행하고 arm별 최소값을 보고합니다. 배경 부하는 시간을 늘리기만 하므로, 부하가 걸린 호스트에서 한 번만 순서대로 실행한 측정은 순서를 뒤집어 버렸기 때문입니다. `fused_gelu_tanh_f32_available()`이 거짓이면 이유를 출력하고 종료하며, `MLXCEL_DEVICE=cpu`인 경우가 여기에 해당합니다. 결과는 `docs/benchmark_results/fused-gelu-tanh-f32-<hw>-<date>.md`에 기록하십시오.
 
 ## Warm 대 cold last-level cache (issue #906)
 
@@ -280,7 +355,7 @@ macOS는 `sysctl`로 SLC 크기를 노출하지 않으므로, 캐시 크기는 �
 
 중앙값은 거의 움직이지 않습니다. 움직이는 것은 분산입니다. warm `gatherA_sdpa`는 425.6~542.1 us(27%, 708 us의 첫 반복 이상치 하나 포함)에 걸쳤지만, cold는 525.1~546.0 us(4.0%)였습니다.
 
-따라서 이 칩에서 cold 모드를 쓰는 이유는 수치에 대한 큰 보정이 아니라 재현성입니다. 대역폭이 매우 높은 통합 메모리는 이 기법의 동기가 되는 캐시 절벽을 무디게 합니다. 이 결론을 CUDA로 확장하지 마십시오. PCIe 뒤에 전용 L2를 둔 이산(discrete) GPU는 절벽이 훨씬 가파르므로, 같은 rotation이 중앙값을 훨씬 더 크게 움직일 것으로 예상해야 합니다. 전체 수치와 측정 당시의 부하 조건은 [autotuner-m1ultra-2026-07-30](benchmark_results/autotuner-m1ultra-2026-07-30.md)에 있습니다.
+따라서 이 칩에서 cold 모드를 쓰는 이유는 수치에 대한 큰 보정이 아니라 재현성입니다. 대역폭이 매우 높은 통합 메모리는 이 기법의 동기가 되는 캐시 절벽을 무디게 합니다. 이 결론을 CUDA로 확장하지 마십시오. PCIe 뒤에 전용 L2를 둔 이산(discrete) GPU는 절벽이 훨씬 가파르므로, 같은 rotation이 중앙값을 훨씬 더 크게 움직일 것으로 예상해야 합니다. 전체 수치와 측정 당시의 부하 조건은 [autotuner-m1ultra-2026-07-30](benchmark_results/versions/v0.5.0.md#autotuner-m1ultra-2026-07-30)에 있습니다.
 
 ### 실행 및 기록
 
@@ -332,6 +407,8 @@ mlxcel serve -m <target> --draft-model <drafter> --draft-kind mtp
 
 native batched decode를 위해서는 `MLXCEL_TRACE_BATCH_ROWS=N`을 설정하십시오. 하니스는 새로운 시퀀스 id를 할당하고, 서로 다른 context 길이를 가진 독립적인 코퍼스 행 N개를 prefill하며, 추적되는 모든 위치를 폭 1짜리 `forward_batched_with_ids` 호출을 통해 진행시키고, row 0만 출력합니다. 이렇게 하면 `N=1`과 `N=4`를 직접 비교할 수 있으면서 serving decode 형태를 실행하게 됩니다. `MLXCEL_TRACE_IMAGE`와 함께 사용하면 row 0은 실제 이미지 임베딩 prefill(MRoPE delta 포함)을 수행하고, 나머지 행은 텍스트 전용 prefix를 사용하므로 혼합된 Qwen-VL serving 형태를 다루게 됩니다.
 
+`MLXCEL_TRACE_MLA_STATS=1`을 설정하면 trace 이후 `mlxcel_core::mla::stats` dispatch 카운터를 stderr로 출력합니다(`# mla_paths path=count ...`). absorbed MLA 경로를 주장하는 arm은 `absorbed_fused`, `absorbed_composed`, `absorbed_prefill` 중 하나 이상이 0이 아니어야 합니다. 벤치마크 하니스의 `paths=` 필드와 같은 규칙입니다. `PREFILL`이 0이 아니면 `CHUNK_TOKENS`는 추적되는 forward의 폭이므로, `CHUNK_TOKENS=4 PREFILL=1024`는 speculative verify 형태이고 `CHUNK_TOKENS=16 PREFILL=1024`는 더 넓은 verify 블록입니다. 각 chunk의 stderr 줄은 추적된 forward의 벽시계 시간을 context pass와 따로 보고하므로, 같은 실행이 다중 토큰 continuation 측정이 됩니다.
+
 tensor-parallel decode에는 추가로 `MLXCEL_TRACE_TP_SIZE=N`을 설정하십시오. 그러면 하니스는 B=1과 B=4 arm 모두에 대해 프로덕션 TP 로더를 사용하며, batch 폭만 바꾼 단일 장치 모델을 추적하지 않습니다. TP 선택기는 표준 텍스트 arm을 지원하며 `MLXCEL_TRACE_LORA`와 함께 사용할 수 없습니다.
 
 ```bash
@@ -378,7 +455,7 @@ python3 scripts/compare_logit_traces.py ref.tsv fixed.tsv --decided 2
 python3 scripts/mlx_vlm_image_logit_trace.py MODEL tests/fixtures/test_image_shapes.png fixed.tsv --float32 --mlxcel-prompt > ref.tsv
 ```
 
-`tests/fixtures/test_image_shapes.png`(448x448)와 `Describe the image.`에 대한 mlx-vlm 0.7.8 및 transformers와의 이미지 프롬프트 비교(#2547)입니다:
+`tests/fixtures/test_image_shapes.png`(448x448)와 `Describe the image.`에 대한 mlx-vlm 0.7.8 및 transformers와의 이미지 프롬프트 비교(#2547)입니다.
 
 | 체크포인트 | mlxcel | mlx-vlm | transformers | 남은 차이 |
 |---|---|---|---|---|
@@ -394,20 +471,20 @@ python3 scripts/mlx_vlm_image_logit_trace.py MODEL tests/fixtures/test_image_sha
 
 thinking을 끈 행은 mlxcel trace에서 `MLXCEL_TRACE_ENABLE_THINKING=0`을, `scripts/mlx_vlm_image_logit_trace.py`에서 `--enable-thinking false`를 설정합니다. mlx-vlm과 transformers는 인자를 전달하지 않으면 `enable_thinking`이 꺼진 상태로 렌더링하므로, 그 열들은 움직이지 않습니다. MiniCPM-o 행은 `mlx-community/MiniCPM-o-4_5-4bit` 체크포인트에서 `chat_template.jinja`와 `tokenizer_config.json`의 `chat_template` 키를 제거한 것이므로, 내장 fallback이 턴을 렌더링합니다. `mlxcel generate`와 `mlxcel-server`의 `/v1/chat/completions` 요청 하나는 같은 78 토큰 프롬프트(ChatML 사용자 턴 하나와 어시스턴트 시작 토큰 하나)를 만들었고, 서버 usage 블록은 `prompt_tokens` 78을 보고합니다. 기본 64 토큰에서는 두 응답 모두 추론 내용만 있었는데, thinking이 기본으로 켜져 있어 모델이 추론 채널을 먼저 열기 때문입니다. `-n 400`을 준 CLI는 빨간 사각형, 파란 원, 초록 삼각형을 정확히 답했습니다(#2761).
 
-mlxcel에서 수정한 내용으로, `prepare_vlm_embeddings`에 적용되어 `mlxcel generate`, `mlxcel-server`, trace 모두에 같은 방식으로 반영됩니다:
+mlxcel에서 수정한 내용으로, `prepare_vlm_embeddings`에 적용되어 `mlxcel generate`, `mlxcel-server`, trace 모두에 같은 방식으로 반영됩니다.
 
 - InternVL: 체크포인트는 image 분기가 없는 Qwen2 ChatML 템플릿을 제공하는데, 이미지 블록이 첫 토큰 뒤, `<|im_start|>`와 `system` 사이에 삽입되고 있었습니다. 이제 마지막 user 턴을 열고 그 뒤에 `\n`이 오도록 합니다. 이는 InternVL의 `model.chat`(`'<image>\n' + question`), transformers의 InternVL 템플릿(`<IMG_CONTEXT>\n`), mlx-vlm(`<image>\n`)이 모두 배치하는 위치입니다. 줄바꿈으로 시작하는 질문도 같은 위치를 유지합니다. Qwen2는 턴을 여는 토큰의 `\n`과 질문 앞의 줄바꿈들을 하나의 토큰으로 합치므로, 여는 토큰 뒤의 텍스트는 블록 뒤에서 `"\n" + question`으로 다시 인코딩되며, 이것이 참조 렌더링이 만들어 내는 id입니다(`\n\nLeading newlines`에 대해 291 토큰). trace는 목록 형태의 턴도 이 템플릿으로 렌더링했는데, 그 과정이 실패하여 채팅 턴 없이 질문만 남는 fallback으로 떨어졌습니다. 이제는 `mlxcel generate`와 같은 방식으로 렌더링합니다.
 - MiniCPM-V 4.6: MiniCPM-o 확장에서 `<image_id>0</image_id>` 접두사(`use_image_id: true`)와 이미지 항목과 질문 사이의 `\n`이 빠져 있었고, 블록을 `<|image_pad|>` 대신 `<unk>`로 채웠습니다. 업스트림 템플릿을 사용하면 템플릿 자체의 `<|image_pad|>` 마커도 프롬프트에 남았을 것입니다. 이제 4.6 확장은 `MiniCPMV4_6Processor`를 따릅니다. 템플릿이 없는 체크포인트에서 `mlxcel-server`는 일반적인 `User: ...\n\nAssistant: ` 프롬프트를 렌더링했고, 확장 과정이 이것을 다시 ChatML 턴으로 감쌌습니다(88 토큰). 이제 MiniCPM-V 4.6과 MiniCPM-o는 내장 ChatML 템플릿으로 fallback하므로, 서버는 CLI가 만드는 것과 같은 턴을 렌더링합니다(82). 자체 템플릿을 제공하는 체크포인트는 그것을 그대로 유지합니다.
 - Gemma 3: transformers는 토큰화 전에 텍스트에서 `<start_of_image>`를 확장하므로, 래퍼의 `\n\n`이 템플릿의 `user\n`과 합쳐져 `\n\n\n` 토큰 하나가 됩니다. 토큰 단위 확장은 `\n`과 `\n\n`을 따로 유지하여 토큰이 하나 많았습니다. 이제 인접한 줄바꿈 연속은 다시 인코딩합니다. OpenXLA 호스트 전처리기는 #2761 이후 같은 헬퍼로 같은 병합을 수행하며(273을 만들어 냄), 줄바꿈 연속 테이블은 모든 이미지 요청마다가 아니라 모델당 한 번 조사합니다.
 
-mlx-vlm과의 의도적인 차이이며, 각각 transformers 또는 체크포인트를 따릅니다:
+mlx-vlm과의 의도적인 차이이며, 각각 transformers 또는 체크포인트를 따릅니다.
 
 - InternVL 템플릿: mlx-vlm은 체크포인트의 템플릿을 자체 plain-text `User: ...\nAssistant:\n`로 대체하는데, 이는 체크포인트의 ChatML 템플릿도 InternVL의 대화 템플릿도 아닙니다. mlxcel은 `tokenizer.apply_chat_template`가 하듯 체크포인트의 템플릿(Qwen system 턴 포함)을 유지합니다.
 - 템플릿 없는 MiniCPM-V 4.6: mlx-vlm은 채팅 턴 없이 `(<image>./</image>)\nQUESTION`을 그대로 보냅니다. mlxcel은 `mlxcel generate`와 `mlxcel-server` 모두에서 턴을 체크포인트 계열의 ChatML user 및 assistant 시작 토큰으로 감쌉니다. 업스트림 템플릿을 사용하면, mlx-vlm은 `(<image>./</image>)` 마커의 괄호를 유지하고 빈 think 블록을 제거하며, transformers는 이미지 항목을 괄호 없이 렌더링하고 빈 `<think>` 블록을 닫으며, mlxcel은 `enable_thinking=true`(서버 전역 think 마커 기본값, `server::chat_front`)로 템플릿을 렌더링하고 `<think>`를 엽니다. mlx-community 저장소는 `chat_template.jinja`를 제공하며, 모델 저장소의 로컬 복사본에는 이것이 없습니다.
 - Thinking 기본값: mlxcel은 이미지 프롬프트를 텍스트 프롬프트와 같은 `enable_thinking` 기본값으로 렌더링하며, 토크나이저에 think 마커가 있으면 켜집니다(`server::chat_front::apply_thinking_default`). transformers와 mlx-vlm은 이를 꺼 둡니다. 이는 의도적인 설계입니다(#2761). 계열별 또는 이미지 전용 기본값을 두면 같은 체크포인트가 이미지 유무에 따라 다르게 렌더링되며, 클라이언트는 요청마다 `chat_template_kwargs.enable_thinking`으로 이를 끌 수 있습니다. 이 기본값은 위 gemma-4-e2b 격차 전체와 MiniCPM-V 4.6 격차의 템플릿 부분을 설명합니다. 양쪽 모두 thinking을 끄면 프롬프트는 reference의 id와 같아집니다.
 - Gemma 3: mlx-vlm은 이미 `<bos>`로 시작하는 렌더링을 special token을 켠 상태로 토큰화하므로 프롬프트에 BOS 토큰이 두 개 들어갑니다. transformers의 `apply_chat_template`와 mlxcel은 하나만 둡니다. mlx-vlm은 또한 이미지를 질문 뒤에 배치하지만, mlxcel은 이미지를 앞에 둡니다. 이는 Gemma 3 모델 카드와 mlxcel의 다른 이미지 경로의 순서이기도 합니다(#797).
 
-각 계열의 응답에 대해 teacher-forced 방식으로 채점했습니다(`examples/logit_trace MODEL REPLY 64 1 8`, 따라서 60~64개 위치). CPU에서 float32로 실행한 mlx-vlm reference와 비교했으며, decided 위치는 격차 2 logit 기준입니다. Before는 수정 전 빌드를 mlx-vlm 자체 프롬프트와 비교한 것이고, After는 수정된 빌드를 같은 reference가 mlxcel의 프롬프트(`--mlxcel-prompt`)를 채점하는 방식으로 비교한 것입니다. InternVL과 MiniCPM-V는 mlx-vlm이 CPU에서 float32로 생성한 greedy 응답을 사용했고, Gemma 3는 InternVL 응답을 사용했습니다(스트림은 arm 사이에서 공유되기만 하면 됩니다):
+각 계열의 응답에 대해 teacher-forced 방식으로 채점했습니다(`examples/logit_trace MODEL REPLY 64 1 8`, 따라서 60~64개 위치). CPU에서 float32로 실행한 mlx-vlm reference와 비교했으며, decided 위치는 격차 2 logit 기준입니다. Before는 수정 전 빌드를 mlx-vlm 자체 프롬프트와 비교한 것이고, After는 수정된 빌드를 같은 reference가 mlxcel의 프롬프트(`--mlxcel-prompt`)를 채점하는 방식으로 비교한 것입니다. InternVL과 MiniCPM-V는 mlx-vlm이 CPU에서 float32로 생성한 greedy 응답을 사용했고, Gemma 3는 InternVL 응답을 사용했습니다(스트림은 arm 사이에서 공유되기만 하면 됩니다).
 
 | 체크포인트 | 이전: top-1, decided, perplexity (mlxcel 대 reference) | 이후 |
 |---|---|---|
@@ -425,7 +502,7 @@ audio tower 변경에는 audio 프롬프트가 필요합니다. `MLXCEL_TRACE_AU
 
 기준으로 삼을 지표는 **decided 위치에서의 불일치**입니다. 기준(reference) 자신의 상위 두 후보가 명시된 격차보다 더 크게 벌어져 있었는데도 후보(candidate)가 다른 것을 선택한 위치의 비율입니다. 기준이 어느 쪽이든 상관하지 않았던 위치에는 틀릴 만한 정답이 없으며, 이를 decided 위치와 합쳐 버리면 유일하게 중요한 구분이 가려집니다. 바이트 동일성은 모든 격차에서 불일치가 0인 극한의 경우입니다.
 
-네 가지가 그 답이 의미를 갖는지를 결정합니다.
+이 답이 의미를 갖는지는 네 가지가 결정합니다.
 
 **테스트 대상 코드가 실행되는 폭으로 trace하십시오.** `N`개 위치에 대한 forward는 quantized projection을 `M = N`으로 실행하고, MLX는 `M`마다 다른 커널을 선택하므로, chunk 폭은 얼마나 많이 측정하는지가 아니라 무엇을 측정하는지를 결정합니다. gemma-4-12b-it-4bit에서 같은 `MLXCEL_QMV_WIDE` 비교는 폭 8에서 top-1 불일치 20.6%, 16에서 19.5%, 32와 256에서는 둘 다 0.0%로 읽힙니다. `use_qmv_wide`는 `M >= 2`에서 갈라지는 반면, batch 한계가 더 큰 `M`을 두 arm이 공유하는 matrix-matrix 커널로 보내기 때문입니다. MTP verify 블록은 블록 크기이고, decode step은 1이며, prefill은 프롬프트 길이입니다.
 
@@ -547,7 +624,7 @@ M3 Ultra에서는 정점이 4이고, 그 뒤에는 하락이 아니라 고원(pl
 
 메커니즘은 마지막 두 열에 있습니다. verify당 방출은 `1 / (1 - acceptance)`를 향해 오르다가 평평해지는데(범위 전체에서 2.670, 3.398, 3.477, 3.737, 3.934, 4.041, 4.333), verify forward는 위치마다 비용이 계속 늘어나므로 정점을 지나면 폭을 넓힐 때마다 얻는 것보다 치르는 것이 더 큽니다.
 
-폭 4는 배포 기본값이기도 하며 우연이 아닙니다. Gemma assistant 체크포인트는 4토큰 verify 블록으로 구성되어 있고 `mtp`는 `--draft-block-size`의 기본값을 같은 4로 두기 때문입니다. 따라서 폭을 전혀 전달하지 않은 사용자는 이 호스트의 정점에 정확히 놓이며, sweep의 143.6에 대해 143.5 tok/s를 측정합니다.
+폭 4는 배포 기본값이기도 하며 우연이 아닙니다. Gemma assistant 체크포인트는 4토큰 verify 블록으로 구성되어 있고, `mtp`는 `--draft-block-size`의 기본값을 같은 4로 두기 때문입니다. 따라서 폭을 전혀 전달하지 않은 사용자는 이 호스트의 정점에 정확히 놓이며, sweep의 143.6에 대해 143.5 tok/s를 측정합니다.
 
 위 코드 행과 산문 행의 5는 런타임의 선택이 아니라 이 벤치마크 자체의 요청입니다. `scripts/bench_speculative.sh`가 5를 전달하는 이유는 M5 Max가 5에서 정점을 찍었기 때문이며, 프로토콜에 고정된 폭이 호스트 간 행을 비교 가능하게 만듭니다. `effective_mtp_block_size`는 drafter의 구성된 깊이를 넘는 요청을 설정값이 아니라 *상한*으로 취급합니다. 최소 8개의 round가 완료되고 최근 32개 중 적어도 65%에서 구성된 prefix가 완전히 수락될 때까지는 4에 머물다가, 그 뒤에 요청값으로 확장됩니다. 코드 행이 "5"로, 산문 행이 "5 요청, 4 유효"로 읽히는 이유가 이것이 전부입니다. 코드 프롬프트는 expansion gate를 통과하고 산문은 통과하지 못합니다.
 
@@ -599,7 +676,7 @@ M1 Ultra는 세 번째 답을 주는데, 이 호스트에서는 폭이 해로워
 
 가속된 출력은 시작 시 정확성 probe가 그렇다고 판정하는 경우에 일반 decode와 바이트 단위로 동일하며, 이는 런타임이 가정하지 않고 측정합니다. Apple GPU 세대 13/14의 affine 4-bit 타깃은 블록 폭 12 미만에서 바이트 단위로 동일한 반면, 세대 15 이상(M3, M4, M5)은 MLX가 `M >= 2`의 quantized projection을 다른 reduction으로 보내기 때문에 블록 폭 2부터 diverge합니다. 12는 세대 상수가 아니라 이 타깃의 가장 큰 projection에 대한 `d` 항목입니다. 같은 표는 `d`가 아닌 세대 13 부품에서 이 형태들에 6을, 이 타깃의 attention projection에는 어느 쪽이든 18을 읽습니다. `qmv_wide`에서 diverge하는 probe는 이를 끄고 재시도하며, 그것으로 정확성이 회복되면 narrow 커널을 유지합니다(#1199). 지금까지 측정된 모든 세대 15+ 호스트에서 일어나는 일이 이것이며, 두 경우 모두 diverge하는 probe만이 `MLXCEL_MTP_ALLOW_INEXACT=1`이 설정되지 않은 한 일반 decode로 물러납니다. B=1(단일 요청) MTP는 모든 MTP 타깃에서 기본으로 실행되며, Gemma 4 Unified 타깃은 아예 batch할 수 없으므로 B=1이 유일한 decode 경로이기도 합니다. batch가 가능한 31B + bf16 assistant는 M5 Max에서 약 1.2~1.4x, M3 Ultra에서 1.95x~2.65x로 측정되며(아래 참조), #1217 이후 Apple GPU 세대 15부터 기본으로 실행됩니다. B=1 verify forward가 비용을 회수하지 못하는 하드웨어에서는 `MLXCEL_ENABLE_MTP_B1=0`을 설정하여 끄십시오.
 
-위의 Gemma 4 행은 #1188 gate가 도입되기 전에 측정되었으므로 바이트 단위로 동일한 커널이 아니라 빠른 커널의 결과입니다. gate가 적용된 지금 세대 15+의 기본값은 바이트 단위로 동일한 커널이며, 빠른 행을 재현하려면 `MLXCEL_QMV_WIDE=1`과 `MLXCEL_MTP_ALLOW_INEXACT=1`을 함께 지정해야 합니다(고정(pin)은 gate의 재시도가 `qmv_wide`를 끄지 못하게 하고, override는 그래도 MTP를 작동시킵니다). `MLXCEL_MTP_ALLOW_INEXACT=1`만으로는 이에 도달하지 못합니다. 재시도가 override를 확인하기 전에 실행되어 프로세스를 narrow로 고정하고, 기본 환경과 바이트 단위로 동일한 출력을 내며, 그 처리량은 바이트 단위로 동일한 행 자체의 처리량으로 측정됩니다(2026-08-22 M3 Ultra에서 실시간 검증, 12B 조합에서 117 대 139 tok/s. [qmv-wide-pin-tax-m3ultra-2026-08-22](benchmark_results/qmv-wide-pin-tax-m3ultra-2026-08-22.md) 참조). `qmv_wide`를 끄는 방식으로 코드 행의 바이트 동일성을 유지하면, M5 Max에서는 121.0 대신 93.2 tok/s(2.79x 대신 2.14x)를, M3 Ultra에서는 138.5 대신 117.5 tok/s(2.16x 대신 1.83x)를 측정합니다. 한 호스트에서 처리량의 23%, 다른 호스트에서 15%이며, 이는 probe가 Qwen 조합에 대해 제시하는 17~20%와 같은 양이 아닙니다. probe는 verify forward에 드는 비용이고 이 수치는 end-to-end decode이며, 후자에서는 drafter step과 수락된 토큰의 방출이 영향을 받지 않습니다. 질문이 어느 쪽에 관한 것인지에 맞는 것을 인용하고 다른 쪽은 인용하지 마십시오.
+위의 Gemma 4 행은 #1188 gate가 도입되기 전에 측정되었으므로 바이트 단위로 동일한 커널이 아니라 빠른 커널의 결과입니다. gate가 적용된 지금 세대 15+의 기본값은 바이트 단위로 동일한 커널이며, 빠른 행을 재현하려면 `MLXCEL_QMV_WIDE=1`과 `MLXCEL_MTP_ALLOW_INEXACT=1`을 함께 지정해야 합니다(고정(pin)은 gate의 재시도가 `qmv_wide`를 끄지 못하게 하고, override는 그래도 MTP를 작동시킵니다). `MLXCEL_MTP_ALLOW_INEXACT=1`만으로는 이에 도달하지 못합니다. 재시도가 override를 확인하기 전에 실행되어 프로세스를 narrow로 고정하고, 기본 환경과 바이트 단위로 동일한 출력을 내며, 그 처리량은 바이트 단위로 동일한 행 자체의 처리량으로 측정됩니다(2026-08-22 M3 Ultra에서 실시간 검증, 12B 조합에서 117 대 139 tok/s. [qmv-wide-pin-tax-m3ultra-2026-08-22](benchmark_results/versions/v0.6.0.md#qmv-wide-pin-tax-m3ultra-2026-08-22) 참조). `qmv_wide`를 끄는 방식으로 코드 행의 바이트 동일성을 유지하면, M5 Max에서는 121.0 대신 93.2 tok/s(2.79x 대신 2.14x)를, M3 Ultra에서는 138.5 대신 117.5 tok/s(2.16x 대신 1.83x)를 측정합니다. 한 호스트에서 처리량의 23%, 다른 호스트에서 15%이며, 이는 probe가 Qwen 조합에 대해 제시하는 17~20%와 같은 양이 아닙니다. probe는 verify forward에 드는 비용이고 이 수치는 end-to-end decode이며, 후자에서는 drafter step과 수락된 토큰의 방출이 영향을 받지 않습니다. 질문이 어느 쪽에 관한 것인지에 맞는 것을 인용하고 다른 쪽은 인용하지 마십시오.
 
 M1 Ultra에는 그런 비용이 없습니다. 세대 13은 애초에 `qmv_wide`를 사용하지 않기 때문입니다. 그러나 arm들이 probe되지 않은 동안에도 divergence는 통과했으며, #1188이 이 arm들을 probe를 거치도록 한 지금 probe를 시험하는 사례가 바로 이것입니다. 그곳의 메커니즘은 `qmv_wide`일 수 없으므로, 그 호스트에서 probe가 무엇을 읽는지(그리고 통과한 뒤에도 산문 행이 여전히 diverge하는지)는 별도의 실행이 필요합니다. 이제 위의 세 프롬프트에 대해 `temperature 0`에서 두 arm을 diff했으며, 세 GPU 세대에서 각각 한 호스트씩, probe되는 Qwen 조합을 대조군으로 나란히 실행했습니다.
 
@@ -660,7 +737,7 @@ acceptance는 프롬프트가 대리로 작용한다는 뻔한 반론도 무너�
 
 어떤 호스트도 위의 경험 규칙이 예측하는 대로 동작하지 않습니다. 세대 13은 폭 12 미만에서 바이트 단위로 동일해야 하는데 프롬프트 하나는 그렇지 않고, 세대 15와 17은 폭 2부터 diverge해야 하는데 프롬프트 하나는 두 호스트 모두에서 그렇지 않습니다. 이 규칙은 op 수준에서는 성립하지만, acceptance 순서가 제시하는 이유로 모델 수준으로는 어느 방향으로도 이어지지 않습니다. generation이 두 커널이 불일치할 수 있는 위치에 도달하는지는 continuation의 속성이고, 하드웨어는 거기에 도달했을 때 무슨 일이 일어나는지만 결정합니다. 이것이 #1188의 논거입니다. probe는 하드웨어로 예측하는 대신 시작 시 조합에서 그 속성을 측정하며, probe되는 Qwen 조합은 확인한 두 호스트 모두에서 동일하게 나오고, M3 Ultra에서는 `qmv_wide`에서 실패한 뒤 프로세스에서 이를 비활성화하는 방식으로 그렇게 됩니다. arm당 generation 한 번으로 이 모든 것이 재현되며, M3 Ultra의 소스 코드 행은 22바이트 지점에서 갈라집니다.
 
-프로세스를 narrow로 고정했을 때 나머지 부분이 치르는 비용은 [qmv-wide-pin-tax-m3ultra-2026-08-22](benchmark_results/qmv-wide-pin-tax-m3ultra-2026-08-22.md)(issue #1261)에서 측정되었습니다. 두 MTP 계열 모두 batch를 행별 `M = 1` forward로 decode하여 `qmv_wide`에 도달하지 않으므로, B = 2~8의 batched decode는 최대 1%만 손해를 봅니다. 실제 부수적 비용은 prompt-cache-hit 요청당 약 15 ms 하나이며, 채택된 짧은 접미사의 prefill이 qmv 구간에 놓이기 때문입니다.
+프로세스를 narrow로 고정했을 때 나머지 부분이 치르는 비용은 [qmv-wide-pin-tax-m3ultra-2026-08-22](benchmark_results/versions/v0.6.0.md#qmv-wide-pin-tax-m3ultra-2026-08-22)(issue #1261)에서 측정되었습니다. 두 MTP 계열 모두 batch를 행별 `M = 1` forward로 decode하여 `qmv_wide`에 도달하지 않으므로, B = 2~8의 batched decode는 최대 1%만 손해를 봅니다. 실제 부수적 비용은 prompt-cache-hit 요청당 약 15 ms 하나이며, 채택된 짧은 접미사의 prefill이 qmv 구간에 놓이기 때문입니다.
 
 처리하지 않으면 그 diff가 거짓말을 하게 만드는 것이 두 가지 있습니다. MTP arm은 drafter 로더 줄을 `Generating...` *뒤에*, 에코된 프롬프트 바로 다음에 출력하므로, 단순한 diff는 1바이트 지점의 divergence를 보고하지만 이는 배너일 뿐입니다. 비교 전에 제거하십시오. 그리고 Gemma 4는 `--show-reasoning`을 전달하지 않으면 reasoning 채널을 숨기므로, 예산을 거기에 쓰는 조합은 빈 문자열 둘로 비교되어 공허하게 통과합니다. Qwen 검사에는 바로 이 이유로 그 플래그가 필요합니다. 이 세 Gemma 프롬프트는 그 채널을 전혀 사용하지 않는데, 이것 또한 가정하지 않고 확인해야 할 사항입니다.
 
@@ -715,11 +792,11 @@ classic arm 23.79에 대해 정점에서 0.99x, 폭 8에서 0.60x입니다. "3~4
 
 ### Gemma 4 12B 장문 context 정확성
 
-[M1 Ultra 12B 조사](benchmark_results/gemma4-12b-mtp-exactness-m1-ultra-2026-10-15.md)는 짧은 시작 draw는 통과하는데도 긴 buffered verify 불일치가 재현됨을 보입니다. sliding-ring 순서, mask 없는 단일 query full attention, classic prefill chunking을 맞추면 측정된 폭 4 경로가 복원됩니다. 256개의 teacher-forced 위치(그중 155개 decided)에서 불일치가 0이고, 1,238~1,638 토큰 프롬프트 뒤의 256 토큰 completion 세 개가 바이트 단위로 동일합니다. active-Metal 12B 시작 guard는 이제 긴 buffered draw를 포함하며, 지원되지 않는 레이아웃은 정확성을 우회하지 않고 여전히 거부하고, 기존 CUDA/31B 정책은 유지됩니다. 세 번의 counterbalanced release 반복은 27개 출력 해시를 모두 유지하지만, 강제 폭 MTP는 M1 Ultra에서 더 느립니다(짝지은 중앙값 비율 0.837x/0.903x/0.815x). scheduler-setup에서 probe 통과까지의 간격은 1.245 s에서 7.041 s로 늘어납니다. 적격성/수익성 기본값은 변경되지 않았습니다. 이것은 M1 Ultra 증거이며, M5나 CUDA 검증이 아닙니다. 고정된 검증 스위치, 산출물 출처, 분산, 측정 한계는 해당 기록을 참조하십시오.
+[M1 Ultra 12B 조사](benchmark_results/versions/v0.8.0.md#gemma4-12b-mtp-exactness-m1-ultra-2026-10-15)는 짧은 시작 draw는 통과하는데도 긴 buffered verify 불일치가 재현됨을 보입니다. sliding-ring 순서, mask 없는 단일 query full attention, classic prefill chunking을 맞추면 측정된 폭 4 경로가 복원됩니다. 256개의 teacher-forced 위치(그중 155개 decided)에서 불일치가 0이고, 1,238~1,638 토큰 프롬프트 뒤의 256 토큰 completion 세 개가 바이트 단위로 동일합니다. active-Metal 12B 시작 guard는 이제 긴 buffered draw를 포함하며, 지원되지 않는 레이아웃은 정확성을 우회하지 않고 여전히 거부하고, 기존 CUDA/31B 정책은 유지됩니다. 세 번의 counterbalanced release 반복은 27개 출력 해시를 모두 유지하지만, 강제 폭 MTP는 M1 Ultra에서 더 느립니다(짝지은 중앙값 비율 0.837x/0.903x/0.815x). scheduler-setup에서 probe 통과까지의 간격은 1.245 s에서 7.041 s로 늘어납니다. 적격성/수익성 기본값은 변경되지 않았습니다. 이것은 M1 Ultra 증거이며, M5나 CUDA 검증이 아닙니다. 고정된 검증 스위치, 산출물 출처, 분산, 측정 한계는 해당 기록을 참조하십시오.
 
 ### Gemma 4 31B + bf16 assistant
 
-**현재 정확성 (2026-09-26, #1983/#1279):** QAT와 non-QAT 31B 모두 이제 M5 Max에서 자동 narrow 커널 재시도 후 `MLXCEL_MTP_ALLOW_INEXACT` 없이 시작 probe를 통과합니다. non-QAT의 폭 2, 3, 4가 모두 통과합니다. 이 수정은 full-attention query/mask 기하, sliding-cache 물리적 ring 순서, classic prefill chunking을 일치시킵니다. singleton 선형 verify로 제한되며, batched MTP는 classic으로 fallback하고, 비선형 tree round는 비활성화되어 dispatch는 지원되는 선형 경로를 사용합니다. 장문 context logit 지표, greedy 동등성, 현재 test-fast 처리량은 [매칭된 QAT/non-QAT 측정](benchmark_results/gemma4-31b-mtp-exactness-2026-09-26.md)을 참조하십시오. 정적 하드웨어 선호는 측정된 정확성과 적응형 수익성에 계속 종속됩니다.
+**현재 정확성 (2026-09-26, #1983/#1279):** QAT와 non-QAT 31B 모두 이제 M5 Max에서 자동 narrow 커널 재시도 후 `MLXCEL_MTP_ALLOW_INEXACT` 없이 시작 probe를 통과합니다. non-QAT의 폭 2, 3, 4가 모두 통과합니다. 이 수정은 full-attention query/mask 기하, sliding-cache 물리적 ring 순서, classic prefill chunking을 일치시킵니다. singleton 선형 verify로 제한되며, batched MTP는 classic으로 fallback하고, 비선형 tree round는 비활성화되어 dispatch는 지원되는 선형 경로를 사용합니다. 장문 context logit 지표, greedy 동등성, 현재 test-fast 처리량은 [매칭된 QAT/non-QAT 측정](benchmark_results/versions/v0.8.0.md#gemma4-31b-mtp-exactness-2026-09-26)을 참조하십시오. 정적 하드웨어 선호는 측정된 정확성과 적응형 수익성에 계속 종속됩니다.
 
 현재 M5 Max / 128 GiB, test-fast 프로파일, 폭 4, 256 토큰 출력 세 개 (시나리오 및 arm당 관측 하나):
 
@@ -732,8 +809,7 @@ classic arm 23.79에 대해 정점에서 0.99x, 폭 8에서 0.60x입니다. "3~4
 
 아래 M3 Ultra 수치는 **정확성 gate와 이 수정 이전의 과거 측정**입니다. 그 구현의 처리량을 설명할 뿐 오늘의 정확한 경로의 속도를 입증하지 않습니다.
 
-31B 텍스트 타깃은 batch가 가능하며, 이는 B=1 정적 gate(`mtp_b1_default`)가 관장하는 경우입니다. issue #1217 이전에는 이 gate가 `has_neural_accelerator`가 성립하는 곳에서만 singleton 경로를 실행했는데, 이 조합의 속도 향상이 batched(B>1) verify 윈도우에서 나오고 bf16 assistant의 단일 스트림 acceptance는 추가 drafter forward를 상쇄하기에 너무 낮다는 해석에 근거한 것이었습니다. 그 해석의 두 절반 모두 #1194, #1199, #1203, #1208 및
-#1215 이전에 측정된 것이며, 재측정에서 어느 쪽도 살아남지 못했습니다.
+31B 텍스트 타깃은 batch가 가능하며, 이는 B=1 정적 gate(`mtp_b1_default`)가 관장하는 경우입니다. issue #1217 이전에는 이 gate가 `has_neural_accelerator`가 성립하는 곳에서만 singleton 경로를 실행했는데, 이 조합의 속도 향상이 batched(B>1) verify 윈도우에서 나오고 bf16 assistant의 단일 스트림 acceptance는 추가 drafter forward를 상쇄하기에 너무 낮다는 해석에 근거한 것이었습니다. 그 해석의 두 절반 모두 #1194, #1199, #1203, #1208 및 #1215 이전에 측정된 것이며, 재측정에서 어느 쪽도 살아남지 못했습니다.
 
 M3 Ultra, 2026-08-20, 블록 4, greedy, 위의 프로토콜(`scripts/bench_speculative.sh gemma31b`)에 따름:
 
@@ -774,5 +850,4 @@ benchmarks/
 - **MLX pin이 중요합니다.** 고정된 MLX 커밋이 바뀌면 커널 선택이 달라질 수 있습니다.
 - **VLM 비교는 텍스트 비교와 별개입니다.** 비전 전처리, 이미지 해상도, 프롬프트 구성은 계열마다 다릅니다.
 - **CUDA 수치는 GPU 간에 호환되지 않습니다.** 결과와 함께 SM 타깃과 드라이버/툴킷 버전을 게시하십시오.
-- **`models/`의 중복 체크포인트는 호스트별 산물입니다.** `bench_decode.sh
-  all`은 이제 체크포인트 동일성으로 중복을 제거하므로(위 참조), 심볼릭 링크나 재다운로드된 별칭이 속하는 그룹은 로컬 `MODELS_DIR`에 실제로 무엇이 있는지에 달려 있습니다. CSV 행의 survivor 이름은 어느 별칭이 upstream에서 정식(canonical)인지에 대한 주장이 아니라, 이 특정 sweep이 어느 디렉터리를 측정했는지에 대한 것일 뿐입니다.
+- **`models/`의 중복 체크포인트는 호스트별 산물입니다.** `bench_decode.sh all`은 이제 체크포인트 동일성으로 중복을 제거하므로(위 참조), 심볼릭 링크나 재다운로드된 별칭이 속하는 그룹은 로컬 `MODELS_DIR`에 실제로 무엇이 있는지에 달려 있습니다. CSV 행의 survivor 이름은 어느 별칭이 upstream에서 정식(canonical)인지에 대한 주장이 아니라, 이 특정 sweep이 어느 디렉터리를 측정했는지에 대한 것일 뿐입니다.

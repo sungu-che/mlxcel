@@ -2,10 +2,10 @@
 
 mlxcel은 token별 출력을 내는 두 종류의 모델을 오프라인으로 실행하며, 각각 별도의 서브커맨드를 가집니다.
 
-| 형태 | 서브커맨드 | Label | 출력 |
+| 형태 | 서브커맨드 | 라벨 | 출력 |
 |---|---|---|---|
-| Token classification | `mlxcel tag` | 체크포인트가 고정(`id2label`, BIO 또는 BIOES) | 태그가 붙은 문자 span과 텍스트의 redaction 사본 |
-| Span extraction | `mlxcel extract` | 요청마다 선택(`--labels`, `--labels-json`, `--classify`) | label을 키로 하는 span 목록, 또는 task당 하나의 class |
+| 토큰 분류 | `mlxcel tag` | 체크포인트가 고정(`id2label`, BIO 또는 BIOES) | 태그가 붙은 문자 span과 텍스트의 redaction 사본 |
+| 스팬 추출 | `mlxcel extract` | 요청마다 선택(`--labels`, `--labels-json`, `--classify`) | label을 키로 하는 span 목록, 또는 task당 하나의 class |
 
 두 형태는 입력이 다르기 때문에 별도의 trait(`src/token_classification/`의 `TokenClassifierModel`과 `SpanExtractorModel`)입니다. label이 고정된 모델에 요청 label을 넘기면 그것을 조용히 무시해야 하기 때문입니다. 체크포인트를 다른 형태의 서브커맨드에 넘기면, 올바른 서브커맨드를 알려 주는 메시지와 함께 실패합니다.
 
@@ -13,11 +13,11 @@ mlxcel은 의도적인 결정에 따라 어느 형태도 HTTP로 서빙하지 �
 
 ## 지원 패밀리
 
-| 패밀리 | 감지 | Kind | 디코딩 | 검증된 체크포인트 |
+| 패밀리 | 감지 | 종류 | 디코딩 | 검증된 체크포인트 |
 |---|---|---|---|---|
-| BERT / XLM-RoBERTa token classifier | `model_type`이 `bert`, `xlm-roberta`, `xlm_roberta`이고 `architectures[0]`이 `ForTokenClassification`으로 끝나며 비어 있지 않은 `id2label`이 있음 | `bert_token_classifier` | token별 argmax | [`nativ-community/rampart-mlx-fp16`](https://huggingface.co/nativ-community/rampart-mlx-fp16), [`nativ-community/rampart-mlx-4bit`](https://huggingface.co/nativ-community/rampart-mlx-4bit) |
+| BERT / XLM-RoBERTa 토큰 분류기 | `model_type`이 `bert`, `xlm-roberta`, `xlm_roberta`이고 `architectures[0]`이 `ForTokenClassification`으로 끝나며 비어 있지 않은 `id2label`이 있음 | `bert_token_classifier` | token별 argmax | [`nativ-community/rampart-mlx-fp16`](https://huggingface.co/nativ-community/rampart-mlx-fp16), [`nativ-community/rampart-mlx-4bit`](https://huggingface.co/nativ-community/rampart-mlx-4bit) |
 | OpenAI Privacy Filter | `model_type`이 `openai_privacy_filter`이고 비어 있지 않은 `id2label`이 있음 | `openai_privacy_filter` | 제약된 BIOES Viterbi(기본값), `--argmax`를 쓰면 token별 argmax | [`mlx-community/openai-privacy-filter-bf16`](https://huggingface.co/mlx-community/openai-privacy-filter-bf16), [`mlx-community/openai-privacy-filter-8bit`](https://huggingface.co/mlx-community/openai-privacy-filter-8bit) |
-| GLiNER2.5 span extractor | `model_type`이 `gliner2` 또는 `gliner2_5`이거나, `architectures`가 `Gliner2ForSchemaExtraction` 또는 `BoundaryExtractor`를 지명함. `architecture`는 `boundary` | `gliner2_5` | 공유 후보 pool에 대한 sigmoid span 점수, label별로 겹침을 해소 | [`fastino/gliner2.5-small-v1`](https://huggingface.co/fastino/gliner2.5-small-v1) |
+| GLiNER2.5 스팬 추출기 | `model_type`이 `gliner2` 또는 `gliner2_5`이거나, `architectures`가 `Gliner2ForSchemaExtraction` 또는 `BoundaryExtractor`를 지명함. `architecture`는 `boundary` | `gliner2_5` | 공유 후보 pool에 대한 sigmoid span 점수, label별로 겹침을 해소 | [`fastino/gliner2.5-small-v1`](https://huggingface.co/fastino/gliner2.5-small-v1) |
 
 GLiNER2.5는 첫 번째 span-extraction 패밀리입니다. `mlxcel extract` 아래의 [GLiNER2.5](#gliner25)를 참고하십시오.
 

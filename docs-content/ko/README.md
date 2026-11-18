@@ -13,7 +13,7 @@ MkDocs 페이지가 추가되더라도 독립적인 Markdown 파일로 읽을 �
 
 현재 GitHub용 문서:
 
-1. `installation.md` - macOS, CUDA가 있는 Linux, AMD ROCm(실험적)이 있는 Linux, NVIDIA CUDA가 있는 Windows(실험적)의 플랫폼 요구 사항과 빌드 플래그.
+1. `installation.md` - macOS, CUDA가 있는 Linux, AMD ROCm이 있는 Linux, AMD ROCm이 있는 Windows, NVIDIA CUDA가 있는 Windows(실험적)의 플랫폼 요구 사항과 빌드 플래그.
 2. `environment-variables.md` - `MLXCEL_*` 런타임, 빌드, 다운로더, 캐시, 진단용 설정.
 3. `benchmarks.md` - 벤치마크 방법론과 향후 원시 결과 표에 대한 요구 사항.
 4. `supported-models.md` - 관리되는 아키텍처/체크포인트 지원 매트릭스.
@@ -41,12 +41,15 @@ MkDocs 페이지가 추가되더라도 독립적인 Markdown 파일로 읽을 �
 26. `model-triage.md` - 보고된 모델 커버리지 공백에 대한 처리 결과와 각각의 근거, 그리고 남은 후보를 포팅하면 무엇이 추가되는지.
 27. `vision-model-scope.md` - detection, segmentation, 3D body, grounding, 이미지·비디오 생성 패밀리의 범위 기록: 지원되는 것, 포트 이슈와 함께 image-generation 및 dense-prediction 에픽으로 이동한 것, 범위 밖으로 남은 것, 범위를 재설정하는 기준.
 28. `dense-prediction.md` - `mlxcel predict` 이미지/비디오 CLI, 텐서 및 프리뷰 파일 계약, 공유 보간/전처리 API, 패밀리 등록 가이드.
+29. `macos-memory.md` - macOS 메모리 가드레일: 현재 사용 가능한 메모리와 예약량, 풋프린트 메트릭, 선택적 가중치 배선(weight wiring), 단계적 확장, soak 절차.
 
 ## mlxcelverse 유지보수
 
+[cuda-oxide 타당성 검토](mlxcelverse/cuda-oxide-feasibility.md)는 Rust로 작성된 선택적 CUDA 커널, MLX 통합 경계, 하드웨어/툴체인 제약 사항 및 제안된 검증 계획을 평가합니다.
+
 `mlxcelverse/rocm-overlay.md`는 ROCm 오버레이를 MLX pin 및 그 기반이 되는 NripeshN/mlx 포크와 동기화된 상태로 유지하는 절차이며, `scripts/mlxcelverse/` 도구와 `make verify-rocm-overlay` 게이트를 포함합니다. `mlxcelverse/upstream/`에는 제출되지 않은 채 과거 참고용으로 보관되는 포크 측 수정 패키지가 있습니다. 포크에 대한 수정은 오버레이에 남기며 NripeshN/mlx에는 PR을 보내지 않습니다. 해당 README가 색인입니다.
 
-## Architecture Decision Records
+## 아키텍처 결정 기록(ADR)
 
 `adr/`에는 번호가 매겨진 Architecture Decision Record가 있으며, 파일당 하나의 중요한 결정을 담고, Accepted 상태가 되면 변경할 수 없습니다. 색인은 `adr/README.md`를 참고하십시오.
 

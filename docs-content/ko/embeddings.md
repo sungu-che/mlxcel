@@ -140,7 +140,7 @@ llama-server b10621 플래그 두 개는 체크포인트가 요구하는 값을 
 | 플래그 | 값 | 미설정 시 |
 |---|---|---|
 | `--pooling` | `mean`, `cls`, `last` (b10621에는 `none`과 `rank`도 있습니다. 아래 참고) | `1_Pooling/config.json`, 그다음 계열 기본값 |
-| `--embd-normalize` | `-1` 없음, `0` max absolute int16, `1` taxicab, `2` euclidean, 2 초과는 해당 p-norm | 체크포인트 `config.json`의 `normalize` 플래그. 달리 지정하지 않으면 euclidean입니다 |
+| `--embd-normalize` | `-1` 없음, `0` 최대 절댓값 int16, `1` taxicab, `2` euclidean, 2 초과는 해당 p-norm | 체크포인트 `config.json`의 `normalize` 플래그. 달리 지정하지 않으면 euclidean입니다 |
 
 `--pooling`은 `1_Pooling/config.json`과 `MLXCEL_EMBEDDING_POOLING` 변수보다 우선하며, `GET /props`는 실제로 결정된 모드를 보고하므로 체크포인트가 재정의한 값을 가정하지 않고 확인할 수 있습니다. mlxcel 고유의 `max` 풀링은 b10621에 대응하는 표기가 없으므로 `MLXCEL_EMBEDDING_POOLING`과 체크포인트 config를 통해서만 사용할 수 있습니다.
 
@@ -289,7 +289,7 @@ mlxcel embed -m nvidia/llama-nemotron-embed-vl-1b-v2 \
 
 ### ColIdefics3 (`idefics3`, `ColIdefics3`)
 
-SmolVLM / Idefics3 스택 위의 late-interaction 시각 문서 검색기입니다. SigLIP tower, `pixel_shuffle(scale_factor)` connector, SmolLM2 decoder는 `mlxcel generate`가 이미 실행하는 것들입니다. 검색은 양 끝만 바꿉니다. decoder는 최종 norm에서 멈추고(체크포인트에는 `lm_head`가 아예 없습니다), 하나의 `Linear`(`linear.{weight,bias}`, `[128, 576]`)가 모든 token의 hidden state를 128차원으로 projection하며, 각 token 벡터는 L2 정규화되고 패딩 행은 0으로 채워집니다.
+SmolVLM / Idefics3 스택 위의 late-interaction 시각 문서 검색기입니다. SigLIP 타워, `pixel_shuffle(scale_factor)` 커넥터, SmolLM2 디코더는 `mlxcel generate`가 이미 실행하는 것들입니다. 검색은 양 끝만 바꿉니다. decoder는 최종 norm에서 멈추고(체크포인트에는 `lm_head`가 아예 없습니다), 하나의 `Linear`(`linear.{weight,bias}`, `[128, 576]`)가 모든 token의 hidden state를 128차원으로 projection하며, 각 token 벡터는 L2 정규화되고 패딩 행은 0으로 채워집니다.
 
 두 항목 종류가 서로 다른 형식을 사용하기 때문에 프롬프트는 호출자가 아니라 계열이 만듭니다. 이미지 문서는 `<|im_start|>User:<image>Describe the image.<end_of_utterance>\nAssistant:`로 렌더링되고, 이후 엔진이 단일 `<image>`를 프로세서의 프레임이 있는 타일 구간(`<fake_token_around_image><row_r_col_c>`에 타일당 이미지 token 64개, 한 줄에 한 행, 이어서 전역 썸네일 블록)으로 교체합니다. 쿼리는 `Query: {text}` 뒤에 열 개의 `<end_of_utterance>` 증강 token을 붙여 렌더링되며, 이것이 짧은 쿼리에 MaxSim이 구별하기에 충분한 벡터 수를 제공합니다. 이 계열은 `instruction` 필드를 사용하지 않습니다.
 
@@ -303,7 +303,7 @@ mlxcel embed -m models/colSmol-256M-merged \
 
 ### ColQwen2.5 (`qwen2_5_vl` / `colqwen2`, `ColQwen25`)
 
-Qwen2.5-VL 스택 위의 같은 레시피입니다. windowed vision tower와 patch merger가 M-RoPE를 쓰는 Qwen2 decoder에 입력을 공급하고, `Qwen2VLModel::forward_hidden`은 최종 norm에서 멈추며, `custom_text_proj`(`[128, 2048]`와 bias)가 모든 token을 projection합니다. position id는 입력을 따릅니다. 텍스트 전용 micro-batch는 backbone이 텍스트 prefill용으로 만드는 순차적인 `[3, B, L]` 위치를 사용하고, 이미지 입력은 실제 M-RoPE grid를 유지하며, 이전 이미지 요청의 공간 위치가 새어 들어오지 않도록 텍스트 배치 전에 요청별 M-RoPE 슬롯이 비워집니다.
+Qwen2.5-VL 스택 위의 같은 레시피입니다. windowed vision tower와 패치 병합 모듈가 M-RoPE를 쓰는 Qwen2 decoder에 입력을 공급하고, `Qwen2VLModel::forward_hidden`은 최종 norm에서 멈추며, `custom_text_proj`(`[128, 2048]`와 bias)가 모든 token을 projection합니다. position id는 입력을 따릅니다. 텍스트 전용 micro-batch는 backbone이 텍스트 prefill용으로 만드는 순차적인 `[3, B, L]` 위치를 사용하고, 이미지 입력은 실제 M-RoPE grid를 유지하며, 이전 이미지 요청의 공간 위치가 새어 들어오지 않도록 텍스트 배치 전에 요청별 M-RoPE 슬롯이 비워집니다.
 
 이미지 문서는 `<|image_pad|>` 구간이 병합된 patch당 token 하나로 확장된 `<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>Describe the image.<|im_end|><|endoftext|>`로 렌더링되고, 쿼리는 `Query: {text}`에 열 개의 `<|endoftext|>` token을 붙인 형태로 렌더링됩니다. 문서 턴은 assistant 헤더가 아니라 `<|endoftext|>`로 닫히며, 이는 참조 프로세서와 체크포인트 자체의 `additional_chat_templates/sentence_transformers.jinja`가 모두 내보내는 방식입니다. 페이지 뒤에 생성되는 것은 없습니다. `preprocessor_config.json`은 이미지를 `768 * 28 * 28` 픽셀로 제한하며, 이는 한 페이지를 768개의 visual token으로 제한합니다.
 
@@ -421,7 +421,7 @@ mlxcel embed -m LiquidAI/LFM2.5-Embedding-350M \
 - token id 입력은 그대로 사용되며(특수 토큰은 추가되지 않음) 모든 id는 `< vocab_size`여야 합니다.
 - `encoding_format: base64`는 각 벡터를 little-endian f32 바이트로 인코딩하며, 패딩이 있는 표준 base64를 사용합니다. multi-vector(late-interaction) 모델에서 `embedding`은 float 모드에서는 벡터의 목록 `[num_real_tokens][D]`이고, base64 모드에서는 row-major 바이트와 형제 필드 `"shape": [num_real_tokens, D]`입니다.
 - `usage.prompt_tokens`는 특수 토큰을 포함하여 모든 입력의 실제(패딩이 아닌) token 수를 셉니다. `total_tokens`는 이와 같습니다.
-- `image_url` 항목은 `data:image/...;base64,` URI, `file://` 경로, `http(s)://` URL 또는 로컬 경로를 받아들이며 공유 이미지 제한의 적용을 받습니다. 이미지는 한 번에 하나씩 임베딩되고, 텍스트 항목은 token 길이순으로 정렬되어 `--embedding-batch-size` 크기의 micro-batch로 잘린 뒤 요청 순서대로 다시 기록됩니다.
+- `image_url` 항목은 `data:image/...;base64,` URI, `file://` 경로, `http(s)://` URL 또는 로컬 경로를 받아들이며 공유 이미지 제한의 적용을 받습니다. 사진은 임베딩되기 전에 EXIF 방향 태그에 따라 똑바로 회전됩니다. 이미지는 한 번에 하나씩 임베딩되고, 텍스트 항목은 token 길이순으로 정렬되어 `--embedding-batch-size` 크기의 micro-batch로 잘린 뒤 요청 순서대로 다시 기록됩니다.
 
 ### 오류
 
@@ -435,12 +435,12 @@ mlxcel embed -m LiquidAI/LFM2.5-Embedding-350M \
 
 ## 서버 플래그
 
-| 플래그 | Env | 기본값 | 의미 |
+| 플래그 | 환경 변수 | 기본값 | 의미 |
 |------|-----|---------|---------|
 | `-m <embedding checkpoint>` | `LLAMA_ARG_MODEL` | | 체크포인트를 `/v1/embeddings`에서 서비스하며, 채팅은 로드되지 않은 상태로 유지됩니다. |
-| `--embedding-model <path or repo-id>` | `LLAMA_ARG_EMBEDDING_MODEL`, `MLXCEL_EMBEDDING_MODEL` | unset | `-m`의 채팅 모델과 함께 `/v1/embeddings`에서 서비스되는 두 번째 체크포인트입니다. `-m`과 같은 방식으로 해석되고 자동 다운로드됩니다. `-m`의 임베딩 체크포인트와 함께 지정하면 시작 오류("two embedding models")입니다. 명시한 `--embedding-model`의 로드 실패는 시작 오류이며, `-m` 임베딩 체크포인트의 로드 실패는 로그에 기록되고 라우트는 `501`로 응답합니다. |
+| `--embedding-model <path or repo-id>` | `LLAMA_ARG_EMBEDDING_MODEL`, `MLXCEL_EMBEDDING_MODEL` | 미설정 | `-m`의 채팅 모델과 함께 `/v1/embeddings`에서 서비스되는 두 번째 체크포인트입니다. `-m`과 같은 방식으로 해석되고 자동 다운로드됩니다. `-m`의 임베딩 체크포인트와 함께 지정하면 시작 오류("two embedding models")입니다. 명시한 `--embedding-model`의 로드 실패는 시작 오류이며, `-m` 임베딩 체크포인트의 로드 실패는 로그에 기록되고 라우트는 `501`로 응답합니다. |
 | `--embedding-batch-size N` | `MLXCEL_EMBEDDING_BATCH_SIZE` | `16` | forward pass당 텍스트 수. |
-| `--embedding-max-length N` | `MLXCEL_EMBEDDING_MAX_LENGTH` | derived | 도출된 `max_length`를 낮춥니다. |
+| `--embedding-max-length N` | `MLXCEL_EMBEDDING_MAX_LENGTH` | 파생 | 도출된 `max_length`를 낮춥니다. |
 | `--embedding-queue-depth N` | `MLXCEL_EMBEDDING_QUEUE_DEPTH` | `8` | 각 임베딩/reranking worker 명령 큐의 상한이며, 큐가 가득 차면 `503`을 반환합니다. |
 | `--embedding-request-timeout-secs N` | `MLXCEL_EMBEDDING_REQUEST_TIMEOUT_SECS` | `120` | 요청별 임베딩/reranking 응답 타임아웃이며, `0`이면 기본값으로 fallback됩니다. |
 
@@ -548,10 +548,10 @@ POST /v1/rerank
 
 ### Reranker 플래그
 
-| 플래그 | Env | 기본값 | 의미 |
+| 플래그 | 환경 변수 | 기본값 | 의미 |
 |------|-----|---------|---------|
 | `-m <cross-encoder checkpoint>` | `LLAMA_ARG_MODEL` | | 단일 label `ForSequenceClassification` 체크포인트를 `/v1/rerank`에서 서비스하며, 채팅은 로드되지 않은 상태로 유지됩니다. |
-| `--reranker-model <path or repo-id>` | `LLAMA_ARG_RERANKER_MODEL`, `MLXCEL_RERANKER_MODEL` | unset | `-m`의 채팅 모델과 함께 `/v1/rerank`에서 서비스되는 체크포인트입니다. `-m`과 같은 방식으로 해석되고 자동 다운로드됩니다. generative reranker에 접근하는 유일한 방법입니다. |
+| `--reranker-model <path or repo-id>` | `LLAMA_ARG_RERANKER_MODEL`, `MLXCEL_RERANKER_MODEL` | 미설정 | `-m`의 채팅 모델과 함께 `/v1/rerank`에서 서비스되는 체크포인트입니다. `-m`과 같은 방식으로 해석되고 자동 다운로드됩니다. generative reranker에 접근하는 유일한 방법입니다. |
 | `--rerank-batch-size N` | `MLXCEL_RERANK_BATCH_SIZE` | `0` (종류별 기본값: 텍스트는 8, 멀티모달은 2) | forward pass당 쿼리/문서 쌍 수. |
 
 큐 깊이와 응답 타임아웃은 임베딩 worker와 공유됩니다(`--embedding-queue-depth`, `--embedding-request-timeout-secs`). 두 단일 스레드 worker가 동일한 방식으로 부하를 흘려보내기 때문입니다. 명시한 `--reranker-model`의 로드 실패는 시작 오류이며, `-m` reranker 체크포인트의 로드 실패는 로그에 기록되고 라우트는 `501`로 응답합니다.
