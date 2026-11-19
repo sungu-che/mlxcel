@@ -3,8 +3,8 @@
     "repo": "lablup/mlxcel",
     "ref": "main",
     "dir": "docs",
-    "commit": "ce18d22212f9e31ad76f77658a55e418d9a62c66",
-    "commitDate": "2026-11-18T02:59:25Z"
+    "commit": "a00629a623c55a0e82fe6866e891d9bbfb833864",
+    "commitDate": "2026-11-19T10:55:45Z"
   },
   "files": [
     {
@@ -65,7 +65,7 @@
       "name": "distributed.md",
       "slug": "distributed",
       "title": "Distributed inference",
-      "size": 57748
+      "size": 57755
     },
     {
       "name": "embeddings.md",
@@ -77,7 +77,7 @@
       "name": "environment-variables.md",
       "slug": "environment-variables",
       "title": "Environment variables",
-      "size": 283485
+      "size": 284684
     },
     {
       "name": "sparse-paged-decode.md",
@@ -104,6 +104,12 @@
       "size": 114768
     },
     {
+      "name": "kv-contents-reproducer-spec.md",
+      "slug": "kv-contents-reproducer-spec",
+      "title": "KV contents reproducer spec (#2778 criterion 1, second half)",
+      "size": 44769
+    },
+    {
       "name": "llama-server-compat.md",
       "slug": "llama-server-compat",
       "title": "llama-server compatibility boundary (b10621)",
@@ -119,7 +125,7 @@
       "name": "mla-absorbed-decode.md",
       "slug": "mla-absorbed-decode",
       "title": "MLA matrix-absorbed decode",
-      "size": 16409
+      "size": 21739
     },
     {
       "name": "README.md",
@@ -197,7 +203,7 @@
       "name": "temperature-0-block-history-flip.md",
       "slug": "temperature-0-block-history-flip",
       "title": "Temperature 0: plain decode versus block-built KV history (#2778)",
-      "size": 18339
+      "size": 19172
     },
     {
       "name": "f32-attention-widen-audit.md",
@@ -221,7 +227,7 @@
       "name": "turbo-kv-cache.md",
       "slug": "turbo-kv-cache",
       "title": "TurboQuant KV cache",
-      "size": 37918
+      "size": 43087
     },
     {
       "name": "vision-model-scope.md",
