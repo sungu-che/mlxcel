@@ -3,8 +3,8 @@
     "repo": "lablup/mlxcel",
     "ref": "main",
     "dir": "docs",
-    "commit": "a00629a623c55a0e82fe6866e891d9bbfb833864",
-    "commitDate": "2026-11-19T10:55:45Z"
+    "commit": "363a0ba6b5554c3eb135b92ec82b6eeb380b6356",
+    "commitDate": "2026-11-19T22:34:49Z"
   },
   "files": [
     {
@@ -77,7 +77,7 @@
       "name": "environment-variables.md",
       "slug": "environment-variables",
       "title": "Environment variables",
-      "size": 284684
+      "size": 286245
     },
     {
       "name": "sparse-paged-decode.md",
@@ -95,7 +95,7 @@
       "name": "image-generation.md",
       "slug": "image-generation",
       "title": "Image generation",
-      "size": 93037
+      "size": 97294
     },
     {
       "name": "installation.md",
@@ -197,7 +197,7 @@
       "name": "supported-models.md",
       "slug": "supported-models",
       "title": "Supported models",
-      "size": 305330
+      "size": 306404
     },
     {
       "name": "temperature-0-block-history-flip.md",
@@ -227,7 +227,7 @@
       "name": "turbo-kv-cache.md",
       "slug": "turbo-kv-cache",
       "title": "TurboQuant KV cache",
-      "size": 43087
+      "size": 52947
     },
     {
       "name": "vision-model-scope.md",
