@@ -3,8 +3,8 @@
     "repo": "lablup/mlxcel",
     "ref": "main",
     "dir": "docs",
-    "commit": "d6ef8437faed7fca7fe8ee3a9c476a35ef45ba39",
-    "commitDate": "2026-11-20T15:35:22Z"
+    "commit": "3f78ed71b43c8c21fbb422714407d2935c9ab37f",
+    "commitDate": "2026-11-23T10:48:42Z"
   },
   "files": [
     {
@@ -17,7 +17,7 @@
       "name": "architecture.md",
       "slug": "architecture",
       "title": "Architecture overview",
-      "size": 16695
+      "size": 17018
     },
     {
       "name": "audio-preprocessing.md",
@@ -47,13 +47,13 @@
       "name": "code-guidelines.md",
       "slug": "code-guidelines",
       "title": "Code Modification Guidelines",
-      "size": 32520
+      "size": 38794
     },
     {
       "name": "CONTINUOUS_BATCHING.md",
       "slug": "CONTINUOUS_BATCHING",
       "title": "Continuous batching and disaggregated serving",
-      "size": 97706
+      "size": 100459
     },
     {
       "name": "dense-prediction.md",
@@ -71,13 +71,13 @@
       "name": "embeddings.md",
       "slug": "embeddings",
       "title": "Embeddings and reranking APIs and CLI",
-      "size": 63127
+      "size": 72107
     },
     {
       "name": "environment-variables.md",
       "slug": "environment-variables",
       "title": "Environment variables",
-      "size": 287625
+      "size": 294505
     },
     {
       "name": "sparse-paged-decode.md",
@@ -101,7 +101,7 @@
       "name": "installation.md",
       "slug": "installation",
       "title": "Installation",
-      "size": 114768
+      "size": 117990
     },
     {
       "name": "kv-contents-reproducer-spec.md",
@@ -113,7 +113,7 @@
       "name": "llama-server-compat.md",
       "slug": "llama-server-compat",
       "title": "llama-server compatibility boundary (b10621)",
-      "size": 151759
+      "size": 156958
     },
     {
       "name": "macos-memory.md",
@@ -125,13 +125,13 @@
       "name": "mla-absorbed-decode.md",
       "slug": "mla-absorbed-decode",
       "title": "MLA matrix-absorbed decode",
-      "size": 21739
+      "size": 22164
     },
     {
       "name": "README.md",
       "slug": "README",
       "title": "mlxcel documentation layout",
-      "size": 8575
+      "size": 8823
     },
     {
       "name": "adding-models.md",
@@ -173,7 +173,7 @@
       "name": "responses-api.md",
       "slug": "responses-api",
       "title": "OpenAI Responses API subset (`/v1/responses`)",
-      "size": 48741
+      "size": 65089
     },
     {
       "name": "python-client.md",
@@ -185,7 +185,7 @@
       "name": "server-features.md",
       "slug": "server-features",
       "title": "Server features and deployment guide",
-      "size": 28418
+      "size": 28990
     },
     {
       "name": "speculative-acceptance.md",
@@ -197,7 +197,7 @@
       "name": "supported-models.md",
       "slug": "supported-models",
       "title": "Supported models",
-      "size": 306404
+      "size": 341281
     },
     {
       "name": "temperature-0-block-history-flip.md",
@@ -227,7 +227,13 @@
       "name": "turbo-kv-cache.md",
       "slug": "turbo-kv-cache",
       "title": "TurboQuant KV cache",
-      "size": 59067
+      "size": 61150
+    },
+    {
+      "name": "decisions.md",
+      "slug": "decisions",
+      "title": "Typed decisions API and CLI",
+      "size": 25340
     },
     {
       "name": "vision-model-scope.md",
