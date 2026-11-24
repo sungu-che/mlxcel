@@ -3,15 +3,15 @@
     "repo": "lablup/mlxcel",
     "ref": "main",
     "dir": "docs",
-    "commit": "3f78ed71b43c8c21fbb422714407d2935c9ab37f",
-    "commitDate": "2026-11-23T10:48:42Z"
+    "commit": "fc10c85217caaa7be282454dac4a1b07ae45f00f",
+    "commitDate": "2026-11-24T11:57:37Z"
   },
   "files": [
     {
       "name": "mtp-policy-api.md",
       "slug": "mtp-policy-api",
       "title": "Adaptive MTP policy API (`/v1/internal/mtp-policy`)",
-      "size": 14154
+      "size": 14626
     },
     {
       "name": "architecture.md",
@@ -29,7 +29,7 @@
       "name": "benchmarks.md",
       "slug": "benchmarks",
       "title": "Benchmarks",
-      "size": 112167
+      "size": 112997
     },
     {
       "name": "block-diffusion.md",
@@ -53,7 +53,7 @@
       "name": "CONTINUOUS_BATCHING.md",
       "slug": "CONTINUOUS_BATCHING",
       "title": "Continuous batching and disaggregated serving",
-      "size": 100459
+      "size": 101813
     },
     {
       "name": "dense-prediction.md",
@@ -77,7 +77,7 @@
       "name": "environment-variables.md",
       "slug": "environment-variables",
       "title": "Environment variables",
-      "size": 294505
+      "size": 297769
     },
     {
       "name": "sparse-paged-decode.md",
@@ -89,7 +89,7 @@
       "name": "gelu-call-sites.md",
       "slug": "gelu-call-sites",
       "title": "GELU call sites and the upstream activation each one ports",
-      "size": 80797
+      "size": 81088
     },
     {
       "name": "image-generation.md",
@@ -191,13 +191,13 @@
       "name": "speculative-acceptance.md",
       "slug": "speculative-acceptance",
       "title": "Speculative-decoding acceptance rules",
-      "size": 17443
+      "size": 17836
     },
     {
       "name": "supported-models.md",
       "slug": "supported-models",
       "title": "Supported models",
-      "size": 341281
+      "size": 352402
     },
     {
       "name": "temperature-0-block-history-flip.md",
