@@ -3,8 +3,8 @@
     "repo": "lablup/mlxcel",
     "ref": "main",
     "dir": "docs",
-    "commit": "66bf600acfd80f70d924df3a14d14e657772aabe",
-    "commitDate": "2026-11-25T09:56:46Z"
+    "commit": "01e6516b73017193d3a4d0489ccf1b7a760c2d66",
+    "commitDate": "2026-11-26T11:40:30Z"
   },
   "files": [
     {
@@ -47,7 +47,7 @@
       "name": "code-guidelines.md",
       "slug": "code-guidelines",
       "title": "Code Modification Guidelines",
-      "size": 38794
+      "size": 38611
     },
     {
       "name": "CONTINUOUS_BATCHING.md",
@@ -89,7 +89,7 @@
       "name": "gelu-call-sites.md",
       "slug": "gelu-call-sites",
       "title": "GELU call sites and the upstream activation each one ports",
-      "size": 81088
+      "size": 81210
     },
     {
       "name": "image-generation.md",
@@ -173,7 +173,7 @@
       "name": "responses-api.md",
       "slug": "responses-api",
       "title": "OpenAI Responses API subset (`/v1/responses`)",
-      "size": 65089
+      "size": 65374
     },
     {
       "name": "python-client.md",
@@ -197,7 +197,7 @@
       "name": "supported-models.md",
       "slug": "supported-models",
       "title": "Supported models",
-      "size": 354760
+      "size": 360575
     },
     {
       "name": "temperature-0-block-history-flip.md",
