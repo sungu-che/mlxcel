@@ -3,8 +3,8 @@
     "repo": "lablup/mlxcel",
     "ref": "main",
     "dir": "docs",
-    "commit": "01e6516b73017193d3a4d0489ccf1b7a760c2d66",
-    "commitDate": "2026-11-26T11:40:30Z"
+    "commit": "944dbfc2ddd6ccab2b051dadc995e99d9d796c83",
+    "commitDate": "2026-11-27T05:39:49Z"
   },
   "files": [
     {
@@ -29,7 +29,7 @@
       "name": "benchmarks.md",
       "slug": "benchmarks",
       "title": "Benchmarks",
-      "size": 112997
+      "size": 114833
     },
     {
       "name": "block-diffusion.md",
@@ -77,7 +77,7 @@
       "name": "environment-variables.md",
       "slug": "environment-variables",
       "title": "Environment variables",
-      "size": 305961
+      "size": 311798
     },
     {
       "name": "sparse-paged-decode.md",
@@ -89,7 +89,7 @@
       "name": "gelu-call-sites.md",
       "slug": "gelu-call-sites",
       "title": "GELU call sites and the upstream activation each one ports",
-      "size": 81210
+      "size": 81573
     },
     {
       "name": "image-generation.md",
@@ -113,7 +113,7 @@
       "name": "llama-server-compat.md",
       "slug": "llama-server-compat",
       "title": "llama-server compatibility boundary (b10621)",
-      "size": 156958
+      "size": 158821
     },
     {
       "name": "macos-memory.md",
@@ -131,7 +131,7 @@
       "name": "README.md",
       "slug": "README",
       "title": "mlxcel documentation layout",
-      "size": 8823
+      "size": 9082
     },
     {
       "name": "adding-models.md",
@@ -197,7 +197,7 @@
       "name": "supported-models.md",
       "slug": "supported-models",
       "title": "Supported models",
-      "size": 360575
+      "size": 369036
     },
     {
       "name": "temperature-0-block-history-flip.md",
