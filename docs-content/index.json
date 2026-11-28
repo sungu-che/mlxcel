@@ -3,8 +3,8 @@
     "repo": "lablup/mlxcel",
     "ref": "main",
     "dir": "docs",
-    "commit": "944dbfc2ddd6ccab2b051dadc995e99d9d796c83",
-    "commitDate": "2026-11-27T05:39:49Z"
+    "commit": "25b82c0aed1cf2d1aec6b39de7ae7b62c74f322e",
+    "commitDate": "2026-11-28T11:06:44Z"
   },
   "files": [
     {
@@ -29,7 +29,7 @@
       "name": "benchmarks.md",
       "slug": "benchmarks",
       "title": "Benchmarks",
-      "size": 114833
+      "size": 116816
     },
     {
       "name": "block-diffusion.md",
@@ -77,7 +77,7 @@
       "name": "environment-variables.md",
       "slug": "environment-variables",
       "title": "Environment variables",
-      "size": 311798
+      "size": 312232
     },
     {
       "name": "sparse-paged-decode.md",
@@ -131,7 +131,7 @@
       "name": "README.md",
       "slug": "README",
       "title": "mlxcel documentation layout",
-      "size": 9082
+      "size": 9750
     },
     {
       "name": "adding-models.md",
@@ -197,7 +197,7 @@
       "name": "supported-models.md",
       "slug": "supported-models",
       "title": "Supported models",
-      "size": 369036
+      "size": 369243
     },
     {
       "name": "temperature-0-block-history-flip.md",
